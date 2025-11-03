@@ -1,3 +1,5 @@
 {
-    "pokealert.pokemonnotification": "PokéAlert: Pokemon detected nearby!"
+    "pokealert.pokemonnotification": "PokéAlert: Pokemon detected nearby!",
+    "key.categories.pokealert": "PokéAlert",
+    "key.pokealert.toggle": "Toggle Mod"
 }

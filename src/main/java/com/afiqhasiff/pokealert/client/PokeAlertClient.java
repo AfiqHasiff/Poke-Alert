@@ -2,12 +2,17 @@ package com.afiqhasiff.pokealert.client;
 
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 
+import net.minecraft.client.option.KeyBinding;
+import net.minecraft.client.util.InputUtil;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.sound.SoundEvent;
 import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
 import net.minecraft.util.Identifier;
+import org.lwjgl.glfw.GLFW;
 import java.util.ArrayList;
 import java.util.UUID;
 
@@ -17,6 +22,7 @@ import org.slf4j.LoggerFactory;
 import com.cobblemon.mod.common.entity.pokemon.PokemonEntity;
 import com.afiqhasiff.pokealert.client.config.PokeAlertConfig;
 import com.afiqhasiff.pokealert.client.config.ConfigManager;
+import com.afiqhasiff.pokealert.client.command.PokeAlertCommand;
 import com.afiqhasiff.pokealert.client.notification.InGameNotification;
 import com.afiqhasiff.pokealert.client.notification.NotificationManager;
 import com.afiqhasiff.pokealert.client.notification.PokemonSpawnData;
@@ -33,11 +39,14 @@ public class PokeAlertClient implements ClientModInitializer {
     // when a player recalls and redeploys a pokemon it get a new ID though :/
     public ArrayList<UUID> cobblemonCache = new ArrayList<>();
     public PokeAlertConfig config;
-    public String[] allowList;
+    public String[] whitelist;
     public NotificationManager notificationManager;
 
     public static Identifier NOTIFICATION_SOUND_ID = Identifier.of(MOD_ID, "pla_notification");
     public final static SoundEvent NOTIFICATION_SOUND_EVENT = SoundEvent.of(NOTIFICATION_SOUND_ID);
+    
+    // Keybinding
+    public static KeyBinding toggleModKey;
     
     public static PokeAlertClient getInstance() {
         return instance;
@@ -51,26 +60,62 @@ public class PokeAlertClient implements ClientModInitializer {
         // Initialize configuration system
         ConfigManager.initialize();
         config = ConfigManager.getConfig();
-        allowList = config.getCombinedAllowlist();
+        whitelist = config.getCombinedWhitelist();
         
         // Initialize notification system
         notificationManager = new NotificationManager(30000); // 30 second cooldown
         notificationManager.registerService(new InGameNotification());
         notificationManager.registerService(new TelegramNotification());
         
-        LOGGER.info("PokéAlert initialized with {} allowed Pokemon", allowList.length);
+        // Register keybinding
+        toggleModKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+            "key.pokealert.toggle",
+            InputUtil.Type.KEYSYM,
+            GLFW.GLFW_KEY_SEMICOLON, // Default to ':' key
+            "key.categories.pokealert"
+        ));
+        
+        // Register commands
+        PokeAlertCommand.register();
+        
+        LOGGER.info("PokéAlert initialized with {} whitelisted Pokemon (Mod Enabled: {})", whitelist.length, config.modEnabled);
         
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            // Process keybinding
+            while (toggleModKey.wasPressed()) {
+                config.modEnabled = !config.modEnabled;
+                ConfigManager.saveConfig(config);
+                
+                // Send feedback message only if in-game text is enabled
+                if (client.player != null && config.inGameTextEnabled) {
+                    Text message = Text.literal("[")
+                        .formatted(Formatting.DARK_GRAY)
+                        .append(Text.literal("PokeAlert").formatted(Formatting.RED))
+                        .append(Text.literal("] ").formatted(Formatting.DARK_GRAY))
+                        .append(Text.literal("Mod ").formatted(Formatting.WHITE))
+                        .append(Text.literal(config.modEnabled ? "Enabled" : "Disabled")
+                            .formatted(config.modEnabled ? Formatting.GREEN : Formatting.RED));
+                    
+                    client.player.sendMessage(message, false);
+                }
+            }
+            
             PlayerEntity player = client.player;
             
-            if (client.world == null) {
+            // Check if mod is enabled and world exists
+            if (!config.modEnabled || client.world == null || player == null) {
+                return;
+            }
+            
+            // Check if current world is excluded
+            String worldName = client.world.getRegistryKey().getValue().toString();
+            if (config.isWorldExcluded(worldName)) {
                 return;
             }
 
             for (Entity entity : client.world.getEntities()) {
                 if (
-                    player == null
-                    || !entity.getType().toString().equals("entity.cobblemon.pokemon")
+                    !entity.getType().toString().equals("entity.cobblemon.pokemon")
                     || cobblemonCache.contains(entity.getUuid())
                 ) {
                     continue;
@@ -91,29 +136,20 @@ public class PokeAlertClient implements ClientModInitializer {
                     pokemonName = fullName.substring(6); // Remove "Shiny " (6 characters)
                 }
                 
-                for (String allowedPokemon : this.allowList) {
-                    if (
-                        allowedPokemon.equals(pokemonName.toLowerCase())
-                        || (
-                            pokemonEntity.getPokemon().getShiny()
-                            && config.broadcastAllShinies
-                        )
-                    ) {
-                        // Create spawn data with clean Pokemon name (without "Shiny" prefix)
-                        String worldName = client.world.getRegistryKey().getValue().toString();
-                        PokemonSpawnData spawnData = PokemonSpawnData.fromEntity(
-                            entity,
-                            pokemonName,  // Now this is just "Floragato" without "Shiny"
-                            pokemonEntity.getPokemon().getShiny(),
-                            worldName
-                        );
+                // Use the new shouldNotify method which checks both whitelist and blacklist
+                boolean isShiny = pokemonEntity.getPokemon().getShiny();
+                if (config.shouldNotify(pokemonName) || (isShiny && config.broadcastAllShinies)) {
+                    // Create spawn data with clean Pokemon name (without "Shiny" prefix)
+                    PokemonSpawnData spawnData = PokemonSpawnData.fromEntity(
+                        entity,
+                        pokemonName,  // Now this is just "Floragato" without "Shiny"
+                        isShiny,
+                        worldName
+                    );
 
-                        // Send notification through all services
-                        notificationManager.notifyAll(spawnData);
-                        break;
-                    }
+                    // Send notification through all services
+                    notificationManager.notifyAll(spawnData);
                 }
-                continue;
             }
         });
     }
@@ -124,7 +160,7 @@ public class PokeAlertClient implements ClientModInitializer {
      */
     public void reloadConfig() {
         config = ConfigManager.getConfig();
-        allowList = config.getCombinedAllowlist();
-        LOGGER.info("Configuration reloaded! Now tracking {} allowed Pokemon", allowList.length);
+        whitelist = config.getCombinedWhitelist();
+        LOGGER.info("Configuration reloaded! Now tracking {} whitelisted Pokemon", whitelist.length);
     }
 }

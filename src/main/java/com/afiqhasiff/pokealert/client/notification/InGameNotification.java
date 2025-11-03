@@ -25,9 +25,8 @@ public class InGameNotification extends NotificationService {
             return;
         }
         
-        // Exclude spawn world
-        if (data.getWorldName().equals("minecraft:spawn")) {
-            PokeAlertClient.LOGGER.debug("Skipping in-game notification for spawn world");
+        // Check if in-game text notification is enabled
+        if (!PokeAlertClient.getInstance().config.inGameTextEnabled) {
             return;
         }
 
@@ -54,12 +53,15 @@ public class InGameNotification extends NotificationService {
         // Send chat message
         player.sendMessage(message, false);
 
-        // Play notification sound
-        player.playSound(
-            PokeAlertClient.NOTIFICATION_SOUND_EVENT,
-            10f,  // volume
-            1f    // pitch
-        );
+        // Play notification sound if enabled
+        if (PokeAlertClient.getInstance().config.inGameSoundEnabled) {
+            float volume = PokeAlertClient.getInstance().config.inGameSoundVolume;
+            player.playSound(
+                PokeAlertClient.NOTIFICATION_SOUND_EVENT,
+                volume * 10f,  // volume (scaled to Minecraft's range)
+                1f             // pitch
+            );
+        }
     }
     
     /**
