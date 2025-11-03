@@ -257,12 +257,13 @@ public class PokeAlertConfigScreen extends Screen {
 
         // ========== Custom Lists Section ==========
         // Whitelist text field
-        int fieldWidth = this.width - (SIDE_MARGIN * 2) - 100; // Leave space for label
+        int labelWidth = 70;
+        int fieldWidth = this.width - (SIDE_MARGIN * 2) - labelWidth - 10; // Leave space for label and padding
         
         currentY += 20;
         whitelistField = new TextFieldWidget(
             this.textRenderer,
-            SIDE_MARGIN + 100,
+            SIDE_MARGIN + labelWidth + 5,
             currentY - (int)scrollOffset,
             fieldWidth,
             BUTTON_HEIGHT,
@@ -273,12 +274,12 @@ public class PokeAlertConfigScreen extends Screen {
         whitelistField.setPlaceholder(Text.literal("Additional Pokémon to track (comma-separated)").formatted(Formatting.GRAY));
         addSelectableChild(whitelistField);
         addDrawableChild(whitelistField);
-        currentY += 25;
+        currentY += 30;
 
         // Blacklist text field
         blacklistField = new TextFieldWidget(
             this.textRenderer,
-            SIDE_MARGIN + 100,
+            SIDE_MARGIN + labelWidth + 5,
             currentY - (int)scrollOffset,
             fieldWidth,
             BUTTON_HEIGHT,
@@ -289,12 +290,12 @@ public class PokeAlertConfigScreen extends Screen {
         blacklistField.setPlaceholder(Text.literal("Pokémon to exclude from notifications").formatted(Formatting.GRAY));
         addSelectableChild(blacklistField);
         addDrawableChild(blacklistField);
-        currentY += 25;
+        currentY += 30;
 
         // Excluded worlds text field
         excludedWorldsField = new TextFieldWidget(
             this.textRenderer,
-            SIDE_MARGIN + 100,
+            SIDE_MARGIN + labelWidth + 5,
             currentY - (int)scrollOffset,
             fieldWidth,
             BUTTON_HEIGHT,
@@ -305,7 +306,7 @@ public class PokeAlertConfigScreen extends Screen {
         excludedWorldsField.setPlaceholder(Text.literal("Worlds to exclude (e.g., spawn, the_end, the_nether)").formatted(Formatting.GRAY));
         addSelectableChild(excludedWorldsField);
         addDrawableChild(excludedWorldsField);
-        currentY += 30;
+        currentY += 35;
 
         // ========== Bottom buttons ==========
         int bottomY = this.height - 30;
@@ -619,30 +620,30 @@ public class PokeAlertConfigScreen extends Screen {
         
         currentY += 5;
         
-        // List labels
+        // List labels - aligned with text fields on same line
         context.drawTextWithShadow(
             this.textRenderer,
             Text.literal("Whitelist:"),
             SIDE_MARGIN,
-            currentY + 5,
+            currentY + 2,  // Vertically center with text field
             0xFFFFFF
         );
-        currentY += 25;
+        currentY += 30;
         
         context.drawTextWithShadow(
             this.textRenderer,
             Text.literal("Blacklist:"),
             SIDE_MARGIN,
-            currentY + 5,
+            currentY + 2,  // Vertically center with text field
             0xFFFFFF
         );
-        currentY += 25;
+        currentY += 30;
         
         context.drawTextWithShadow(
             this.textRenderer,
             Text.literal("Excluded:"),
             SIDE_MARGIN,
-            currentY + 5,
+            currentY + 2,  // Vertically center with text field
             0xFFFFFF
         );
         
