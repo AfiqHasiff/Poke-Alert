@@ -56,10 +56,11 @@ public class InGameNotification extends NotificationService {
         // Play notification sound if enabled
         if (PokeAlertClient.getInstance().config.inGameSoundEnabled) {
             float volume = PokeAlertClient.getInstance().config.inGameSoundVolume;
+            // Play sound at player's position with proper volume (0.0 to 1.0 range)
             player.playSound(
                 PokeAlertClient.NOTIFICATION_SOUND_EVENT,
-                volume * 10f,  // volume (scaled to Minecraft's range)
-                1f             // pitch
+                volume,        // volume (0.0 to 1.0)
+                1f             // pitch (1.0 = normal)
             );
         }
     }
