@@ -89,9 +89,9 @@ public class PokeAlertClient implements ClientModInitializer {
                 // Send feedback message only if in-game text is enabled
                 if (client.player != null && config.inGameTextEnabled) {
                     Text message = Text.literal("[")
-                        .formatted(Formatting.DARK_GRAY)
+                        .formatted(Formatting.GRAY)
                         .append(Text.literal("PokeAlert").formatted(Formatting.RED))
-                        .append(Text.literal("] ").formatted(Formatting.DARK_GRAY))
+                        .append(Text.literal("] ").formatted(Formatting.GRAY))
                         .append(Text.literal("Mod ").formatted(Formatting.WHITE))
                         .append(Text.literal(config.modEnabled ? "Enabled" : "Disabled")
                             .formatted(config.modEnabled ? Formatting.GREEN : Formatting.RED));

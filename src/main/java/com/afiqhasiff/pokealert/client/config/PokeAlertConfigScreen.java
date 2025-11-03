@@ -28,6 +28,15 @@ public class PokeAlertConfigScreen extends Screen {
     private ButtonWidget keybindButton;
     private boolean waitingForKey = false;
     
+    // Scrolling
+    private double scrollOffset = 0;
+    private double maxScroll = 0;
+    private int contentHeight = 0;
+    private static final int SCROLL_SPEED = 10;
+    private static final int TOP_MARGIN = 35; // Space for title
+    private static final int BOTTOM_MARGIN = 50; // Space for buttons
+    private static final int SEPARATOR_COLOR = 0x40FFFFFF; // Semi-transparent white
+    
     // Category toggles
     private ButtonWidget legendariesButton;
     private ButtonWidget mythicsButton;
@@ -96,12 +105,18 @@ public class PokeAlertConfigScreen extends Screen {
 
     @Override
     protected void init() {
-        int currentY = 50;
+        this.clearChildren();
+        
+        // Reset scroll on reinit
+        scrollOffset = 0;
+        
+        int currentY = TOP_MARGIN + 20;
         int centerX = this.width / 2;
+        int baseY = currentY; // Track original position for content height calculation
 
         // ========== Master Toggle Section ==========
         currentY += 10;
-        modEnabledButton = addMasterToggle(currentY);
+        modEnabledButton = addMasterToggle(currentY - (int)scrollOffset);
         currentY += ROW_HEIGHT;
         
         // Keybind button
@@ -111,14 +126,14 @@ public class PokeAlertConfigScreen extends Screen {
                     waitingForKey = true;
                     keybindButton.setMessage(Text.literal("Press any key...").formatted(Formatting.YELLOW));
                 })
-            .dimensions(this.width - SIDE_MARGIN - 150, currentY, 150, 20)
+            .dimensions(this.width - SIDE_MARGIN - 150, currentY - (int)scrollOffset, 150, 20)
             .build();
         addDrawableChild(keybindButton);
-        currentY += ROW_HEIGHT + SECTION_SPACING;
+        currentY += ROW_HEIGHT + SECTION_SPACING + 10; // Extra space before separator
 
         // ========== Detection Categories Section ==========
         // Legendaries
-        legendariesButton = addCategoryRow(currentY, 
+        legendariesButton = addCategoryRow(currentY - (int)scrollOffset, 
             "Legendary Pokémon", 
             "Rare and powerful legendary spawns",
             config.broadcastAllLegendaries,
@@ -266,7 +281,7 @@ public class PokeAlertConfigScreen extends Screen {
         blacklistField = new TextFieldWidget(
             this.textRenderer,
             SIDE_MARGIN + 100,
-            currentY,
+            currentY - (int)scrollOffset,
             fieldWidth,
             BUTTON_HEIGHT,
             Text.literal("Blacklist")
@@ -282,7 +297,7 @@ public class PokeAlertConfigScreen extends Screen {
         excludedWorldsField = new TextFieldWidget(
             this.textRenderer,
             SIDE_MARGIN + 100,
-            currentY,
+            currentY - (int)scrollOffset,
             fieldWidth,
             BUTTON_HEIGHT,
             Text.literal("Excluded Worlds")
@@ -314,6 +329,11 @@ public class PokeAlertConfigScreen extends Screen {
         .dimensions(centerX + buttonSpacing / 2, bottomY, buttonWidth, BUTTON_HEIGHT)
         .build();
         addDrawableChild(saveButton);
+        
+        // Calculate content height and max scroll
+        contentHeight = currentY - baseY + 50; // Add some padding
+        int viewHeight = this.height - TOP_MARGIN - BOTTOM_MARGIN;
+        maxScroll = Math.max(0, contentHeight - viewHeight);
     }
 
     private ButtonWidget addMasterToggle(int y) {
@@ -335,7 +355,9 @@ public class PokeAlertConfigScreen extends Screen {
     }
 
     private ButtonWidget addCategoryRow(int y, String label, String description, boolean enabled, ButtonWidget.PressAction onPress) {
-        return addOptionRow(y, label, description, enabled, onPress, true);
+        // Apply scroll offset to the y position
+        int scrolledY = y - (int)scrollOffset;
+        return addOptionRow(scrolledY, label, description, enabled, onPress, true);
     }
 
     private ButtonWidget addNotificationRow(int y, String label, String description, boolean enabled, ButtonWidget.PressAction onPress) {
@@ -476,7 +498,7 @@ public class PokeAlertConfigScreen extends Screen {
         // Render background
         this.renderBackground(context, mouseX, mouseY, delta);
         
-        // Title
+        // Title (always visible at top)
         context.drawCenteredTextWithShadow(
             this.textRenderer,
             Text.literal("PokéAlert v1.1.0").formatted(Formatting.GOLD),
@@ -485,7 +507,8 @@ public class PokeAlertConfigScreen extends Screen {
             0xFFFFFF
         );
         
-        int currentY = 50;
+        // Apply scroll offset to all content
+        int currentY = 50 - (int)scrollOffset;
         
         // Master toggle section
         currentY += 10;
@@ -515,6 +538,9 @@ public class PokeAlertConfigScreen extends Screen {
         );
         currentY += ROW_HEIGHT + SECTION_SPACING;
         
+        // Draw separator line
+        drawHorizontalSeparator(context, currentY - 10);
+        
         // Detection Categories header
         context.drawTextWithShadow(
             this.textRenderer,
@@ -539,6 +565,9 @@ public class PokeAlertConfigScreen extends Screen {
         currentY += ROW_HEIGHT;
         drawCategoryWithDescription(context, "Paradox Pokémon", "Ancient and Future Paradox forms", currentY);
         currentY += ROW_HEIGHT + SECTION_SPACING;
+        
+        // Draw separator line
+        drawHorizontalSeparator(context, currentY - 10);
         
         // Notification Settings header
         context.drawTextWithShadow(
@@ -575,6 +604,9 @@ public class PokeAlertConfigScreen extends Screen {
         
         drawCategoryWithDescription(context, "Telegram", "Send notifications to Telegram bot", currentY);
         currentY += ROW_HEIGHT + SECTION_SPACING;
+        
+        // Draw separator line
+        drawHorizontalSeparator(context, currentY - 10);
         
         // Custom Lists header
         context.drawTextWithShadow(
@@ -616,6 +648,21 @@ public class PokeAlertConfigScreen extends Screen {
         
         // Render widgets
         super.render(context, mouseX, mouseY, delta);
+        
+        // Draw scroll indicator if content is scrollable
+        if (maxScroll > 0) {
+            int scrollbarX = this.width - 10;
+            int scrollbarY = TOP_MARGIN;
+            int scrollbarHeight = this.height - TOP_MARGIN - BOTTOM_MARGIN;
+            int thumbHeight = Math.max(20, (int)(scrollbarHeight * (scrollbarHeight / (double)(contentHeight + scrollbarHeight))));
+            int thumbY = scrollbarY + (int)((scrollbarHeight - thumbHeight) * (scrollOffset / maxScroll));
+            
+            // Draw scrollbar track
+            context.fill(scrollbarX, scrollbarY, scrollbarX + 5, scrollbarY + scrollbarHeight, 0x40FFFFFF);
+            
+            // Draw scrollbar thumb
+            context.fill(scrollbarX, thumbY, scrollbarX + 5, thumbY + thumbHeight, 0x80FFFFFF);
+        }
     }
 
     private void drawCategoryWithDescription(DrawContext context, String label, String description, int y) {
@@ -634,6 +681,11 @@ public class PokeAlertConfigScreen extends Screen {
             0x808080
         );
     }
+    
+    private void drawHorizontalSeparator(DrawContext context, int y) {
+        // Draw a subtle horizontal line
+        context.fill(SIDE_MARGIN, y, this.width - SIDE_MARGIN, y + 1, SEPARATOR_COLOR);
+    }
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
@@ -650,6 +702,22 @@ public class PokeAlertConfigScreen extends Screen {
             return true;
         }
         return super.mouseClicked(mouseX, mouseY, button);
+    }
+    
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        // Only scroll if mouse is in the scrollable area
+        if (mouseY > TOP_MARGIN && mouseY < this.height - BOTTOM_MARGIN) {
+            double oldScroll = scrollOffset;
+            scrollOffset = Math.max(0, Math.min(maxScroll, scrollOffset - verticalAmount * SCROLL_SPEED));
+            
+            // Reinitialize widgets if scroll changed
+            if (oldScroll != scrollOffset) {
+                init();
+            }
+            return true;
+        }
+        return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
     }
 
     @Override
