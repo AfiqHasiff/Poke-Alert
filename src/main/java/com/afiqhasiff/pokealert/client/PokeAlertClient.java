@@ -8,6 +8,8 @@ import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.registry.Registries;
+import net.minecraft.registry.Registry;
 import net.minecraft.sound.SoundEvent;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
@@ -42,8 +44,8 @@ public class PokeAlertClient implements ClientModInitializer {
     public String[] whitelist;
     public NotificationManager notificationManager;
 
-    public static Identifier NOTIFICATION_SOUND_ID = Identifier.of(MOD_ID, "pla_notification");
-    public final static SoundEvent NOTIFICATION_SOUND_EVENT = SoundEvent.of(NOTIFICATION_SOUND_ID);
+    public static final Identifier NOTIFICATION_SOUND_ID = Identifier.of(MOD_ID, "pla_notification");
+    public static SoundEvent NOTIFICATION_SOUND_EVENT;
     
     // Keybinding
     public static KeyBinding toggleModKey;
@@ -56,6 +58,13 @@ public class PokeAlertClient implements ClientModInitializer {
     public void onInitializeClient() {
         // Set singleton instance
         instance = this;
+        
+        // Register sound event
+        NOTIFICATION_SOUND_EVENT = Registry.register(
+            Registries.SOUND_EVENT,
+            NOTIFICATION_SOUND_ID,
+            SoundEvent.of(NOTIFICATION_SOUND_ID)
+        );
         
         // Initialize configuration system
         ConfigManager.initialize();
