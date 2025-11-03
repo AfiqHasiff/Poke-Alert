@@ -1,0 +1,199 @@
+# Compiled class file
+*.class
+
+# Log file
+*.log
+
+# BlueJ files
+*.ctxt
+
+# Mobile Tools for Java (J2ME)
+.mtj.tmp/
+
+# Package Files #
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
+hs_err_pid*
+replay_pid*
+
+# ========== Gradle ==========
+.gradle/
+build/
+!gradle-wrapper.jar
+!gradle-wrapper.properties
+gradle-app.setting
+!gradle-wrapper.jar
+.gradletasknamecache
+
+# ========== Maven ==========
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# ========== IntelliJ IDEA ==========
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+!**/src/main/**/out/
+!**/src/test/**/out/
+
+# ========== Eclipse ==========
+.metadata/
+bin/
+tmp/
+*.tmp
+*.bak
+*.swp
+*~.nib
+local.properties
+.settings/
+.loadpath
+.recommenders
+.project
+.externalToolBuilders/
+*.launch
+.classpath
+.factorypath
+.buildpath
+.target
+
+# ========== Visual Studio Code ==========
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/*.code-snippets
+.history/
+*.vsix
+
+# ========== NetBeans ==========
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+# ========== OS Files ==========
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# ========== Minecraft/Fabric Specific ==========
+# Minecraft
+run/
+runs/
+minecraft/
+.minecraft/
+eclipse/
+server/
+
+# Fabric
+remappedSrc/
+
+# Mod files (for development, don't commit built jars)
+*.jar
+!libs/*.jar
+!gradle/wrapper/gradle-wrapper.jar
+
+# ========== Project Specific ==========
+# Config files with sensitive data (keep templates)
+config/pokealert-telegram.json
+config/cobblemondetector-telegram.json
+
+# Backup files
+*.backup
+*.bak
+*.old
+
+# Temporary Python scripts
+*.py
+
+# Test worlds
+saves/
+world/
+
+# Logs
+logs/
+crash-reports/
+
+# ========== Miscellaneous ==========
+# Temporary files
+*.tmp
+*.temp
+*.cache
+*~
+
+# Lock files
+*.lock
+package-lock.json
+yarn.lock
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Debug files
+debug/
+dumps/
+
+# JRebel
+rebel.xml
+.rebel.xml.bak
+
+# Kotlin
+.kotlin/

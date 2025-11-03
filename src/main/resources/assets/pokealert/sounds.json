@@ -1,0 +1,8 @@
+{
+    "pla_notification": {
+        "subtitle": "pokealert.pokemonnotification",
+        "sounds": [
+            "pokealert:pokemonnotification"
+        ]
+    }
+}

@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "id": "pokealert",
+  "version": "${version}",
+  "name": "PokéAlert",
+  "description": "Get notified of desirable Pokemon near your player with customizable detection and Telegram notifications",
+  "authors": [],
+  "contact": {
+    "repo": "https://github.com/Colin/PokeAlert"
+  },
+  "license": "All-Rights-Reserved",
+  "icon": "icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "com.afiqhasiff.pokealert.client.PokeAlertClient"
+    ],
+    "main": [
+      "com.afiqhasiff.pokealert.PokeAlert"
+    ],
+    "modmenu": [
+      "com.afiqhasiff.pokealert.client.config.ModMenuIntegration"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric": "*",
+    "minecraft": "${minecraft_version}"
+  },
+  "recommends": {
+    "modmenu": "*"
+  }
+}
