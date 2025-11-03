@@ -57,6 +57,10 @@ public class PokeAlertCommand {
                 ClientCommandManager.literal("pokealert")
                     .executes(context -> showHelp(context))
                     
+                    // /pokealert help
+                    .then(ClientCommandManager.literal("help")
+                        .executes(context -> showHelp(context)))
+                    
                     // /pokealert enable
                     .then(ClientCommandManager.literal("enable")
                         .executes(context -> setModEnabled(context, true)))
@@ -141,32 +145,157 @@ public class PokeAlertCommand {
     private static int showHelp(CommandContext<FabricClientCommandSource> context) {
         FabricClientCommandSource source = context.getSource();
         
-        // Use PokéAlert color scheme: Gray brackets, Red "PokeAlert", White text
+        // Version header
         source.sendFeedback(
             Text.literal("[").formatted(Formatting.GRAY)
                 .append(Text.literal("PokéAlert").formatted(Formatting.RED))
                 .append(Text.literal("] ").formatted(Formatting.GRAY))
-                .append(Text.literal("Commands").formatted(Formatting.WHITE))
+                .append(Text.literal("v1.1.0").formatted(Formatting.GOLD))
+                .append(Text.literal(" - Pokémon Detection Mod").formatted(Formatting.WHITE))
         );
         
-        source.sendFeedback(Text.literal("  /pokealert enable").formatted(Formatting.WHITE)
-            .append(Text.literal(" - Enable the mod").formatted(Formatting.GRAY)));
-        source.sendFeedback(Text.literal("  /pokealert disable").formatted(Formatting.WHITE)
-            .append(Text.literal(" - Disable the mod").formatted(Formatting.GRAY)));
-        source.sendFeedback(Text.literal("  /pokealert status").formatted(Formatting.WHITE)
-            .append(Text.literal(" - Show current status").formatted(Formatting.GRAY)));
-        source.sendFeedback(Text.literal("  /pokealert list <type>").formatted(Formatting.WHITE)
-            .append(Text.literal(" - List Pokémon in category").formatted(Formatting.GRAY)));
-        source.sendFeedback(Text.literal("  /pokealert categories <name> <enable/disable>").formatted(Formatting.WHITE)
-            .append(Text.literal(" - Toggle category").formatted(Formatting.GRAY)));
-        source.sendFeedback(Text.literal("  /pokealert whitelist <add/remove/list>").formatted(Formatting.WHITE)
-            .append(Text.literal(" - Manage whitelist").formatted(Formatting.GRAY)));
-        source.sendFeedback(Text.literal("  /pokealert blacklist <add/remove/list>").formatted(Formatting.WHITE)
-            .append(Text.literal(" - Manage blacklist").formatted(Formatting.GRAY)));
-        source.sendFeedback(Text.literal("  /pokealert excludedworlds <add/remove/list>").formatted(Formatting.WHITE)
-            .append(Text.literal(" - Manage worlds").formatted(Formatting.GRAY)));
-        source.sendFeedback(Text.literal("  /pokealert notifications <type> <enable/disable>").formatted(Formatting.WHITE)
-            .append(Text.literal(" - Toggle notifications").formatted(Formatting.GRAY)));
+        // Keybind info
+        source.sendFeedback(
+            Text.literal("  ").formatted(Formatting.GRAY)
+                .append(Text.literal("⚡").formatted(Formatting.YELLOW))
+                .append(Text.literal(" Quick Toggle: Press ").formatted(Formatting.WHITE))
+                .append(Text.literal("[").formatted(Formatting.DARK_GRAY))
+                .append(Text.literal(":").formatted(Formatting.GOLD, Formatting.BOLD))
+                .append(Text.literal("]").formatted(Formatting.DARK_GRAY))
+                .append(Text.literal(" to enable/disable").formatted(Formatting.GRAY))
+                .append(Text.literal(" (customizable)").formatted(Formatting.DARK_GRAY))
+        );
+        
+        source.sendFeedback(Text.empty()); // Empty line
+        
+        // Basic Commands section
+        source.sendFeedback(Text.literal("━━━ ").formatted(Formatting.DARK_GRAY)
+            .append(Text.literal("Basic Commands").formatted(Formatting.AQUA))
+            .append(Text.literal(" ━━━").formatted(Formatting.DARK_GRAY)));
+        source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+            .append(Text.literal("help").formatted(Formatting.GREEN))
+            .append(Text.literal(" - ").formatted(Formatting.DARK_GRAY))
+            .append(Text.literal("Show this help menu").formatted(Formatting.WHITE)));
+        source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+            .append(Text.literal("enable").formatted(Formatting.GREEN))
+            .append(Text.literal(" - ").formatted(Formatting.DARK_GRAY))
+            .append(Text.literal("Enable the mod").formatted(Formatting.WHITE)));
+        source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+            .append(Text.literal("disable").formatted(Formatting.RED))
+            .append(Text.literal(" - ").formatted(Formatting.DARK_GRAY))
+            .append(Text.literal("Disable the mod").formatted(Formatting.WHITE)));
+        source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+            .append(Text.literal("status").formatted(Formatting.AQUA))
+            .append(Text.literal(" - ").formatted(Formatting.DARK_GRAY))
+            .append(Text.literal("Show current configuration").formatted(Formatting.WHITE)));
+        
+        source.sendFeedback(Text.empty()); // Empty line
+        
+        // Category Management section
+        source.sendFeedback(Text.literal("━━━ ").formatted(Formatting.DARK_GRAY)
+            .append(Text.literal("Detection Categories").formatted(Formatting.AQUA))
+            .append(Text.literal(" ━━━").formatted(Formatting.DARK_GRAY)));
+        source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+            .append(Text.literal("categories ").formatted(Formatting.GREEN))
+            .append(Text.literal("<type> ").formatted(Formatting.LIGHT_PURPLE))
+            .append(Text.literal("<enable|disable>").formatted(Formatting.LIGHT_PURPLE)));
+        source.sendFeedback(Text.literal("    ").formatted(Formatting.GRAY)
+            .append(Text.literal("Types: ").formatted(Formatting.DARK_GRAY))
+            .append(Text.literal("legendaries").formatted(Formatting.GOLD))
+            .append(Text.literal(", ").formatted(Formatting.DARK_GRAY))
+            .append(Text.literal("mythics").formatted(Formatting.DARK_PURPLE))
+            .append(Text.literal(", ").formatted(Formatting.DARK_GRAY))
+            .append(Text.literal("shinies").formatted(Formatting.LIGHT_PURPLE))
+            .append(Text.literal(", ").formatted(Formatting.DARK_GRAY))
+            .append(Text.literal("starters").formatted(Formatting.GREEN)));
+        source.sendFeedback(Text.literal("          ").formatted(Formatting.GRAY)
+            .append(Text.literal("babies").formatted(Formatting.AQUA))
+            .append(Text.literal(", ").formatted(Formatting.DARK_GRAY))
+            .append(Text.literal("ultrabeasts").formatted(Formatting.DARK_AQUA))
+            .append(Text.literal(", ").formatted(Formatting.DARK_GRAY))
+            .append(Text.literal("paradox").formatted(Formatting.DARK_RED)));
+        
+        source.sendFeedback(Text.empty()); // Empty line
+        
+        // List Management section
+        source.sendFeedback(Text.literal("━━━ ").formatted(Formatting.DARK_GRAY)
+            .append(Text.literal("List Management").formatted(Formatting.AQUA))
+            .append(Text.literal(" ━━━").formatted(Formatting.DARK_GRAY)));
+        source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+            .append(Text.literal("whitelist ").formatted(Formatting.GREEN))
+            .append(Text.literal("<add|remove|list> ").formatted(Formatting.LIGHT_PURPLE))
+            .append(Text.literal("[pokemon]").formatted(Formatting.GRAY)));
+        source.sendFeedback(Text.literal("    ➤ ").formatted(Formatting.DARK_GREEN)
+            .append(Text.literal("Manage Pokémon to track").formatted(Formatting.WHITE)));
+        source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+            .append(Text.literal("blacklist ").formatted(Formatting.RED))
+            .append(Text.literal("<add|remove|list> ").formatted(Formatting.LIGHT_PURPLE))
+            .append(Text.literal("[pokemon]").formatted(Formatting.GRAY)));
+        source.sendFeedback(Text.literal("    ➤ ").formatted(Formatting.DARK_RED)
+            .append(Text.literal("Manage Pokémon to exclude").formatted(Formatting.WHITE)));
+        source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+            .append(Text.literal("excludedworlds ").formatted(Formatting.DARK_AQUA))
+            .append(Text.literal("<add|remove|list> ").formatted(Formatting.LIGHT_PURPLE))
+            .append(Text.literal("[world]").formatted(Formatting.GRAY)));
+        source.sendFeedback(Text.literal("    ➤ ").formatted(Formatting.DARK_AQUA)
+            .append(Text.literal("Manage worlds to ignore").formatted(Formatting.WHITE)));
+        
+        source.sendFeedback(Text.empty()); // Empty line
+        
+        // View Lists section
+        source.sendFeedback(Text.literal("━━━ ").formatted(Formatting.DARK_GRAY)
+            .append(Text.literal("View Pokémon Lists").formatted(Formatting.AQUA))
+            .append(Text.literal(" ━━━").formatted(Formatting.DARK_GRAY)));
+        source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+            .append(Text.literal("list ").formatted(Formatting.GREEN))
+            .append(Text.literal("<type>").formatted(Formatting.LIGHT_PURPLE)));
+        source.sendFeedback(Text.literal("    ").formatted(Formatting.GRAY)
+            .append(Text.literal("Types: ").formatted(Formatting.DARK_GRAY))
+            .append(Text.literal("whitelist").formatted(Formatting.GREEN))
+            .append(Text.literal(", ").formatted(Formatting.DARK_GRAY))
+            .append(Text.literal("blacklist").formatted(Formatting.RED))
+            .append(Text.literal(", ").formatted(Formatting.DARK_GRAY))
+            .append(Text.literal("legendaries").formatted(Formatting.GOLD))
+            .append(Text.literal(", ").formatted(Formatting.DARK_GRAY))
+            .append(Text.literal("mythics").formatted(Formatting.DARK_PURPLE)));
+        source.sendFeedback(Text.literal("          ").formatted(Formatting.GRAY)
+            .append(Text.literal("shinies").formatted(Formatting.LIGHT_PURPLE))
+            .append(Text.literal(", ").formatted(Formatting.DARK_GRAY))
+            .append(Text.literal("starters").formatted(Formatting.GREEN))
+            .append(Text.literal(", ").formatted(Formatting.DARK_GRAY))
+            .append(Text.literal("babies").formatted(Formatting.AQUA))
+            .append(Text.literal(", ").formatted(Formatting.DARK_GRAY))
+            .append(Text.literal("ultrabeasts").formatted(Formatting.DARK_AQUA))
+            .append(Text.literal(", ").formatted(Formatting.DARK_GRAY))
+            .append(Text.literal("paradox").formatted(Formatting.DARK_RED)));
+        
+        source.sendFeedback(Text.empty()); // Empty line
+        
+        // Notification Settings section
+        source.sendFeedback(Text.literal("━━━ ").formatted(Formatting.DARK_GRAY)
+            .append(Text.literal("Notification Settings").formatted(Formatting.AQUA))
+            .append(Text.literal(" ━━━").formatted(Formatting.DARK_GRAY)));
+        source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+            .append(Text.literal("notifications ").formatted(Formatting.GREEN))
+            .append(Text.literal("<type> ").formatted(Formatting.LIGHT_PURPLE))
+            .append(Text.literal("<enable|disable>").formatted(Formatting.LIGHT_PURPLE)));
+        source.sendFeedback(Text.literal("    ").formatted(Formatting.GRAY)
+            .append(Text.literal("Types: ").formatted(Formatting.DARK_GRAY))
+            .append(Text.literal("text").formatted(Formatting.WHITE))
+            .append(Text.literal(", ").formatted(Formatting.DARK_GRAY))
+            .append(Text.literal("sound").formatted(Formatting.BLUE))
+            .append(Text.literal(", ").formatted(Formatting.DARK_GRAY))
+            .append(Text.literal("telegram").formatted(Formatting.DARK_BLUE)));
+        
+        source.sendFeedback(Text.empty()); // Empty line
+        
+        // Footer tip
+        source.sendFeedback(Text.literal("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━").formatted(Formatting.DARK_GRAY));
+        source.sendFeedback(
+            Text.literal("  💡 ").formatted(Formatting.YELLOW)
+                .append(Text.literal("Tip: ").formatted(Formatting.AQUA))
+                .append(Text.literal("Use Mod Menu for visual configuration!").formatted(Formatting.WHITE))
+        );
         
         return 1;
     }

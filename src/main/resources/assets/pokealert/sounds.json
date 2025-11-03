@@ -1,8 +1,12 @@
 {
     "pla_notification": {
+        "category": "record",
         "subtitle": "pokealert.pokemonnotification",
         "sounds": [
-            "pokealert:pokemonnotification"
+            {
+                "name": "pokealert:pokemonnotification",
+                "stream": false
+            }
         ]
     }
 }

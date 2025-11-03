@@ -74,6 +74,7 @@ public class PokeAlertConfigScreen extends Screen {
         super(Text.literal("PokéAlert v1.1.0 Configuration"));
         this.parent = parent;
         this.config = loadConfigCopy();
+        this.scrollOffset = 0; // Initialize scroll to top when screen opens
     }
 
     private PokeAlertConfig loadConfigCopy() {
@@ -104,8 +105,8 @@ public class PokeAlertConfigScreen extends Screen {
     protected void init() {
         this.clearChildren();
         
-        // Reset scroll on reinit
-        scrollOffset = 0;
+        // Don't reset scroll when reinitializing for scroll updates
+        // scrollOffset is preserved to maintain position
         
         int currentY = TOP_MARGIN + 20;
         int centerX = this.width / 2;
@@ -236,7 +237,7 @@ public class PokeAlertConfigScreen extends Screen {
         // Sound Volume Slider (only if sound is enabled)
         int sliderX = this.width - SIDE_MARGIN - 150;
         soundVolumeSlider = new VolumeSliderWidget(
-            sliderX, currentY, 150, 20,
+            sliderX, currentY - (int)scrollOffset, 150, 20,
             Text.literal("Volume: "), config.inGameSoundVolume
         );
         soundVolumeSlider.active = config.inGameSoundEnabled;
@@ -262,7 +263,7 @@ public class PokeAlertConfigScreen extends Screen {
         whitelistField = new TextFieldWidget(
             this.textRenderer,
             SIDE_MARGIN + 100,
-            currentY,
+            currentY - (int)scrollOffset,
             fieldWidth,
             BUTTON_HEIGHT,
             Text.literal("Whitelist")
@@ -358,7 +359,9 @@ public class PokeAlertConfigScreen extends Screen {
     }
 
     private ButtonWidget addNotificationRow(int y, String label, String description, boolean enabled, ButtonWidget.PressAction onPress) {
-        return addOptionRow(y, label, description, enabled, onPress, false);
+        // Apply scroll offset to the y position
+        int scrolledY = y - (int)scrollOffset;
+        return addOptionRow(scrolledY, label, description, enabled, onPress, false);
     }
 
     private ButtonWidget addOptionRow(int y, String label, String description, boolean enabled, ButtonWidget.PressAction onPress, boolean showReset) {
@@ -703,18 +706,21 @@ public class PokeAlertConfigScreen extends Screen {
     
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-        // Only scroll if mouse is in the scrollable area
-        if (mouseY > TOP_MARGIN && mouseY < this.height - BOTTOM_MARGIN) {
-            double oldScroll = scrollOffset;
-            scrollOffset = Math.max(0, Math.min(maxScroll, scrollOffset - verticalAmount * SCROLL_SPEED));
-            
-            // Reinitialize widgets if scroll changed
-            if (oldScroll != scrollOffset) {
-                init();
-            }
-            return true;
+        // Check if content is scrollable
+        if (maxScroll <= 0) {
+            return false;
         }
-        return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
+        
+        // Scroll anywhere on the screen (not just in specific area)
+        double oldScroll = scrollOffset;
+        scrollOffset = scrollOffset - verticalAmount * SCROLL_SPEED;
+        scrollOffset = Math.max(0, Math.min(maxScroll, scrollOffset));
+        
+        // Reinitialize widgets if scroll changed
+        if (oldScroll != scrollOffset) {
+            init();
+        }
+        return true;
     }
 
     @Override
