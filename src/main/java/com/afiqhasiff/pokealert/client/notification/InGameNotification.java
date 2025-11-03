@@ -25,42 +25,46 @@ public class InGameNotification extends NotificationService {
             return;
         }
         
-        // Check if in-game text notification is enabled
-        if (!PokeAlertClient.getInstance().config.inGameTextEnabled) {
+        // Check if ANY in-game notification is enabled (text OR sound)
+        if (!PokeAlertClient.getInstance().config.inGameTextEnabled && 
+            !PokeAlertClient.getInstance().config.inGameSoundEnabled) {
             return;
         }
 
-        // Get rarity info from shared scraper (uses cached value from PokemonSpawnData)
-        RarityScraper.RarityInfo rarity = data.getRarityInfo();
-        
-        // Handle shiny prefix
-        String rarityText = data.isShiny() ? "Shiny " + rarity.getName() : rarity.getName();
-        Formatting rarityColor = data.isShiny() ? Formatting.LIGHT_PURPLE : rarity.getColor();
-        
-        // Determine article (A or An)
-        String article = getArticle(rarityText);
-        
-        // Build the message: [PokeAlert] A/An <Rarity> <PokemonName> spawned near you!
-        Text message = Text.literal("[").formatted(Formatting.GRAY)
-            .append(Text.literal("PokeAlert").formatted(Formatting.RED))
-            .append(Text.literal("] ").formatted(Formatting.GRAY))
-            .append(Text.literal(article + " ").formatted(Formatting.GRAY))
-            .append(Text.literal(rarityText).formatted(rarityColor))
-            .append(Text.literal(" "))
-            .append(Text.literal(data.getPokemonName()).formatted(Formatting.WHITE))
-            .append(Text.literal(" spawned near you!").formatted(Formatting.GRAY));
+        // Send text notification if enabled
+        if (PokeAlertClient.getInstance().config.inGameTextEnabled) {
+            // Get rarity info from shared scraper (uses cached value from PokemonSpawnData)
+            RarityScraper.RarityInfo rarity = data.getRarityInfo();
+            
+            // Handle shiny prefix
+            String rarityText = data.isShiny() ? "Shiny " + rarity.getName() : rarity.getName();
+            Formatting rarityColor = data.isShiny() ? Formatting.LIGHT_PURPLE : rarity.getColor();
+            
+            // Determine article (A or An)
+            String article = getArticle(rarityText);
+            
+            // Build the message: [PokeAlert] A/An <Rarity> <PokemonName> spawned near you!
+            Text message = Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokeAlert").formatted(Formatting.RED))
+                .append(Text.literal("] ").formatted(Formatting.GRAY))
+                .append(Text.literal(article + " ").formatted(Formatting.GRAY))
+                .append(Text.literal(rarityText).formatted(rarityColor))
+                .append(Text.literal(" "))
+                .append(Text.literal(data.getPokemonName()).formatted(Formatting.WHITE))
+                .append(Text.literal(" spawned near you!").formatted(Formatting.GRAY));
 
-        // Send chat message
-        player.sendMessage(message, false);
+            // Send chat message
+            player.sendMessage(message, false);
+        }
 
         // Play notification sound if enabled
         if (PokeAlertClient.getInstance().config.inGameSoundEnabled) {
             float volume = PokeAlertClient.getInstance().config.inGameSoundVolume;
-            // Play sound at player's position with proper volume (0.0 to 1.0 range)
+            // Play sound at player's position with configured volume
             player.playSound(
                 PokeAlertClient.NOTIFICATION_SOUND_EVENT,
                 volume,        // volume (0.0 to 1.0)
-                1f             // pitch (1.0 = normal)
+                1.0f           // pitch (1.0 = normal)
             );
         }
     }
