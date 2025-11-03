@@ -84,7 +84,7 @@ public class PokeAlertClient implements ClientModInitializer {
             // Process keybinding
             while (toggleModKey.wasPressed()) {
                 config.modEnabled = !config.modEnabled;
-                ConfigManager.saveConfig(config);
+                ConfigManager.saveSettings(config);
                 
                 // Send feedback message only if in-game text is enabled
                 if (client.player != null && config.inGameTextEnabled) {
