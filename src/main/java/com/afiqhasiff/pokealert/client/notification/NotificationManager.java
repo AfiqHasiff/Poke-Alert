@@ -58,18 +58,22 @@ public class NotificationManager {
         for (NotificationService service : services) {
             if (service.isEnabled()) {
                 try {
-                    // Run async to avoid blocking game thread
-                    CompletableFuture.runAsync(() -> {
-                        try {
-                            service.sendNotification(data);
-                        } catch (Exception e) {
-                            PokeAlertClient.LOGGER.error(
-                                "Error sending notification via {}: {}",
-                                service.getServiceName(),
-                                e.getMessage()
-                            );
-                        }
-                    });
+                    if (service instanceof InGameNotification) {
+                        service.sendNotification(data);
+                    } else {
+                        // Run async for network operations
+                        CompletableFuture.runAsync(() -> {
+                            try {
+                                service.sendNotification(data);
+                            } catch (Exception e) {
+                                PokeAlertClient.LOGGER.error(
+                                    "Error sending notification via {}: {}",
+                                    service.getServiceName(),
+                                    e.getMessage()
+                                );
+                            }
+                        });
+                    }
                 } catch (Exception e) {
                     PokeAlertClient.LOGGER.error(
                         "Error dispatching notification to {}: {}",
