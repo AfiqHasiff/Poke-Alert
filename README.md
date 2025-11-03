@@ -15,7 +15,9 @@
 ### Real-time Detection
 - **Automatic Scanning**: Continuously monitors for Pokémon spawns within a 64-block radius
 - **Smart Filtering**: Only alerts for Pokémon you care about
-- **Spawn World Exclusion**: Automatically ignores spawns in the spawn world
+- **World Exclusion**: Configure worlds to exclude from notifications (e.g., spawn, the_nether)
+- **Master Toggle**: Enable/disable the entire mod with one click
+- **Keybind Support**: Quick toggle mod on/off with a customizable hotkey (default: :)
 
 ### Customizable Alerts
 Configure detection for different Pokémon categories:
@@ -26,14 +28,16 @@ Configure detection for different Pokémon categories:
 - **Baby Pokémon** - Cute baby Pokémon
 - **Ultra Beasts** - Mysterious Ultra Beasts from another dimension
 - **Paradox Pokémon** - Ancient and future Paradox forms
-- **Custom Allowlist** - Add any specific Pokémon you want to track
+- **Custom Whitelist** - Add specific Pokémon you want to track
+- **Custom Blacklist** - Exclude specific Pokémon from notifications
 
 ### Multi-Channel Notifications
 
 #### 🎵 In-Game Notifications
 - Chat messages with rarity-based color coding
-- Custom notification sound
+- Custom notification sound with adjustable volume
 - Clean, informative format showing rarity and location
+- Toggle individual notification types (text, sound)
 
 #### 📱 Telegram Integration
 - Real-time push notifications to your phone
@@ -69,19 +73,62 @@ Configure detection for different Pokémon categories:
    - Mod Menu (optional, for GUI config)
 3. Launch Minecraft and configure the mod via Mod Menu or config file
 
+## 🎯 Commands
+
+PokéAlert provides a comprehensive command system for quick configuration:
+
+### Basic Controls
+- **Keybind**: Press `:` (default) to toggle the mod on/off
+  - Customizable in Mod Menu or Minecraft Controls
+
+### Basic Commands
+- `/pokealert` - Show help and available commands
+- `/pokealert enable` - Enable the mod
+- `/pokealert disable` - Disable the mod
+- `/pokealert status` - Show current configuration status
+
+### Category Management
+- `/pokealert categories <category> <enable/disable>` - Toggle detection categories
+  - Categories: `legendaries`, `mythics`, `shinies`, `starters`, `babies`, `ultrabeasts`, `paradox`
+  - Example: `/pokealert categories legendaries enable`
+
+### List Management
+- `/pokealert whitelist <add/remove> <pokemonName>` - Manage custom whitelist
+- `/pokealert blacklist <add/remove> <pokemonName>` - Manage blacklist
+- `/pokealert excludedworlds <add/remove> <worldName>` - Manage world exclusions
+  - Example: `/pokealert whitelist add Pikachu`
+  - Example: `/pokealert excludedworlds add spawn`
+
+### View Lists
+- `/pokealert list <type>` - View Pokémon in specific lists
+  - Types: `whitelist`, `blacklist`, `legendaries`, `mythics`, `shinies`, `starters`, `babies`, `ultrabeasts`, `paradox`
+  - Example: `/pokealert list legendaries`
+
+### Notification Control
+- `/pokealert notifications <type> <enable/disable>` - Toggle notification types
+  - Types: `text`, `sound`, `telegram`
+  - Example: `/pokealert notifications sound disable`
+
 ## ⚙️ Configuration
 
 ### Via Mod Menu (Recommended)
 1. Open Mod Menu in-game
 2. Find PokéAlert and click the config button
-3. Toggle detection categories on/off
-4. Add custom Pokémon to the allowlist
-5. Save and apply changes
+3. Configure:
+   - Master toggle to enable/disable the mod
+   - Keybind for quick toggle (click to set custom key)
+   - Detection categories with descriptions
+   - Custom whitelist and blacklist
+   - World exclusions (simplified names like "spawn", "the_nether")
+   - Notification toggles (text, sound, telegram)
+   - Sound volume control (0-100%)
+4. Save and apply changes
 
 ### Via Config File
 Edit `.minecraft/config/pokealert.json`:
 ```json
 {
+  "modEnabled": true,
   "broadcastAllLegendaries": true,
   "broadcastAllMythics": true,
   "broadcastAllShinies": true,
@@ -89,7 +136,13 @@ Edit `.minecraft/config/pokealert.json`:
   "broadcastAllBabies": false,
   "broadcastAllUltraBeasts": false,
   "broadcastAllParadox": false,
-  "broadcastAllowlist": ["Pikachu", "Charizard", "Mewtwo"]
+  "broadcastWhitelist": ["Pikachu", "Charizard", "Mewtwo"],
+  "broadcastBlacklist": [],
+  "inGameTextEnabled": true,
+  "inGameSoundEnabled": true,
+  "inGameSoundVolume": 1.0,
+  "telegramEnabled": true,
+  "excludedWorlds": ["spawn"]
 }
 ```
 

@@ -46,13 +46,8 @@ public class TelegramNotification extends NotificationService {
 
     @Override
     public void sendNotification(PokemonSpawnData data) {
-        if (!config.isValid()) {
-            return;
-        }
-        
-        // Exclude spawn world
-        if (data.getWorldName().equals("minecraft:spawn")) {
-            PokeAlertClient.LOGGER.debug("Skipping Telegram notification for spawn world");
+        // Check if Telegram is enabled in PokéAlert config
+        if (!PokeAlertClient.getInstance().config.telegramEnabled || !config.isValid()) {
             return;
         }
 
@@ -103,7 +98,7 @@ public class TelegramNotification extends NotificationService {
 
     @Override
     public boolean isEnabled() {
-        return config != null && config.isValid();
+        return PokeAlertClient.getInstance().config.telegramEnabled && config != null && config.isValid();
     }
 
     @Override
