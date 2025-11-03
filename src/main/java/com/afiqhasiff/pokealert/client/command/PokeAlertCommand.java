@@ -296,24 +296,11 @@ public class PokeAlertCommand {
         // List Pokemon
         if (pokemonList.length == 0) {
             source.sendFeedback(Text.literal("  Empty list").formatted(Formatting.GRAY));
-        } else if (pokemonList.length <= 20) {
-            // Show all if 20 or less
+        } else {
+            // Show all Pokemon regardless of count
             for (String pokemon : pokemonList) {
                 source.sendFeedback(Text.literal("  • ").formatted(Formatting.GRAY)
                     .append(Text.literal(formatPokemonName(pokemon)).formatted(Formatting.WHITE)));
-            }
-        } else {
-            // Show first 15 and last 5 if more than 20
-            for (int i = 0; i < 15; i++) {
-                source.sendFeedback(Text.literal("  • ").formatted(Formatting.GRAY)
-                    .append(Text.literal(formatPokemonName(pokemonList[i])).formatted(Formatting.WHITE)));
-            }
-            source.sendFeedback(Text.literal("  ... and ").formatted(Formatting.GRAY)
-                .append(Text.literal(String.valueOf(pokemonList.length - 20)).formatted(Formatting.WHITE))
-                .append(Text.literal(" more").formatted(Formatting.GRAY)));
-            for (int i = pokemonList.length - 5; i < pokemonList.length; i++) {
-                source.sendFeedback(Text.literal("  • ").formatted(Formatting.GRAY)
-                    .append(Text.literal(formatPokemonName(pokemonList[i])).formatted(Formatting.WHITE)));
             }
         }
         
