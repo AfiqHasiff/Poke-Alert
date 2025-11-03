@@ -82,7 +82,7 @@ PokéAlert provides a comprehensive command system for quick configuration:
   - Customizable in Mod Menu or Minecraft Controls
 
 ### Basic Commands
-- `/pokealert` - Show help and available commands
+- `/pokealert` or `/pokealert help` - Show version info and available commands
 - `/pokealert enable` - Enable the mod
 - `/pokealert disable` - Disable the mod
 - `/pokealert status` - Show current configuration status
