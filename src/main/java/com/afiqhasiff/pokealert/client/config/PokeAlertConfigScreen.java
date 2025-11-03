@@ -69,9 +69,6 @@ public class PokeAlertConfigScreen extends Screen {
     private static final int ROW_HEIGHT = 30;  // Height for row with description
     private static final int SECTION_SPACING = 20;
     private static final int BUTTON_GAP = 5;
-    
-    // Scroll position for future use
-    private int scrollOffset = 0;
 
     public PokeAlertConfigScreen(Screen parent) {
         super(Text.literal("PokéAlert v1.1.0 Configuration"));
