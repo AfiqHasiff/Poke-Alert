@@ -124,20 +124,21 @@ public class PokeAlertConfigScreen extends Screen {
         currentY += ROW_HEIGHT;
         
         // Keybind button
+        int keybindX = this.width - SIDE_MARGIN - BUTTON_WIDTH;
         keybindButton = ButtonWidget.builder(
                 getKeybindText(),
                 button -> {
                     waitingForKey = true;
                     keybindButton.setMessage(Text.literal("Press any key...").formatted(Formatting.YELLOW));
                 })
-            .dimensions(this.width - SIDE_MARGIN - 150, currentY - (int)scrollOffset, 150, 20)
+            .dimensions(keybindX, currentY - (int)scrollOffset, BUTTON_WIDTH, BUTTON_HEIGHT)
             .build();
         addDrawableChild(keybindButton);
         currentY += ROW_HEIGHT + SECTION_SPACING + 10; // Extra space before separator
 
         // ========== Detection Categories Section ==========
         // Legendaries
-        legendariesButton = addCategoryRow(currentY - (int)scrollOffset, 
+        legendariesButton = addCategoryRow(currentY, 
             "Legendary Pokémon", 
             "Rare and powerful legendary spawns",
             config.broadcastAllLegendaries,
@@ -268,15 +269,17 @@ public class PokeAlertConfigScreen extends Screen {
             "Default egg timer duration",
             Text.literal("Duration: " + config.eggTimerDuration + " min"),
             button -> {
-                // Cycle through common durations: 15, 30, 45, 60, 90, 120
+                // Cycle through common durations: 1, 5, 15, 30, 45, 60, 90, 120
                 int current = config.eggTimerDuration;
                 int newDuration;
-                if (current < 30) newDuration = 30;
+                if (current < 5) newDuration = 5;
+                else if (current < 15) newDuration = 15;
+                else if (current < 30) newDuration = 30;
                 else if (current < 45) newDuration = 45;
                 else if (current < 60) newDuration = 60;
                 else if (current < 90) newDuration = 90;
                 else if (current < 120) newDuration = 120;
-                else newDuration = 15;
+                else newDuration = 1;
                 
                 config.eggTimerDuration = newDuration;
                 button.setMessage(Text.literal("Duration: " + newDuration + " min"));
