@@ -28,6 +28,12 @@ import java.util.List;
  * Provides /pokealert commands for mod configuration.
  */
 public class PokeAlertCommand {
+    // Confirmation tracking for redundant whitelist/blacklist additions
+    private static String lastRedundantWhitelistPokemon = null;
+    private static long lastRedundantWhitelistTime = 0;
+    private static String lastRedundantBlacklistPokemon = null;
+    private static long lastRedundantBlacklistTime = 0;
+    private static final long CONFIRMATION_WINDOW = 10000; // 10 seconds
     
     private static final String[] CATEGORIES = {
         "legendaries", "mythics", "starters", "babies", 
@@ -656,23 +662,56 @@ public class PokeAlertCommand {
             return 1;
         }
         
-        // Check if in predefined lists and warn (but still allow)
+        // Check if in predefined lists and require confirmation
         String predefinedCategory = getPredefinedCategory(pokemon);
         if (predefinedCategory != null) {
-            source.sendFeedback(
-                Text.literal("[").formatted(Formatting.GRAY)
-                    .append(Text.literal("PokéAlert").formatted(Formatting.RED))
-                    .append(Text.literal("] ").formatted(Formatting.GRAY))
-                    .append(Text.literal("Info: ").formatted(Formatting.AQUA))
-                    .append(Text.literal(pokemon).formatted(Formatting.WHITE))
-                    .append(Text.literal(" is already in ").formatted(Formatting.GRAY))
-                    .append(Text.literal(predefinedCategory).formatted(Formatting.GOLD))
-            );
-            source.sendFeedback(
-                Text.literal("  ").formatted(Formatting.GRAY)
-                    .append(Text.literal("→ ").formatted(Formatting.DARK_GRAY))
-                    .append(Text.literal("Adding to whitelist may be redundant if category is enabled").formatted(Formatting.GRAY))
-            );
+            long currentTime = System.currentTimeMillis();
+            
+            // Check if this is a confirmation (second command within window)
+            if (lastRedundantWhitelistPokemon != null && 
+                lastRedundantWhitelistPokemon.equalsIgnoreCase(pokemon) && 
+                currentTime - lastRedundantWhitelistTime <= CONFIRMATION_WINDOW) {
+                
+                // User confirmed, proceed with addition
+                lastRedundantWhitelistPokemon = null;
+                lastRedundantWhitelistTime = 0;
+                
+                source.sendFeedback(
+                    Text.literal("[").formatted(Formatting.GRAY)
+                        .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                        .append(Text.literal("] ").formatted(Formatting.GRAY))
+                        .append(Text.literal("Confirmed: Adding ").formatted(Formatting.YELLOW))
+                        .append(Text.literal(pokemon).formatted(Formatting.WHITE))
+                        .append(Text.literal(" to whitelist despite being in ").formatted(Formatting.GRAY))
+                        .append(Text.literal(predefinedCategory).formatted(Formatting.GOLD))
+                );
+                // Continue with addition below
+            } else {
+                // First attempt - show warning and require confirmation
+                lastRedundantWhitelistPokemon = pokemon;
+                lastRedundantWhitelistTime = currentTime;
+                
+                source.sendFeedback(
+                    Text.literal("[").formatted(Formatting.GRAY)
+                        .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                        .append(Text.literal("] ").formatted(Formatting.GRAY))
+                        .append(Text.literal("Warning: ").formatted(Formatting.YELLOW))
+                        .append(Text.literal(pokemon).formatted(Formatting.WHITE))
+                        .append(Text.literal(" is already in ").formatted(Formatting.GRAY))
+                        .append(Text.literal(predefinedCategory).formatted(Formatting.GOLD))
+                );
+                source.sendFeedback(
+                    Text.literal("  ").formatted(Formatting.GRAY)
+                        .append(Text.literal("→ ").formatted(Formatting.DARK_GRAY))
+                        .append(Text.literal("This may be redundant if the category is enabled").formatted(Formatting.GRAY))
+                );
+                source.sendFeedback(
+                    Text.literal("  ").formatted(Formatting.GRAY)
+                        .append(Text.literal("→ ").formatted(Formatting.DARK_GRAY))
+                        .append(Text.literal("Run the command again within 10 seconds to confirm").formatted(Formatting.AQUA))
+                );
+                return 1; // Exit without adding
+            }
         }
         
         // Add to whitelist
@@ -776,23 +815,63 @@ public class PokeAlertCommand {
             return 1;
         }
         
-        // Check if in predefined lists and warn
+        // Check if in predefined lists and require confirmation
         String predefinedCategory = getPredefinedCategory(pokemon);
         if (predefinedCategory != null) {
-            source.sendFeedback(
-                Text.literal("[").formatted(Formatting.GRAY)
-                    .append(Text.literal("PokéAlert").formatted(Formatting.RED))
-                    .append(Text.literal("] ").formatted(Formatting.GRAY))
-                    .append(Text.literal("Info: ").formatted(Formatting.AQUA))
-                    .append(Text.literal(pokemon).formatted(Formatting.WHITE))
-                    .append(Text.literal(" is in ").formatted(Formatting.GRAY))
-                    .append(Text.literal(predefinedCategory).formatted(Formatting.GOLD))
-            );
-            source.sendFeedback(
-                Text.literal("  ").formatted(Formatting.GRAY)
-                    .append(Text.literal("→ ").formatted(Formatting.DARK_GRAY))
-                    .append(Text.literal("To exclude, disable the category or add to blacklist").formatted(Formatting.GRAY))
-            );
+            long currentTime = System.currentTimeMillis();
+            
+            // Check if this is a confirmation (second command within window)
+            if (lastRedundantBlacklistPokemon != null && 
+                lastRedundantBlacklistPokemon.equalsIgnoreCase(pokemon) && 
+                currentTime - lastRedundantBlacklistTime <= CONFIRMATION_WINDOW) {
+                
+                // User confirmed, proceed with addition
+                lastRedundantBlacklistPokemon = null;
+                lastRedundantBlacklistTime = 0;
+                
+                source.sendFeedback(
+                    Text.literal("[").formatted(Formatting.GRAY)
+                        .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                        .append(Text.literal("] ").formatted(Formatting.GRAY))
+                        .append(Text.literal("Confirmed: Adding ").formatted(Formatting.YELLOW))
+                        .append(Text.literal(pokemon).formatted(Formatting.WHITE))
+                        .append(Text.literal(" to blacklist despite being in ").formatted(Formatting.GRAY))
+                        .append(Text.literal(predefinedCategory).formatted(Formatting.GOLD))
+                );
+                source.sendFeedback(
+                    Text.literal("  ").formatted(Formatting.GRAY)
+                        .append(Text.literal("→ ").formatted(Formatting.DARK_GRAY))
+                        .append(Text.literal("Consider disabling the ").formatted(Formatting.GRAY))
+                        .append(Text.literal(predefinedCategory).formatted(Formatting.GOLD))
+                        .append(Text.literal(" category instead").formatted(Formatting.GRAY))
+                );
+                // Continue with addition below
+            } else {
+                // First attempt - show warning and require confirmation
+                lastRedundantBlacklistPokemon = pokemon;
+                lastRedundantBlacklistTime = currentTime;
+                
+                source.sendFeedback(
+                    Text.literal("[").formatted(Formatting.GRAY)
+                        .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                        .append(Text.literal("] ").formatted(Formatting.GRAY))
+                        .append(Text.literal("Warning: ").formatted(Formatting.YELLOW))
+                        .append(Text.literal(pokemon).formatted(Formatting.WHITE))
+                        .append(Text.literal(" is in ").formatted(Formatting.GRAY))
+                        .append(Text.literal(predefinedCategory).formatted(Formatting.GOLD))
+                );
+                source.sendFeedback(
+                    Text.literal("  ").formatted(Formatting.GRAY)
+                        .append(Text.literal("→ ").formatted(Formatting.DARK_GRAY))
+                        .append(Text.literal("To exclude, you can disable the entire category instead").formatted(Formatting.GRAY))
+                );
+                source.sendFeedback(
+                    Text.literal("  ").formatted(Formatting.GRAY)
+                        .append(Text.literal("→ ").formatted(Formatting.DARK_GRAY))
+                        .append(Text.literal("Run the command again within 10 seconds to confirm blacklisting").formatted(Formatting.AQUA))
+                );
+                return 1; // Exit without adding
+            }
         }
         
         // Add to blacklist
