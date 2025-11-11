@@ -31,6 +31,11 @@ public class PokeAlertConfig {
     
     // World exclusion list (users can input "spawn" or "minecraft:spawn")
     public String[] excludedWorlds = {"spawn"};
+    
+    // Egg timer settings
+    public int eggTimerDuration = 30; // Default 30 minutes
+    public boolean eggTimerTextNotification = true;
+    public boolean eggTimerTelegramNotification = true;
 
     public String[] getCombinedWhitelist(){
         List<String> combinedList = new ArrayList<String>();

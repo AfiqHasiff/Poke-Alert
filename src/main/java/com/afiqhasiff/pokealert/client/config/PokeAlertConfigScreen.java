@@ -16,7 +16,7 @@ import org.lwjgl.glfw.GLFW;
 import java.util.Arrays;
 
 /**
- * Configuration screen for PokéAlert v1.1.0.
+ * Configuration screen for PokéAlert v1.2.0.
  * Provides GUI controls for all mod settings with descriptions.
  */
 public class PokeAlertConfigScreen extends Screen {
@@ -52,6 +52,11 @@ public class PokeAlertConfigScreen extends Screen {
     private VolumeSliderWidget soundVolumeSlider;
     private ButtonWidget telegramButton;
     
+    // Egg timer settings
+    private ButtonWidget eggTimerDurationButton;
+    private ButtonWidget eggTimerKeybindButton;
+    private boolean waitingForEggTimerKey = false;
+    
     // Text fields
     private TextFieldWidget whitelistField;
     private TextFieldWidget blacklistField;
@@ -71,7 +76,7 @@ public class PokeAlertConfigScreen extends Screen {
     private static final int BUTTON_GAP = 5;
 
     public PokeAlertConfigScreen(Screen parent) {
-        super(Text.literal("PokéAlert v1.1.0 Configuration"));
+        super(Text.literal("PokéAlert v1.2.0 Configuration"));
         this.parent = parent;
         this.config = loadConfigCopy();
         this.scrollOffset = 0; // Initialize scroll to top when screen opens
@@ -253,6 +258,45 @@ public class PokeAlertConfigScreen extends Screen {
                 config.telegramEnabled = !config.telegramEnabled;
                 updateToggleButton(telegramButton, config.telegramEnabled);
             });
+        currentY += ROW_HEIGHT + SECTION_SPACING;
+        
+        // ========== Egg Timer Section ==========
+        // Egg timer duration field
+        currentY += 20;
+        eggTimerDurationButton = addDrawableChild(ButtonWidget.builder(
+                Text.literal("Egg Timer: " + config.eggTimerDuration + " min"),
+                button -> {
+                    // Cycle through common durations: 15, 30, 45, 60, 90, 120
+                    int current = config.eggTimerDuration;
+                    int newDuration;
+                    if (current < 30) newDuration = 30;
+                    else if (current < 45) newDuration = 45;
+                    else if (current < 60) newDuration = 60;
+                    else if (current < 90) newDuration = 90;
+                    else if (current < 120) newDuration = 120;
+                    else newDuration = 15;
+                    
+                    config.eggTimerDuration = newDuration;
+                    button.setMessage(Text.literal("Egg Timer: " + newDuration + " min"));
+                    ConfigManager.saveSettings(config);
+                })
+            .position(SIDE_MARGIN + 100, currentY - (int)scrollOffset)
+            .size(BUTTON_WIDTH, BUTTON_HEIGHT)
+            .build()
+        );
+        
+        // Egg timer keybind button
+        currentY += ROW_HEIGHT;
+        eggTimerKeybindButton = addDrawableChild(ButtonWidget.builder(
+                getEggTimerKeybindText(),
+                button -> {
+                    waitingForEggTimerKey = true;
+                    button.setMessage(Text.literal("> Press a key <").formatted(Formatting.YELLOW));
+                })
+            .position(SIDE_MARGIN + 100, currentY - (int)scrollOffset)
+            .size(BUTTON_WIDTH, BUTTON_HEIGHT)
+            .build()
+        );
         currentY += ROW_HEIGHT + SECTION_SPACING;
 
         // ========== Custom Lists Section ==========
@@ -502,7 +546,7 @@ public class PokeAlertConfigScreen extends Screen {
         // Title (always visible at top)
         context.drawCenteredTextWithShadow(
             this.textRenderer,
-            Text.literal("PokéAlert v1.1.0").formatted(Formatting.GOLD),
+            Text.literal("PokéAlert v1.2.0").formatted(Formatting.GOLD),
             this.width / 2,
             15,
             0xFFFFFF
@@ -604,6 +648,53 @@ public class PokeAlertConfigScreen extends Screen {
         currentY += ROW_HEIGHT;
         
         drawCategoryWithDescription(context, "Telegram", "Send notifications to Telegram bot", currentY);
+        currentY += ROW_HEIGHT + SECTION_SPACING;
+        
+        // Draw separator line
+        drawHorizontalSeparator(context, currentY - 10);
+        
+        // Egg Timer header
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("Egg Timer").formatted(Formatting.AQUA),
+            SIDE_MARGIN,
+            currentY - 15,
+            0xFFFFFF
+        );
+        
+        // Egg timer duration label
+        currentY += 5;
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("Duration"),
+            SIDE_MARGIN,
+            currentY + 2,
+            0xFFFFFF
+        );
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("Default egg timer duration").formatted(Formatting.GRAY),
+            SIDE_MARGIN,
+            currentY + 12,
+            0x808080
+        );
+        currentY += ROW_HEIGHT;
+        
+        // Egg timer keybind label  
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("Timer Key"),
+            SIDE_MARGIN,
+            currentY + 2,
+            0xFFFFFF
+        );
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("Start egg timer keybind").formatted(Formatting.GRAY),
+            SIDE_MARGIN,
+            currentY + 12,
+            0x808080
+        );
         currentY += ROW_HEIGHT + SECTION_SPACING;
         
         // Draw separator line
@@ -726,7 +817,7 @@ public class PokeAlertConfigScreen extends Screen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        // Handle keybind setting
+        // Handle keybind setting for mod toggle
         if (waitingForKey) {
             // Don't rebind to Escape key
             if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
@@ -743,8 +834,25 @@ public class PokeAlertConfigScreen extends Screen {
             return true;
         }
         
+        // Handle keybind setting for egg timer
+        if (waitingForEggTimerKey) {
+            // Don't rebind to Escape key
+            if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                waitingForEggTimerKey = false;
+                eggTimerKeybindButton.setMessage(getEggTimerKeybindText());
+                return true;
+            }
+            
+            // Update the egg timer keybinding
+            PokeAlertClient.startEggTimerKey.setBoundKey(InputUtil.Type.KEYSYM.createFromCode(keyCode));
+            KeyBinding.updateKeysByCode();
+            waitingForEggTimerKey = false;
+            eggTimerKeybindButton.setMessage(getEggTimerKeybindText());
+            return true;
+        }
+        
         // Allow escape to close the screen when not setting keybind
-        if (keyCode == GLFW.GLFW_KEY_ESCAPE && !waitingForKey) {
+        if (keyCode == GLFW.GLFW_KEY_ESCAPE && !waitingForKey && !waitingForEggTimerKey) {
             this.close();
             return true;
         }
@@ -766,6 +874,12 @@ public class PokeAlertConfigScreen extends Screen {
     
     private Text getKeybindText() {
         String keyName = PokeAlertClient.toggleModKey.getBoundKeyLocalizedText().getString();
+        return Text.literal("Key: ").formatted(Formatting.WHITE)
+            .append(Text.literal(keyName).formatted(Formatting.YELLOW));
+    }
+    
+    private Text getEggTimerKeybindText() {
+        String keyName = PokeAlertClient.startEggTimerKey.getBoundKeyLocalizedText().getString();
         return Text.literal("Key: ").formatted(Formatting.WHITE)
             .append(Text.literal(keyName).formatted(Formatting.YELLOW));
     }

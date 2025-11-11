@@ -18,6 +18,7 @@
 - **World Exclusion**: Configure worlds to exclude from notifications (e.g., spawn, the_nether)
 - **Master Toggle**: Enable/disable the entire mod with one click
 - **Keybind Support**: Quick toggle mod on/off with a customizable hotkey (default: :)
+- **Smart List Management**: Automatic conflict detection when adding to whitelist/blacklist
 
 ### Customizable Alerts
 Configure detection for different Pokémon categories:
@@ -38,6 +39,12 @@ Configure detection for different Pokémon categories:
 - Custom notification sound with adjustable volume
 - Clean, informative format showing rarity and location
 - Toggle individual notification types (text, sound)
+
+#### ⏰ Egg Timer Feature
+- Built-in egg hatching timer with customizable duration
+- Start timer with a single key press (default: ')
+- Both in-game and Telegram notifications when timer completes
+- Configurable default duration (15-120 minutes)
 
 #### 📱 Telegram Integration
 - Real-time push notifications to your phone
@@ -78,8 +85,9 @@ Configure detection for different Pokémon categories:
 PokéAlert provides a comprehensive command system for quick configuration:
 
 ### Basic Controls
-- **Keybind**: Press `:` (default) to toggle the mod on/off
-  - Customizable in Mod Menu or Minecraft Controls
+- **Mod Toggle**: Press `:` (default) to toggle the mod on/off
+- **Egg Timer**: Press `'` (default) to start egg timer
+  - Both keybinds customizable in Mod Menu or Minecraft Controls
 
 ### Basic Commands
 - `/pokealert` or `/pokealert help` - Show version info and available commands
@@ -109,6 +117,12 @@ PokéAlert provides a comprehensive command system for quick configuration:
   - Types: `text`, `sound`, `telegram`
   - Example: `/pokealert notifications sound disable`
 
+### Egg Timer Commands
+- `/pokealert eggtimer start [minutes]` - Start egg timer (default 30 min)
+- `/pokealert eggtimer stop` - Stop current timer
+- `/pokealert eggtimer status` - Check remaining time
+- `/pokealert eggtimer duration <minutes>` - Set default duration
+
 ## ⚙️ Configuration
 
 ### Via Mod Menu (Recommended)
@@ -122,6 +136,7 @@ PokéAlert provides a comprehensive command system for quick configuration:
    - World exclusions (simplified names like "spawn", "the_nether")
    - Notification toggles (text, sound, telegram)
    - Sound volume control (0-100%)
+   - Egg timer duration and keybind settings
 4. Save and apply changes
 
 ### Via Config File
@@ -142,7 +157,10 @@ Edit `.minecraft/config/pokealert.json`:
   "inGameSoundEnabled": true,
   "inGameSoundVolume": 1.0,
   "telegramEnabled": true,
-  "excludedWorlds": ["spawn"]
+  "excludedWorlds": ["spawn"],
+  "eggTimerDuration": 30,
+  "eggTimerTextNotification": true,
+  "eggTimerTelegramNotification": true
 }
 ```
 

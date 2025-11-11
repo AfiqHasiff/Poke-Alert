@@ -113,6 +113,56 @@ public class TelegramNotification extends NotificationService {
             httpClient.connectionPool().evictAll();
         }
     }
+    
+    /**
+     * Send egg timer notification to Telegram
+     */
+    public void sendEggTimerNotification(String message) {
+        if (!isEnabled()) {
+            return;
+        }
+        
+        try {
+            JsonObject jsonPayload = new JsonObject();
+            jsonPayload.addProperty("chat_id", config.getChatId());
+            jsonPayload.addProperty("text", message);
+            jsonPayload.addProperty("parse_mode", "HTML");
+            
+            RequestBody body = RequestBody.create(
+                MediaType.parse("application/json"),
+                jsonPayload.toString()
+            );
+            
+            String url = String.format("https://api.telegram.org/bot%s/sendMessage", config.getBotToken());
+            Request request = new Request.Builder()
+                .url(url)
+                .post(body)
+                .build();
+            
+            httpClient.newCall(request).enqueue(new Callback() {
+                @Override
+                public void onFailure(Call call, IOException e) {
+                    PokeAlertClient.LOGGER.error("Failed to send egg timer notification to Telegram: {}", e.getMessage());
+                }
+                
+                @Override
+                public void onResponse(Call call, Response response) throws IOException {
+                    if (response.isSuccessful()) {
+                        PokeAlertClient.LOGGER.debug("Egg timer notification sent to Telegram successfully");
+                    } else {
+                        PokeAlertClient.LOGGER.error(
+                            "Telegram API returned error for egg timer: {} - {}",
+                            response.code(),
+                            response.body() != null ? response.body().string() : "No body"
+                        );
+                    }
+                    response.close();
+                }
+            });
+        } catch (Exception e) {
+            PokeAlertClient.LOGGER.error("Error sending egg timer notification to Telegram", e);
+        }
+    }
 
     /**
      * Format a rich message for Telegram

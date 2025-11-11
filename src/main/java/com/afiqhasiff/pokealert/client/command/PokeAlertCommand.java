@@ -4,8 +4,10 @@ import com.afiqhasiff.pokealert.client.PokeAlertClient;
 import com.afiqhasiff.pokealert.client.config.ConfigManager;
 import com.afiqhasiff.pokealert.client.config.PokeAlertConfig;
 import com.afiqhasiff.pokealert.client.util.PokemonLists;
+import com.afiqhasiff.pokealert.client.notification.EggTimerManager;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.BoolArgumentType;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
@@ -138,6 +140,20 @@ public class PokeAlertCommand {
                                 .executes(context -> setNotification(context, "telegram", true)))
                             .then(ClientCommandManager.literal("disable")
                                 .executes(context -> setNotification(context, "telegram", false)))))
+                    
+                    // /pokealert eggtimer commands
+                    .then(ClientCommandManager.literal("eggtimer")
+                        .then(ClientCommandManager.literal("start")
+                            .executes(context -> startEggTimer(context))
+                            .then(ClientCommandManager.argument("minutes", IntegerArgumentType.integer(1, 120))
+                                .executes(context -> startEggTimer(context, IntegerArgumentType.getInteger(context, "minutes")))))
+                        .then(ClientCommandManager.literal("stop")
+                            .executes(context -> stopEggTimer(context)))
+                        .then(ClientCommandManager.literal("status")
+                            .executes(context -> getEggTimerStatus(context)))
+                        .then(ClientCommandManager.literal("duration")
+                            .then(ClientCommandManager.argument("minutes", IntegerArgumentType.integer(1, 120))
+                                .executes(context -> setEggTimerDuration(context)))))
             );
         });
     }
@@ -150,7 +166,7 @@ public class PokeAlertCommand {
             Text.literal("[").formatted(Formatting.GRAY)
                 .append(Text.literal("PokéAlert").formatted(Formatting.RED))
                 .append(Text.literal("] ").formatted(Formatting.GRAY))
-                .append(Text.literal("v1.1.0").formatted(Formatting.GOLD))
+                .append(Text.literal("v1.2.0").formatted(Formatting.GOLD))
                 .append(Text.literal(" - Pokémon Detection Mod").formatted(Formatting.WHITE))
         );
         
@@ -163,6 +179,16 @@ public class PokeAlertCommand {
                 .append(Text.literal(":").formatted(Formatting.GOLD, Formatting.BOLD))
                 .append(Text.literal("]").formatted(Formatting.DARK_GRAY))
                 .append(Text.literal(" to enable/disable").formatted(Formatting.GRAY))
+                .append(Text.literal(" (customizable)").formatted(Formatting.DARK_GRAY))
+        );
+        source.sendFeedback(
+            Text.literal("  ").formatted(Formatting.GRAY)
+                .append(Text.literal("⏰").formatted(Formatting.YELLOW))
+                .append(Text.literal(" Egg Timer: Press ").formatted(Formatting.WHITE))
+                .append(Text.literal("[").formatted(Formatting.DARK_GRAY))
+                .append(Text.literal("'").formatted(Formatting.GOLD, Formatting.BOLD))
+                .append(Text.literal("]").formatted(Formatting.DARK_GRAY))
+                .append(Text.literal(" to start egg timer").formatted(Formatting.GRAY))
                 .append(Text.literal(" (customizable)").formatted(Formatting.DARK_GRAY))
         );
         
@@ -239,6 +265,31 @@ public class PokeAlertCommand {
             .append(Text.literal("[world]").formatted(Formatting.GRAY)));
         source.sendFeedback(Text.literal("    ➤ ").formatted(Formatting.DARK_AQUA)
             .append(Text.literal("Manage worlds to ignore").formatted(Formatting.WHITE)));
+        
+        source.sendFeedback(Text.empty()); // Empty line
+        
+        // Egg Timer section
+        source.sendFeedback(Text.literal("━━━ ").formatted(Formatting.DARK_GRAY)
+            .append(Text.literal("Egg Timer").formatted(Formatting.AQUA))
+            .append(Text.literal(" ━━━").formatted(Formatting.DARK_GRAY)));
+        source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+            .append(Text.literal("eggtimer start ").formatted(Formatting.GREEN))
+            .append(Text.literal("[minutes]").formatted(Formatting.GRAY)));
+        source.sendFeedback(Text.literal("    ➤ ").formatted(Formatting.DARK_GREEN)
+            .append(Text.literal("Start egg timer (default 30 min)").formatted(Formatting.WHITE)));
+        source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+            .append(Text.literal("eggtimer stop").formatted(Formatting.RED)));
+        source.sendFeedback(Text.literal("    ➤ ").formatted(Formatting.DARK_RED)
+            .append(Text.literal("Stop the current egg timer").formatted(Formatting.WHITE)));
+        source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+            .append(Text.literal("eggtimer status").formatted(Formatting.AQUA)));
+        source.sendFeedback(Text.literal("    ➤ ").formatted(Formatting.DARK_AQUA)
+            .append(Text.literal("Check timer status").formatted(Formatting.WHITE)));
+        source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+            .append(Text.literal("eggtimer duration ").formatted(Formatting.LIGHT_PURPLE))
+            .append(Text.literal("<minutes>").formatted(Formatting.GRAY)));
+        source.sendFeedback(Text.literal("    ➤ ").formatted(Formatting.DARK_PURPLE)
+            .append(Text.literal("Set default duration").formatted(Formatting.WHITE)));
         
         source.sendFeedback(Text.empty()); // Empty line
         
@@ -454,6 +505,41 @@ public class PokeAlertCommand {
         return formatted.toString();
     }
     
+    private static String getPredefinedCategory(String pokemon) {
+        // Check each predefined category
+        for (String p : PokemonLists.legendaries) {
+            if (p.equalsIgnoreCase(pokemon)) {
+                return "Legendaries";
+            }
+        }
+        for (String p : PokemonLists.mythics) {
+            if (p.equalsIgnoreCase(pokemon)) {
+                return "Mythics";
+            }
+        }
+        for (String p : PokemonLists.starter) {
+            if (p.equalsIgnoreCase(pokemon)) {
+                return "Starters";
+            }
+        }
+        for (String p : PokemonLists.babies) {
+            if (p.equalsIgnoreCase(pokemon)) {
+                return "Babies";
+            }
+        }
+        for (String p : PokemonLists.ultra_beasts) {
+            if (p.equalsIgnoreCase(pokemon)) {
+                return "Ultra Beasts";
+            }
+        }
+        for (String p : PokemonLists.paradox_mons) {
+            if (p.equalsIgnoreCase(pokemon)) {
+                return "Paradox";
+            }
+        }
+        return null;
+    }
+    
     private static int setModEnabled(CommandContext<FabricClientCommandSource> context, boolean enabled) {
         PokeAlertConfig config = ConfigManager.getConfig();
         config.modEnabled = enabled;
@@ -535,24 +621,73 @@ public class PokeAlertCommand {
     private static int addToWhitelist(CommandContext<FabricClientCommandSource> context) {
         String pokemon = StringArgumentType.getString(context, "pokemon");
         PokeAlertConfig config = ConfigManager.getConfig();
+        FabricClientCommandSource source = context.getSource();
         
+        // Check if already in whitelist
         List<String> whitelist = new ArrayList<>(Arrays.asList(config.broadcastWhitelist));
-        if (!whitelist.contains(pokemon)) {
-            whitelist.add(pokemon);
-            config.broadcastWhitelist = whitelist.toArray(new String[0]);
-            ConfigManager.updateConfig(config);
-            PokeAlertClient.getInstance().reloadConfig();
-            
-            context.getSource().sendFeedback(
+        if (whitelist.contains(pokemon)) {
+            source.sendError(Text.literal(pokemon + " is already in the whitelist"));
+            return 1;
+        }
+        
+        // Check if in blacklist
+        List<String> blacklist = new ArrayList<>(Arrays.asList(config.broadcastBlacklist));
+        if (blacklist.contains(pokemon)) {
+            // Prompt user about conflict
+            source.sendFeedback(
                 Text.literal("[").formatted(Formatting.GRAY)
                     .append(Text.literal("PokéAlert").formatted(Formatting.RED))
-                    .append(Text.literal("] Added ").formatted(Formatting.GRAY))
+                    .append(Text.literal("] ").formatted(Formatting.GRAY))
+                    .append(Text.literal("Warning: ").formatted(Formatting.YELLOW))
                     .append(Text.literal(pokemon).formatted(Formatting.WHITE))
-                    .append(Text.literal(" to whitelist").formatted(Formatting.GRAY))
+                    .append(Text.literal(" is currently in the blacklist").formatted(Formatting.GRAY))
             );
-        } else {
-            context.getSource().sendError(Text.literal(pokemon + " is already in the whitelist"));
+            source.sendFeedback(
+                Text.literal("  ").formatted(Formatting.GRAY)
+                    .append(Text.literal("→ Use ").formatted(Formatting.DARK_GRAY))
+                    .append(Text.literal("/pokealert blacklist remove " + pokemon).formatted(Formatting.AQUA))
+                    .append(Text.literal(" first").formatted(Formatting.DARK_GRAY))
+            );
+            source.sendFeedback(
+                Text.literal("  ").formatted(Formatting.GRAY)
+                    .append(Text.literal("→ Then ").formatted(Formatting.DARK_GRAY))
+                    .append(Text.literal("/pokealert whitelist add " + pokemon).formatted(Formatting.AQUA))
+            );
+            return 1;
         }
+        
+        // Check if in predefined lists and warn (but still allow)
+        String predefinedCategory = getPredefinedCategory(pokemon);
+        if (predefinedCategory != null) {
+            source.sendFeedback(
+                Text.literal("[").formatted(Formatting.GRAY)
+                    .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                    .append(Text.literal("] ").formatted(Formatting.GRAY))
+                    .append(Text.literal("Info: ").formatted(Formatting.AQUA))
+                    .append(Text.literal(pokemon).formatted(Formatting.WHITE))
+                    .append(Text.literal(" is already in ").formatted(Formatting.GRAY))
+                    .append(Text.literal(predefinedCategory).formatted(Formatting.GOLD))
+            );
+            source.sendFeedback(
+                Text.literal("  ").formatted(Formatting.GRAY)
+                    .append(Text.literal("→ ").formatted(Formatting.DARK_GRAY))
+                    .append(Text.literal("Adding to whitelist may be redundant if category is enabled").formatted(Formatting.GRAY))
+            );
+        }
+        
+        // Add to whitelist
+        whitelist.add(pokemon);
+        config.broadcastWhitelist = whitelist.toArray(new String[0]);
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        source.sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Added ").formatted(Formatting.GRAY))
+                .append(Text.literal(pokemon).formatted(Formatting.WHITE))
+                .append(Text.literal(" to whitelist").formatted(Formatting.GREEN))
+        );
         
         return 1;
     }
@@ -606,24 +741,73 @@ public class PokeAlertCommand {
     private static int addToBlacklist(CommandContext<FabricClientCommandSource> context) {
         String pokemon = StringArgumentType.getString(context, "pokemon");
         PokeAlertConfig config = ConfigManager.getConfig();
+        FabricClientCommandSource source = context.getSource();
         
+        // Check if already in blacklist
         List<String> blacklist = new ArrayList<>(Arrays.asList(config.broadcastBlacklist));
-        if (!blacklist.contains(pokemon)) {
-            blacklist.add(pokemon);
-            config.broadcastBlacklist = blacklist.toArray(new String[0]);
-            ConfigManager.updateConfig(config);
-            PokeAlertClient.getInstance().reloadConfig();
-            
-            context.getSource().sendFeedback(
+        if (blacklist.contains(pokemon)) {
+            source.sendError(Text.literal(pokemon + " is already in the blacklist"));
+            return 1;
+        }
+        
+        // Check if in whitelist
+        List<String> whitelist = new ArrayList<>(Arrays.asList(config.broadcastWhitelist));
+        if (whitelist.contains(pokemon)) {
+            // Prompt user about conflict
+            source.sendFeedback(
                 Text.literal("[").formatted(Formatting.GRAY)
                     .append(Text.literal("PokéAlert").formatted(Formatting.RED))
-                    .append(Text.literal("] Added ").formatted(Formatting.GRAY))
+                    .append(Text.literal("] ").formatted(Formatting.GRAY))
+                    .append(Text.literal("Warning: ").formatted(Formatting.YELLOW))
                     .append(Text.literal(pokemon).formatted(Formatting.WHITE))
-                    .append(Text.literal(" to blacklist").formatted(Formatting.GRAY))
+                    .append(Text.literal(" is currently in the whitelist").formatted(Formatting.GRAY))
             );
-        } else {
-            context.getSource().sendError(Text.literal(pokemon + " is already in the blacklist"));
+            source.sendFeedback(
+                Text.literal("  ").formatted(Formatting.GRAY)
+                    .append(Text.literal("→ Use ").formatted(Formatting.DARK_GRAY))
+                    .append(Text.literal("/pokealert whitelist remove " + pokemon).formatted(Formatting.AQUA))
+                    .append(Text.literal(" first").formatted(Formatting.DARK_GRAY))
+            );
+            source.sendFeedback(
+                Text.literal("  ").formatted(Formatting.GRAY)
+                    .append(Text.literal("→ Then ").formatted(Formatting.DARK_GRAY))
+                    .append(Text.literal("/pokealert blacklist add " + pokemon).formatted(Formatting.AQUA))
+            );
+            return 1;
         }
+        
+        // Check if in predefined lists and warn
+        String predefinedCategory = getPredefinedCategory(pokemon);
+        if (predefinedCategory != null) {
+            source.sendFeedback(
+                Text.literal("[").formatted(Formatting.GRAY)
+                    .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                    .append(Text.literal("] ").formatted(Formatting.GRAY))
+                    .append(Text.literal("Info: ").formatted(Formatting.AQUA))
+                    .append(Text.literal(pokemon).formatted(Formatting.WHITE))
+                    .append(Text.literal(" is in ").formatted(Formatting.GRAY))
+                    .append(Text.literal(predefinedCategory).formatted(Formatting.GOLD))
+            );
+            source.sendFeedback(
+                Text.literal("  ").formatted(Formatting.GRAY)
+                    .append(Text.literal("→ ").formatted(Formatting.DARK_GRAY))
+                    .append(Text.literal("To exclude, disable the category or add to blacklist").formatted(Formatting.GRAY))
+            );
+        }
+        
+        // Add to blacklist
+        blacklist.add(pokemon);
+        config.broadcastBlacklist = blacklist.toArray(new String[0]);
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        source.sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Added ").formatted(Formatting.GRAY))
+                .append(Text.literal(pokemon).formatted(Formatting.WHITE))
+                .append(Text.literal(" to blacklist").formatted(Formatting.RED))
+        );
         
         return 1;
     }
@@ -739,6 +923,120 @@ public class PokeAlertCommand {
                     .append(Text.literal(world).formatted(Formatting.WHITE)));
             }
         }
+        
+        return 1;
+    }
+    
+    private static int startEggTimer(CommandContext<FabricClientCommandSource> context) {
+        EggTimerManager timerManager = EggTimerManager.getInstance();
+        FabricClientCommandSource source = context.getSource();
+        
+        if (timerManager.isTimerRunning()) {
+            int remaining = timerManager.getRemainingMinutes();
+            source.sendFeedback(
+                Text.literal("[").formatted(Formatting.GRAY)
+                    .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                    .append(Text.literal("] ").formatted(Formatting.GRAY))
+                    .append(Text.literal("⏰ ").formatted(Formatting.YELLOW))
+                    .append(Text.literal("Egg timer already running: ").formatted(Formatting.WHITE))
+                    .append(Text.literal(remaining + " minutes remaining").formatted(Formatting.AQUA))
+            );
+        } else {
+            timerManager.startTimer();
+        }
+        
+        return 1;
+    }
+    
+    private static int startEggTimer(CommandContext<FabricClientCommandSource> context, int minutes) {
+        EggTimerManager timerManager = EggTimerManager.getInstance();
+        FabricClientCommandSource source = context.getSource();
+        
+        if (timerManager.isTimerRunning()) {
+            int remaining = timerManager.getRemainingMinutes();
+            source.sendFeedback(
+                Text.literal("[").formatted(Formatting.GRAY)
+                    .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                    .append(Text.literal("] ").formatted(Formatting.GRAY))
+                    .append(Text.literal("⏰ ").formatted(Formatting.YELLOW))
+                    .append(Text.literal("Egg timer already running: ").formatted(Formatting.WHITE))
+                    .append(Text.literal(remaining + " minutes remaining").formatted(Formatting.AQUA))
+            );
+        } else {
+            timerManager.startTimer(minutes);
+        }
+        
+        return 1;
+    }
+    
+    private static int stopEggTimer(CommandContext<FabricClientCommandSource> context) {
+        EggTimerManager timerManager = EggTimerManager.getInstance();
+        FabricClientCommandSource source = context.getSource();
+        
+        if (timerManager.stopTimer()) {
+            source.sendFeedback(
+                Text.literal("[").formatted(Formatting.GRAY)
+                    .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                    .append(Text.literal("] ").formatted(Formatting.GRAY))
+                    .append(Text.literal("⏰ ").formatted(Formatting.YELLOW))
+                    .append(Text.literal("Egg timer stopped").formatted(Formatting.RED))
+            );
+        } else {
+            source.sendFeedback(
+                Text.literal("[").formatted(Formatting.GRAY)
+                    .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                    .append(Text.literal("] ").formatted(Formatting.GRAY))
+                    .append(Text.literal("⏰ ").formatted(Formatting.YELLOW))
+                    .append(Text.literal("No egg timer is running").formatted(Formatting.GRAY))
+            );
+        }
+        
+        return 1;
+    }
+    
+    private static int getEggTimerStatus(CommandContext<FabricClientCommandSource> context) {
+        EggTimerManager timerManager = EggTimerManager.getInstance();
+        FabricClientCommandSource source = context.getSource();
+        
+        if (timerManager.isTimerRunning()) {
+            int remaining = timerManager.getRemainingMinutes();
+            source.sendFeedback(
+                Text.literal("[").formatted(Formatting.GRAY)
+                    .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                    .append(Text.literal("] ").formatted(Formatting.GRAY))
+                    .append(Text.literal("⏰ ").formatted(Formatting.YELLOW))
+                    .append(Text.literal("Egg timer: ").formatted(Formatting.WHITE))
+                    .append(Text.literal(remaining + " minutes remaining").formatted(Formatting.AQUA))
+            );
+        } else {
+            source.sendFeedback(
+                Text.literal("[").formatted(Formatting.GRAY)
+                    .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                    .append(Text.literal("] ").formatted(Formatting.GRAY))
+                    .append(Text.literal("⏰ ").formatted(Formatting.YELLOW))
+                    .append(Text.literal("No egg timer is running").formatted(Formatting.GRAY))
+            );
+        }
+        
+        return 1;
+    }
+    
+    private static int setEggTimerDuration(CommandContext<FabricClientCommandSource> context) {
+        int minutes = IntegerArgumentType.getInteger(context, "minutes");
+        PokeAlertConfig config = ConfigManager.getConfig();
+        FabricClientCommandSource source = context.getSource();
+        
+        config.eggTimerDuration = minutes;
+        ConfigManager.updateConfig(config);
+        
+        source.sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] ").formatted(Formatting.GRAY))
+                .append(Text.literal("⏰ ").formatted(Formatting.YELLOW))
+                .append(Text.literal("Default egg timer duration set to ").formatted(Formatting.WHITE))
+                .append(Text.literal(minutes + " minutes").formatted(Formatting.AQUA))
+        );
         
         return 1;
     }

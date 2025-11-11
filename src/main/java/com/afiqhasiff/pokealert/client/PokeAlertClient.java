@@ -29,6 +29,7 @@ import com.afiqhasiff.pokealert.client.notification.InGameNotification;
 import com.afiqhasiff.pokealert.client.notification.NotificationManager;
 import com.afiqhasiff.pokealert.client.notification.PokemonSpawnData;
 import com.afiqhasiff.pokealert.client.notification.TelegramNotification;
+import com.afiqhasiff.pokealert.client.notification.EggTimerManager;
 
 public class PokeAlertClient implements ClientModInitializer {
     public static final String MOD_ID = "pokealert";
@@ -47,8 +48,9 @@ public class PokeAlertClient implements ClientModInitializer {
     public static final Identifier NOTIFICATION_SOUND_ID = Identifier.of(MOD_ID, "pla_notification");
     public static SoundEvent NOTIFICATION_SOUND_EVENT;
     
-    // Keybinding
+    // Keybindings
     public static KeyBinding toggleModKey;
+    public static KeyBinding startEggTimerKey;
     
     public static PokeAlertClient getInstance() {
         return instance;
@@ -76,11 +78,18 @@ public class PokeAlertClient implements ClientModInitializer {
         notificationManager.registerService(new InGameNotification());
         notificationManager.registerService(new TelegramNotification());
         
-        // Register keybinding
+        // Register keybindings
         toggleModKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
             "key.pokealert.toggle",
             InputUtil.Type.KEYSYM,
             GLFW.GLFW_KEY_SEMICOLON, // Default to ':' key
+            "key.categories.pokealert"
+        ));
+        
+        startEggTimerKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+            "key.pokealert.eggtimer",
+            InputUtil.Type.KEYSYM,
+            GLFW.GLFW_KEY_APOSTROPHE, // Default to '\'' key
             "key.categories.pokealert"
         ));
         
@@ -90,7 +99,7 @@ public class PokeAlertClient implements ClientModInitializer {
         LOGGER.info("PokéAlert initialized with {} whitelisted Pokemon (Mod Enabled: {})", whitelist.length, config.modEnabled);
         
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            // Process keybinding
+            // Process toggle mod keybinding
             while (toggleModKey.wasPressed()) {
                 config.modEnabled = !config.modEnabled;
                 ConfigManager.saveSettings(config);
@@ -106,6 +115,30 @@ public class PokeAlertClient implements ClientModInitializer {
                             .formatted(config.modEnabled ? Formatting.GREEN : Formatting.RED));
                     
                     client.player.sendMessage(message, false);
+                }
+            }
+            
+            // Process egg timer keybinding
+            while (startEggTimerKey.wasPressed()) {
+                EggTimerManager timerManager = EggTimerManager.getInstance();
+                
+                if (timerManager.isTimerRunning()) {
+                    // Timer already running, show remaining time
+                    if (client.player != null && config.inGameTextEnabled) {
+                        int remaining = timerManager.getRemainingMinutes();
+                        client.player.sendMessage(
+                            Text.literal("[").formatted(Formatting.GRAY)
+                                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                                .append(Text.literal("] ").formatted(Formatting.GRAY))
+                                .append(Text.literal("⏰ ").formatted(Formatting.YELLOW))
+                                .append(Text.literal("Egg timer already running: ").formatted(Formatting.WHITE))
+                                .append(Text.literal(remaining + " minutes remaining").formatted(Formatting.AQUA)),
+                            false
+                        );
+                    }
+                } else {
+                    // Start new timer
+                    timerManager.startTimer();
                 }
             }
             
