@@ -149,6 +149,7 @@ public class EggTimerManager {
                         .append(Text.literal("PokéAlert").formatted(Formatting.RED))
                         .append(Text.literal("] ").formatted(Formatting.GRAY))
                         .append(Text.literal("⏰ ").formatted(Formatting.YELLOW))
+                        .append(Text.literal("Egg timer: ").formatted(Formatting.WHITE))
                         .append(Text.literal(remaining + " minutes").formatted(Formatting.AQUA))
                         .append(Text.literal(" remaining. Press ").formatted(Formatting.WHITE))
                         .append(Text.literal("'").formatted(Formatting.GOLD))
