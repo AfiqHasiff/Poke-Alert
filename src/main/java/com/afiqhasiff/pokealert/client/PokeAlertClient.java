@@ -121,25 +121,7 @@ public class PokeAlertClient implements ClientModInitializer {
             // Process egg timer keybinding
             while (startEggTimerKey.wasPressed()) {
                 EggTimerManager timerManager = EggTimerManager.getInstance();
-                
-                if (timerManager.isTimerRunning()) {
-                    // Timer already running, show remaining time
-                    if (client.player != null && config.inGameTextEnabled) {
-                        int remaining = timerManager.getRemainingMinutes();
-                        client.player.sendMessage(
-                            Text.literal("[").formatted(Formatting.GRAY)
-                                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
-                                .append(Text.literal("] ").formatted(Formatting.GRAY))
-                                .append(Text.literal("⏰ ").formatted(Formatting.YELLOW))
-                                .append(Text.literal("Egg timer already running: ").formatted(Formatting.WHITE))
-                                .append(Text.literal(remaining + " minutes remaining").formatted(Formatting.AQUA)),
-                            false
-                        );
-                    }
-                } else {
-                    // Start new timer
-                    timerManager.startTimer();
-                }
+                timerManager.handleTimerToggle();
             }
             
             PlayerEntity player = client.player;

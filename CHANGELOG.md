@@ -10,23 +10,28 @@ All notable changes to PokéAlert will be documented in this file.
   - Provides helpful prompts to resolve conflicts
   - Shows warnings when adding Pokémon already in predefined categories
 
-- **Egg Timer Feature**:
+- **Enhanced Egg Timer Feature**:
   - Built-in egg hatching timer system
   - Default 30-minute timer (configurable from 1-120 minutes)
   - Customizable keybind (default: apostrophe ')
-  - Start timer with single keypress
-  - In-game and Telegram notifications on completion
+  - Smart toggle: Press once to start, again to show remaining time, twice within 3 seconds to cancel
+  - Only text notification on start (no sound/Telegram)
+  - Full notifications on completion (text, sound, Telegram with start time)
+  - 5-minute reminders with remaining time and expected end time
   - Commands: `/pokealert eggtimer start/stop/status/duration`
   - Mod Menu interface for duration and keybind configuration
 
 ### Changed
 - Updated version to 1.2.0
 - Enhanced list management logic with conflict resolution
+- README now highlights Cobblemon dependency upfront
+- Added note about own Pokémon detection with naming suggestions
 
 ### Technical Improvements
 - Added `EggTimerManager` for centralized timer management
 - Improved command feedback with better formatting
 - Enhanced Mod Menu with egg timer configuration section
+- Implemented scheduled reminders and cancel confirmation system
 
 ## [1.1.0] - Previous Release
 

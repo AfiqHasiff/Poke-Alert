@@ -3,12 +3,14 @@
 <div align="center">
   <img src="src/main/resources/icon.png" alt="PokéAlert Logo" width="128" height="128">
   
-  **Get notified when desirable Pokémon spawn near you!**
+  **A Cobblemon addon that notifies you when desirable Pokémon spawn near you!**
   
   [![Minecraft](https://img.shields.io/badge/Minecraft-1.21.1-green.svg)](https://minecraft.net)
   [![Fabric](https://img.shields.io/badge/Fabric-0.116.6-blue.svg)](https://fabricmc.net)
   [![Cobblemon](https://img.shields.io/badge/Cobblemon-1.6.1-orange.svg)](https://cobblemon.com)
 </div>
+
+> ⚠️ **Important Note**: This mod detects ALL Pokémon within range, including your own! To prevent your own Pokémon from triggering notifications, consider renaming them with a prefix or suffix (e.g., "-Charizard" or "Pikachu-").
 
 ## 🎮 Features
 
@@ -41,10 +43,12 @@ Configure detection for different Pokémon categories:
 - Toggle individual notification types (text, sound)
 
 #### ⏰ Egg Timer Feature
-- Built-in egg hatching timer with customizable duration
+- Built-in egg hatching timer with customizable duration (15-120 minutes)
 - Start timer with a single key press (default: ')
-- Both in-game and Telegram notifications when timer completes
-- Configurable default duration (15-120 minutes)
+- Press ' again while running to see remaining time, press twice to cancel
+- 5-minute reminders with remaining time and expected end time
+- Completion notifications via in-game text, sound, and Telegram
+- Shows timer start time when completed
 
 #### 📱 Telegram Integration
 - Real-time push notifications to your phone
