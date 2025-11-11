@@ -3,6 +3,7 @@ package com.afiqhasiff.pokealert.client.notification;
 import com.afiqhasiff.pokealert.client.PokeAlertClient;
 import com.afiqhasiff.pokealert.client.config.ConfigManager;
 import com.afiqhasiff.pokealert.client.config.TelegramConfig;
+import com.google.gson.JsonObject;
 import okhttp3.*;
 
 import java.io.IOException;

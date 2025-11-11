@@ -71,6 +71,7 @@ public class PokeAlertConfigScreen extends Screen {
     private static final int TOGGLE_WIDTH = 50;
     private static final int RESET_WIDTH = 55;
     private static final int BUTTON_HEIGHT = 20;
+    private static final int BUTTON_WIDTH = 120;
     private static final int ROW_HEIGHT = 30;  // Height for row with description
     private static final int SECTION_SPACING = 20;
     private static final int BUTTON_GAP = 5;
