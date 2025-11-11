@@ -120,6 +120,7 @@ public class TelegramNotification extends NotificationService {
      */
     public void sendEggTimerNotification(String message) {
         if (!isEnabled()) {
+            PokeAlertClient.LOGGER.debug("Egg timer Telegram notification skipped - service not enabled or config invalid");
             return;
         }
         

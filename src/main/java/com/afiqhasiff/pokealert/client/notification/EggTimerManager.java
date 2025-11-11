@@ -233,6 +233,7 @@ public class EggTimerManager {
         if (config.eggTimerTelegramNotification && config.telegramEnabled) {
             CompletableFuture.runAsync(() -> {
                 TelegramNotification telegram = new TelegramNotification();
+                telegram.initialize();
                 
                 // Build message using StringBuilder with existing pattern
                 StringBuilder message = new StringBuilder();

@@ -8,7 +8,8 @@ All notable changes to PokéAlert will be documented in this file.
 - **Smart Whitelist/Blacklist Conflict Detection**: 
   - Automatically detects when adding Pokémon that exists in opposite list
   - Provides helpful prompts to resolve conflicts
-  - Shows warnings when adding Pokémon already in predefined categories
+  - Requires confirmation when adding Pokémon already in predefined categories
+  - Run command twice within 10 seconds to confirm redundant additions
 
 - **Enhanced Egg Timer Feature**:
   - Built-in egg hatching timer system
@@ -30,8 +31,9 @@ All notable changes to PokéAlert will be documented in this file.
 ### Technical Improvements
 - Added `EggTimerManager` for centralized timer management
 - Improved command feedback with better formatting
-- Enhanced Mod Menu with egg timer configuration section
+- Enhanced Mod Menu with proper egg timer configuration section
 - Implemented scheduled reminders and cancel confirmation system
+- Added confirmation mechanism for redundant list additions
 
 ## [1.1.0] - Previous Release
 
