@@ -27,6 +27,7 @@ All notable changes to PokéAlert will be documented in this file.
 - Enhanced list management logic with conflict resolution
 - README now highlights Cobblemon dependency upfront
 - Added note about own Pokémon detection with naming suggestions
+- Egg timer duration options now include 1 and 5 minute settings
 
 ### Technical Improvements
 - Added `EggTimerManager` for centralized timer management
