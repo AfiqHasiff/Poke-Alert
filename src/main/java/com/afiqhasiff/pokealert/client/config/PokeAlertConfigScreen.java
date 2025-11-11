@@ -262,53 +262,55 @@ public class PokeAlertConfigScreen extends Screen {
         currentY += ROW_HEIGHT + SECTION_SPACING;
         
         // ========== Egg Timer Section ==========
-        // Egg timer duration field
-        currentY += 20;
-        eggTimerDurationButton = addDrawableChild(ButtonWidget.builder(
-                Text.literal("Egg Timer: " + config.eggTimerDuration + " min"),
-                button -> {
-                    // Cycle through common durations: 15, 30, 45, 60, 90, 120
-                    int current = config.eggTimerDuration;
-                    int newDuration;
-                    if (current < 30) newDuration = 30;
-                    else if (current < 45) newDuration = 45;
-                    else if (current < 60) newDuration = 60;
-                    else if (current < 90) newDuration = 90;
-                    else if (current < 120) newDuration = 120;
-                    else newDuration = 15;
-                    
-                    config.eggTimerDuration = newDuration;
-                    button.setMessage(Text.literal("Egg Timer: " + newDuration + " min"));
-                    ConfigManager.saveSettings(config);
-                })
-            .position(SIDE_MARGIN + 100, currentY - (int)scrollOffset)
-            .size(BUTTON_WIDTH, BUTTON_HEIGHT)
-            .build()
-        );
+        // Egg timer duration button - use addEggTimerRow for proper positioning
+        eggTimerDurationButton = addEggTimerRow(currentY,
+            "Egg Timer Duration",
+            "Default egg timer duration",
+            Text.literal("Duration: " + config.eggTimerDuration + " min"),
+            button -> {
+                // Cycle through common durations: 15, 30, 45, 60, 90, 120
+                int current = config.eggTimerDuration;
+                int newDuration;
+                if (current < 30) newDuration = 30;
+                else if (current < 45) newDuration = 45;
+                else if (current < 60) newDuration = 60;
+                else if (current < 90) newDuration = 90;
+                else if (current < 120) newDuration = 120;
+                else newDuration = 15;
+                
+                config.eggTimerDuration = newDuration;
+                button.setMessage(Text.literal("Duration: " + newDuration + " min"));
+                ConfigManager.saveSettings(config);
+            });
+        currentY += ROW_HEIGHT;
         
         // Egg timer keybind button
-        currentY += ROW_HEIGHT;
-        eggTimerKeybindButton = addDrawableChild(ButtonWidget.builder(
-                getEggTimerKeybindText(),
-                button -> {
-                    waitingForEggTimerKey = true;
-                    button.setMessage(Text.literal("> Press a key <").formatted(Formatting.YELLOW));
-                })
-            .position(SIDE_MARGIN + 100, currentY - (int)scrollOffset)
-            .size(BUTTON_WIDTH, BUTTON_HEIGHT)
-            .build()
-        );
+        eggTimerKeybindButton = addEggTimerRow(currentY,
+            "Timer Keybind",
+            "Start egg timer keybind",
+            getEggTimerKeybindText(),
+            button -> {
+                waitingForEggTimerKey = true;
+                button.setMessage(Text.literal("> Press a key <").formatted(Formatting.YELLOW));
+            });
         currentY += ROW_HEIGHT + SECTION_SPACING;
 
         // ========== Custom Lists Section ==========
-        // Whitelist text field
-        int labelWidth = 70;
-        int fieldWidth = this.width - (SIDE_MARGIN * 2) - labelWidth - 10; // Leave space for label and padding
+        // Calculate proper label width based on actual text rendering
+        int labelWidth = Math.max(
+            this.textRenderer.getWidth("Whitelist:"),
+            Math.max(
+                this.textRenderer.getWidth("Blacklist:"),
+                this.textRenderer.getWidth("Excluded:")
+            )
+        );
+        int fieldWidth = this.width - (SIDE_MARGIN * 2) - labelWidth - 15; // Increased gap for better spacing
+        int fieldX = SIDE_MARGIN + labelWidth + 10; // Consistent field starting position
         
-        currentY += 20;
+        // Whitelist text field
         whitelistField = new TextFieldWidget(
             this.textRenderer,
-            SIDE_MARGIN + labelWidth + 5,
+            fieldX,
             currentY - (int)scrollOffset,
             fieldWidth,
             BUTTON_HEIGHT,
@@ -324,7 +326,7 @@ public class PokeAlertConfigScreen extends Screen {
         // Blacklist text field
         blacklistField = new TextFieldWidget(
             this.textRenderer,
-            SIDE_MARGIN + labelWidth + 5,
+            fieldX,
             currentY - (int)scrollOffset,
             fieldWidth,
             BUTTON_HEIGHT,
@@ -340,7 +342,7 @@ public class PokeAlertConfigScreen extends Screen {
         // Excluded worlds text field
         excludedWorldsField = new TextFieldWidget(
             this.textRenderer,
-            SIDE_MARGIN + labelWidth + 5,
+            fieldX,
             currentY - (int)scrollOffset,
             fieldWidth,
             BUTTON_HEIGHT,
@@ -408,6 +410,20 @@ public class PokeAlertConfigScreen extends Screen {
         // Apply scroll offset to the y position
         int scrolledY = y - (int)scrollOffset;
         return addOptionRow(scrolledY, label, description, enabled, onPress, false);
+    }
+    
+    private ButtonWidget addEggTimerRow(int y, String label, String description, Text buttonText, ButtonWidget.PressAction onPress) {
+        // Apply scroll offset to the y position
+        int scrolledY = y - (int)scrollOffset;
+        int rightEdge = this.width - SIDE_MARGIN;
+        
+        // Custom button positioned at right edge
+        ButtonWidget button = ButtonWidget.builder(buttonText, onPress)
+            .dimensions(rightEdge - BUTTON_WIDTH, scrolledY, BUTTON_WIDTH, BUTTON_HEIGHT)
+            .build();
+        addDrawableChild(button);
+        
+        return button;
     }
 
     private ButtonWidget addOptionRow(int y, String label, String description, boolean enabled, ButtonWidget.PressAction onPress, boolean showReset) {
@@ -664,38 +680,11 @@ public class PokeAlertConfigScreen extends Screen {
         );
         
         // Egg timer duration label
-        currentY += 5;
-        context.drawTextWithShadow(
-            this.textRenderer,
-            Text.literal("Duration"),
-            SIDE_MARGIN,
-            currentY + 2,
-            0xFFFFFF
-        );
-        context.drawTextWithShadow(
-            this.textRenderer,
-            Text.literal("Default egg timer duration").formatted(Formatting.GRAY),
-            SIDE_MARGIN,
-            currentY + 12,
-            0x808080
-        );
+        drawCategoryWithDescription(context, "Egg Timer Duration", "Default egg timer duration", currentY);
         currentY += ROW_HEIGHT;
         
         // Egg timer keybind label  
-        context.drawTextWithShadow(
-            this.textRenderer,
-            Text.literal("Timer Key"),
-            SIDE_MARGIN,
-            currentY + 2,
-            0xFFFFFF
-        );
-        context.drawTextWithShadow(
-            this.textRenderer,
-            Text.literal("Start egg timer keybind").formatted(Formatting.GRAY),
-            SIDE_MARGIN,
-            currentY + 12,
-            0x808080
-        );
+        drawCategoryWithDescription(context, "Timer Keybind", "Start egg timer keybind", currentY);
         currentY += ROW_HEIGHT + SECTION_SPACING;
         
         // Draw separator line
