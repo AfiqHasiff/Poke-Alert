@@ -36,6 +36,11 @@ public class PokeAlertConfig {
     public int eggTimerDuration = 30; // Default 30 minutes
     public boolean eggTimerTextNotification = true;
     public boolean eggTimerTelegramNotification = true;
+    
+    // Realm Manager Automation Settings
+    public boolean realmManagerEnabled = true;
+    public int antiAfkKeybind = 329; // Default: Numpad 9 (GLFW.GLFW_KEY_KP_9)
+    public String realmReturnCommand = "/home new"; // Default command to return to main realm
 
     public String[] getCombinedWhitelist(){
         List<String> combinedList = new ArrayList<String>();

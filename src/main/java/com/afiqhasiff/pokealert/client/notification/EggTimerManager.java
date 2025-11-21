@@ -63,6 +63,13 @@ public class EggTimerManager {
     }
     
     public boolean handleTimerToggle() {
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        // Check if mod is enabled
+        if (!config.modEnabled) {
+            return false;
+        }
+        
         if (!isTimerRunning()) {
             // No timer running, start a new one
             return startTimer();

@@ -3,6 +3,7 @@ package com.afiqhasiff.pokealert.client;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
@@ -30,6 +31,7 @@ import com.afiqhasiff.pokealert.client.notification.NotificationManager;
 import com.afiqhasiff.pokealert.client.notification.PokemonSpawnData;
 import com.afiqhasiff.pokealert.client.notification.TelegramNotification;
 import com.afiqhasiff.pokealert.client.notification.EggTimerManager;
+import com.afiqhasiff.pokealert.client.automation.RealmManager;
 
 public class PokeAlertClient implements ClientModInitializer {
     public static final String MOD_ID = "pokealert";
@@ -51,6 +53,7 @@ public class PokeAlertClient implements ClientModInitializer {
     // Keybindings
     public static KeyBinding toggleModKey;
     public static KeyBinding startEggTimerKey;
+    public static KeyBinding realmManagerKey;
     
     public static PokeAlertClient getInstance() {
         return instance;
@@ -93,8 +96,26 @@ public class PokeAlertClient implements ClientModInitializer {
             "key.categories.pokealert"
         ));
         
+        realmManagerKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+            "key.pokealert.realmmanager",
+            InputUtil.Type.KEYSYM,
+            GLFW.GLFW_KEY_HOME, // Home key for realm manager automation
+            "key.categories.pokealert"
+        ));
+        
         // Register commands
         PokeAlertCommand.register();
+        
+        // Register connection event handlers for realm manager automation
+        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
+            RealmManager.getInstance().markConnected();
+            LOGGER.info("PokéAlert: Player connected to server");
+        });
+        
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+            RealmManager.getInstance().markDisconnected();
+            LOGGER.info("PokéAlert: Player disconnected from server");
+        });
         
         LOGGER.info("PokéAlert initialized with {} whitelisted Pokemon (Mod Enabled: {})", whitelist.length, config.modEnabled);
         
@@ -122,6 +143,20 @@ public class PokeAlertClient implements ClientModInitializer {
             while (startEggTimerKey.wasPressed()) {
                 EggTimerManager timerManager = EggTimerManager.getInstance();
                 timerManager.handleTimerToggle();
+            }
+            
+            // Process realm manager automation keybinding
+            while (realmManagerKey.wasPressed()) {
+                RealmManager realmManager = RealmManager.getInstance();
+                String status = realmManager.getStatus();
+                
+                // If there's an active server buffer countdown, cancel it
+                if (status.contains("Server Buffer")) {
+                    realmManager.cancelAutomation();
+                } else {
+                    // Otherwise toggle through modes
+                    realmManager.toggleAutomation();
+                }
             }
             
             PlayerEntity player = client.player;

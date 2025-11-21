@@ -1,6 +1,7 @@
 package com.afiqhasiff.pokealert.client.config;
 
 import com.afiqhasiff.pokealert.client.PokeAlertClient;
+import com.afiqhasiff.pokealert.client.automation.RealmManager;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -57,10 +58,18 @@ public class PokeAlertConfigScreen extends Screen {
     private ButtonWidget eggTimerKeybindButton;
     private boolean waitingForEggTimerKey = false;
     
+    // Realm manager settings
+    private ButtonWidget realmReturnToggleButton;
+    private ButtonWidget realmReturnKeybindButton;
+    private boolean waitingForRealmReturnKey = false;
+    private ButtonWidget antiAfkKeybindButton;
+    private boolean waitingForAntiAfkKey = false;
+    
     // Text fields
     private TextFieldWidget whitelistField;
     private TextFieldWidget blacklistField;
     private TextFieldWidget excludedWorldsField;
+    private TextFieldWidget realmReturnCommandField;
     
     // Bottom buttons
     private ButtonWidget saveButton;
@@ -297,6 +306,63 @@ public class PokeAlertConfigScreen extends Screen {
                 button.setMessage(Text.literal("> Press a key <").formatted(Formatting.YELLOW));
             });
         currentY += ROW_HEIGHT + SECTION_SPACING;
+        
+        // ========== Realm Manager Section ==========
+        // (Separator drawn in render() method)
+        
+        // Realm return toggle button
+        realmReturnToggleButton = addEggTimerRow(currentY,
+            "Realm Manager",
+            "Auto-return from spawn",
+            Text.literal(config.realmManagerEnabled ? "Enabled" : "Disabled"),
+            button -> {
+                config.realmManagerEnabled = !config.realmManagerEnabled;
+                button.setMessage(Text.literal(config.realmManagerEnabled ? "Enabled" : "Disabled"));
+                ConfigManager.saveSettings(config);
+            });
+        currentY += ROW_HEIGHT;
+        
+        // Realm return mode toggle keybind button
+        realmReturnKeybindButton = addEggTimerRow(currentY,
+            "Mode Toggle Key",
+            "Cycle through AUTO/MANUAL/OFF",
+            getRealmReturnKeybindText(),
+            button -> {
+                waitingForRealmReturnKey = true;
+                button.setMessage(Text.literal("> Press a key <").formatted(Formatting.YELLOW));
+            });
+        currentY += ROW_HEIGHT;
+        
+        // Anti-AFK keybind button
+        antiAfkKeybindButton = addEggTimerRow(currentY,
+            "Anti-AFK Keybind",
+            "Key for Anti-AFK toggle (Anti-afk functionality not provided by PokéAlert)",
+            getAntiAfkKeybindText(),
+            button -> {
+                waitingForAntiAfkKey = true;
+                button.setMessage(Text.literal("> Press a key <").formatted(Formatting.YELLOW));
+            });
+        currentY += ROW_HEIGHT;
+        
+        // Realm return command text field
+        int realmCmdLabelWidth = this.textRenderer.getWidth("Return Command:");
+        int realmCmdFieldWidth = this.width - (SIDE_MARGIN * 2) - realmCmdLabelWidth - 15;
+        int realmCmdFieldX = SIDE_MARGIN + realmCmdLabelWidth + 10;
+        
+        realmReturnCommandField = new TextFieldWidget(
+            this.textRenderer,
+            realmCmdFieldX,
+            currentY - (int)scrollOffset,
+            realmCmdFieldWidth,
+            BUTTON_HEIGHT,
+            Text.literal("Realm Manager Command")
+        );
+        realmReturnCommandField.setMaxLength(100);
+        realmReturnCommandField.setText(config.realmReturnCommand);
+        realmReturnCommandField.setPlaceholder(Text.literal("/home new").formatted(Formatting.GRAY));
+        addSelectableChild(realmReturnCommandField);
+        addDrawableChild(realmReturnCommandField);
+        currentY += 30 + SECTION_SPACING;
 
         // ========== Custom Lists Section ==========
         // Calculate proper label width based on actual text rendering
@@ -387,7 +453,7 @@ public class PokeAlertConfigScreen extends Screen {
 
     private ButtonWidget addMasterToggle(int y) {
         int rightEdge = this.width - SIDE_MARGIN;
-        int buttonX = rightEdge - TOGGLE_WIDTH - RESET_WIDTH - BUTTON_GAP;
+        int buttonX = rightEdge - BUTTON_WIDTH;
         
         ButtonWidget toggleButton = ButtonWidget.builder(
             getMasterToggleText(config.modEnabled),
@@ -396,7 +462,7 @@ public class PokeAlertConfigScreen extends Screen {
                 updateMasterToggleButton(modEnabledButton, config.modEnabled);
             }
         )
-        .dimensions(buttonX, y, TOGGLE_WIDTH * 2, BUTTON_HEIGHT)
+        .dimensions(buttonX, y, BUTTON_WIDTH, BUTTON_HEIGHT)
         .build();
         addDrawableChild(toggleButton);
         
@@ -445,9 +511,9 @@ public class PokeAlertConfigScreen extends Screen {
         
         // Reset button (only for categories)
         if (showReset) {
-            ButtonWidget resetButton = ButtonWidget.builder(
-                Text.literal("Reset").formatted(Formatting.GRAY),
-                button -> {
+        ButtonWidget resetButton = ButtonWidget.builder(
+            Text.literal("Reset").formatted(Formatting.GRAY),
+            button -> {
                     boolean defaultValue = getDefaultValue(label);
                     resetCategory(label, defaultValue);
                 }
@@ -465,28 +531,28 @@ public class PokeAlertConfigScreen extends Screen {
     }
 
     private void resetCategory(String label, boolean value) {
-        if (label.contains("Legendary")) {
+                if (label.contains("Legendary")) {
             config.broadcastAllLegendaries = value;
             updateToggleButton(legendariesButton, value);
-        } else if (label.contains("Mythical")) {
+                } else if (label.contains("Mythical")) {
             config.broadcastAllMythics = value;
             updateToggleButton(mythicsButton, value);
-        } else if (label.contains("Starter")) {
-            config.broadcastAllStarter = false;
-            updateToggleButton(starterButton, false);
-        } else if (label.contains("Baby")) {
-            config.broadcastAllBabies = false;
-            updateToggleButton(babiesButton, false);
-        } else if (label.contains("Ultra")) {
-            config.broadcastAllUltraBeasts = false;
-            updateToggleButton(ultraBeastsButton, false);
-        } else if (label.contains("Shiny")) {
-            config.broadcastAllShinies = true;
-            updateToggleButton(shiniesButton, true);
-        } else if (label.contains("Paradox")) {
-            config.broadcastAllParadox = false;
-            updateToggleButton(paradoxButton, false);
-        }
+                } else if (label.contains("Starter")) {
+                    config.broadcastAllStarter = false;
+                    updateToggleButton(starterButton, false);
+                } else if (label.contains("Baby")) {
+                    config.broadcastAllBabies = false;
+                    updateToggleButton(babiesButton, false);
+                } else if (label.contains("Ultra")) {
+                    config.broadcastAllUltraBeasts = false;
+                    updateToggleButton(ultraBeastsButton, false);
+                } else if (label.contains("Shiny")) {
+                    config.broadcastAllShinies = true;
+                    updateToggleButton(shiniesButton, true);
+                } else if (label.contains("Paradox")) {
+                    config.broadcastAllParadox = false;
+                    updateToggleButton(paradoxButton, false);
+                }
     }
 
     private void updateToggleButton(ButtonWidget button, boolean enabled) {
@@ -519,6 +585,10 @@ public class PokeAlertConfigScreen extends Screen {
         // Parse excluded worlds
         String worldsText = excludedWorldsField.getText().trim();
         config.excludedWorlds = parseList(worldsText);
+        
+        // Parse realm return command
+        String realmCmd = realmReturnCommandField.getText().trim();
+        config.realmReturnCommand = realmCmd.isEmpty() ? "/home new" : realmCmd;
 
         // Save configuration
         ConfigManager.updateConfig(config);
@@ -693,6 +763,40 @@ public class PokeAlertConfigScreen extends Screen {
         // Draw separator line
         drawHorizontalSeparator(context, currentY - 10);
         
+        // Realm Manager header
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("Realm Manager").formatted(Formatting.AQUA),
+            SIDE_MARGIN,
+            currentY - 15,
+            0xFFFFFF
+        );
+        
+        // Realm return toggle label
+        drawCategoryWithDescription(context, "Realm Manager", "Auto-return from spawn", currentY);
+        currentY += ROW_HEIGHT;
+        
+        // Realm return mode toggle keybind label
+        drawCategoryWithDescription(context, "Mode Toggle Key", "Cycle through AUTO/MANUAL/OFF", currentY);
+        currentY += ROW_HEIGHT;
+        
+        // Anti-AFK keybind label
+        drawCategoryWithDescription(context, "Anti-AFK Keybind", "Key for Anti-AFK toggle (used by automation)", currentY);
+        currentY += ROW_HEIGHT;
+        
+        // Realm return command label
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("Return Command:"),
+            SIDE_MARGIN,
+            currentY + 2,
+            0xFFFFFF
+        );
+        currentY += 30 + SECTION_SPACING;
+        
+        // Draw separator line
+        drawHorizontalSeparator(context, currentY - 10);
+        
         // Custom Lists header
         context.drawTextWithShadow(
             this.textRenderer,
@@ -844,8 +948,42 @@ public class PokeAlertConfigScreen extends Screen {
             return true;
         }
         
+        // Handle keybind setting for realm return
+        if (waitingForRealmReturnKey) {
+            // Don't rebind to Escape key
+            if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                waitingForRealmReturnKey = false;
+                realmReturnKeybindButton.setMessage(getRealmReturnKeybindText());
+                return true;
+            }
+            
+            // Update the realm manager keybinding
+            PokeAlertClient.realmManagerKey.setBoundKey(InputUtil.Type.KEYSYM.createFromCode(keyCode));
+            KeyBinding.updateKeysByCode();
+            waitingForRealmReturnKey = false;
+            realmReturnKeybindButton.setMessage(getRealmReturnKeybindText());
+            return true;
+        }
+        
+        // Handle keybind setting for Anti-AFK
+        if (waitingForAntiAfkKey) {
+            // Don't rebind to Escape key
+            if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                waitingForAntiAfkKey = false;
+                antiAfkKeybindButton.setMessage(getAntiAfkKeybindText());
+                return true;
+            }
+            
+            // Update the Anti-AFK keybinding
+            config.antiAfkKeybind = keyCode;
+            ConfigManager.saveSettings(config);
+            waitingForAntiAfkKey = false;
+            antiAfkKeybindButton.setMessage(getAntiAfkKeybindText());
+            return true;
+        }
+        
         // Allow escape to close the screen when not setting keybind
-        if (keyCode == GLFW.GLFW_KEY_ESCAPE && !waitingForKey && !waitingForEggTimerKey) {
+        if (keyCode == GLFW.GLFW_KEY_ESCAPE && !waitingForKey && !waitingForEggTimerKey && !waitingForRealmReturnKey && !waitingForAntiAfkKey) {
             this.close();
             return true;
         }
@@ -873,6 +1011,18 @@ public class PokeAlertConfigScreen extends Screen {
     
     private Text getEggTimerKeybindText() {
         String keyName = PokeAlertClient.startEggTimerKey.getBoundKeyLocalizedText().getString();
+        return Text.literal("Key: ").formatted(Formatting.WHITE)
+            .append(Text.literal(keyName).formatted(Formatting.YELLOW));
+    }
+    
+    private Text getRealmReturnKeybindText() {
+        String keyName = PokeAlertClient.realmManagerKey.getBoundKeyLocalizedText().getString();
+        return Text.literal("Key: ").formatted(Formatting.WHITE)
+            .append(Text.literal(keyName).formatted(Formatting.YELLOW));
+    }
+    
+    private Text getAntiAfkKeybindText() {
+        String keyName = InputUtil.Type.KEYSYM.createFromCode(config.antiAfkKeybind).getLocalizedText().getString();
         return Text.literal("Key: ").formatted(Formatting.WHITE)
             .append(Text.literal(keyName).formatted(Formatting.YELLOW));
     }

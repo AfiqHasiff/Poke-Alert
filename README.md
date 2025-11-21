@@ -141,6 +141,11 @@ PokéAlert provides a comprehensive command system for quick configuration:
    - Notification toggles (text, sound, telegram)
    - Sound volume control (0-100%)
    - Egg timer duration and keybind settings
+   - Realm Manager settings:
+     - Master toggle for automation
+     - Mode cycling keybind (default: Home)
+     - Anti-AFK keybind configuration (default: Numpad 9)
+     - Realm return command (default: /home new)
 4. Save and apply changes
 
 ### Via Config File
@@ -164,7 +169,10 @@ Edit `.minecraft/config/pokealert.json`:
   "excludedWorlds": ["spawn"],
   "eggTimerDuration": 30,
   "eggTimerTextNotification": true,
-  "eggTimerTelegramNotification": true
+  "eggTimerTelegramNotification": true,
+  "realmManagerEnabled": true,
+  "antiAfkKeybind": 329,
+  "realmReturnCommand": "/home new"
 }
 ```
 
@@ -209,6 +217,103 @@ cd poke-alert
 ```
 
 The built jar will be in `build/libs/`
+
+## 🤖 Realm Manager Automation
+
+This feature automates returning to the main realm after disconnects or server restarts when using Anti-AFK systems.
+
+#### Setup Requirements:
+1. **Anti-AFK System**  Keybind configured (default: Numpad 9, customizable in Mod Menu)
+2. Server must have a realm return command (assuming you've sethome at another realm other than spawn) (default: `/home new`, customizable in Mod Menu)
+3. Configure keybinds and commands in Mod Menu → Realm Manager section
+
+#### Automation Modes:
+The system has 3 modes that you can cycle through with the `Home` key:
+
+1. **AUTO Mode** (Default): Smart detection for all scenarios
+   - **Always**: Disables Anti-AFK immediately upon spawn detection
+   - **Always**: Waits 30 seconds for server realm-switch buffer
+   - Shows countdown timer during the wait period
+   - Press `Home` to cancel anytime during the 30s wait
+   - Handles both reconnects and realm crashes/transfers
+
+2. **MANUAL Mode**: Only triggers via command
+   - Use `/pokealert realm trigger`
+   - Full control over when to return
+
+3. **DISABLED**: Completely off
+
+#### How It Works:
+
+**All Spawn Scenarios (Reconnect/Realm Crash/Manual Visit):**
+1. **[Step 1/6]** Detects arrival at spawn world
+   - 6-second initialization period for accurate state detection
+2. **[Step 2/6]** Anti-AFK Check
+   - **Immediately disables Anti-AFK** to prevent unwanted movement
+   - Verifies state before taking action
+3. **[Step 3/6]** Server Buffer - Waits 30 seconds
+   - Server-mandated cooldown to prevent rapid realm switching
+   - Shows single waiting message (no spam)
+   - Press `Home` to cancel anytime
+4. **[Step 4/6]** Realm Change - Executes return command
+   - Sends configured command (e.g., `/home new`)
+5. **[Step 5/6]** Anti-AFK Enable - Re-enables at overworld
+   - Waits for teleport and state initialization
+   - 17-second smart delay ensures state is ready
+6. **[Step 6/6]** Completion - Automation finished
+
+**Why the 30-second wait?**
+- Servers have built-in cooldowns for realm switching
+- Attempting to switch too soon results in errors or blocks
+- The wait ensures smooth realm transitions
+
+**Anti-AFK Detection & Toggle**:
+- **Movement-Based State Detection**:
+  - Monitors player position, sneaking, and sprinting every 200ms
+  - 6-second warm-up period after initialization for accurate state detection
+  - Automatic reset on realm changes and teleportation (>50 blocks)
+  - Position-based teleport detection disabled during automation (prevents double reset)
+  - Prevents false positives from disconnect/reconnect
+- **Toggle Method**:
+  - GLFW-level key simulation using configured keybind (default: Numpad 9)
+  - Post-verification to ensure toggle succeeded
+  - Always verifies state before toggling
+  - Waits up to 5 seconds for state initialization before toggling
+- **Continuous Safety Monitor**:
+  - Background monitoring every 3 seconds throughout automation
+  - Verifies state matches expected (OFF at spawn, ON at overworld)
+  - Automatically detects and corrects state mismatches
+  - Paused during Step 5/6 to prevent race conditions
+  - Restarts process gracefully if anomaly detected
+- **Smart Safeguards**:
+  - Refuses toggle if state unknown (no blind toggles)
+  - 17-second delay after teleport for state re-initialization
+  - World change detection with immediate tracking reset
+  - Disconnect/reconnect position tracking reset
+  - All scheduled tasks cancelled on restart to prevent stale execution
+
+#### Usage:
+- **Cycle Modes:** Press `Home` key
+  - If you cycle to AUTO mode while at spawn → Automatically starts return sequence
+  - If you cycle to AUTO mode at overworld → Shows "no return needed" message
+- **Cancel Automation:** Press `Home` during countdown
+- **Check Status:** `/pokealert realm`
+- **Manual Trigger:** `/pokealert realm trigger`
+
+#### Notifications:
+- **In-Game:** Clean, simplified step-by-step progress (6 total messages)
+  - Step indicators [X/6] for easy tracking
+  - Standardized yellow color scheme
+  - Descriptive step names (Spawn Detection, Anti-AFK Check, Server Buffer, Realm Change, Anti-AFK Enable, Completion)
+  - Safety alerts in red if anomaly detected (paused during Step 5/6)
+- **Telegram:** Success/failure notifications with mode and realm transition
+- **Stuck Alert:** Warning if stuck at spawn > 3 minutes
+
+#### Important Notes:
+- Disabled by default in config
+- Requires proper Anti-AFK setup
+- WILL NOT work on all servers
+- Use at your own risk!
 
 ## 📝 License
 

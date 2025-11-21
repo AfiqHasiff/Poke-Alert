@@ -5,6 +5,7 @@ import com.afiqhasiff.pokealert.client.config.ConfigManager;
 import com.afiqhasiff.pokealert.client.config.PokeAlertConfig;
 import com.afiqhasiff.pokealert.client.util.PokemonLists;
 import com.afiqhasiff.pokealert.client.notification.EggTimerManager;
+import com.afiqhasiff.pokealert.client.automation.RealmManager;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
@@ -160,6 +161,11 @@ public class PokeAlertCommand {
                         .then(ClientCommandManager.literal("duration")
                             .then(ClientCommandManager.argument("minutes", IntegerArgumentType.integer(1, 120))
                                 .executes(context -> setEggTimerDuration(context)))))
+                    // Realm manager commands
+                    .then(ClientCommandManager.literal("realm")
+                        .executes(context -> checkRealmStatus(context))
+                        .then(ClientCommandManager.literal("trigger")
+                            .executes(context -> triggerRealmReturn(context))))
             );
         });
     }
@@ -345,6 +351,72 @@ public class PokeAlertCommand {
             .append(Text.literal("telegram").formatted(Formatting.DARK_BLUE)));
         
         source.sendFeedback(Text.empty()); // Empty line
+        
+        // Realm Manager features (only show if enabled)
+        PokeAlertConfig config = PokeAlertClient.getInstance().config;
+        if (config.realmManagerEnabled) {
+            source.sendFeedback(Text.literal("━━━ ").formatted(Formatting.DARK_GRAY)
+                .append(Text.literal("Realm Manager").formatted(Formatting.LIGHT_PURPLE))
+                .append(Text.literal(" ━━━").formatted(Formatting.DARK_GRAY)));
+            
+            // Description
+            source.sendFeedback(
+                Text.literal("  ").formatted(Formatting.GRAY)
+                    .append(Text.literal("Automatically returns from spawn to overworld realm").formatted(Formatting.WHITE))
+            );
+            source.sendFeedback(
+                Text.literal("  ").formatted(Formatting.GRAY)
+                    .append(Text.literal("Manages Anti-AFK during realm transitions").formatted(Formatting.WHITE))
+            );
+            source.sendFeedback(Text.empty()); // Empty line
+            
+            // Modes
+            source.sendFeedback(Text.literal("  Modes:").formatted(Formatting.AQUA));
+            source.sendFeedback(
+                Text.literal("    • ").formatted(Formatting.DARK_GRAY)
+                    .append(Text.literal("AUTO").formatted(Formatting.GREEN))
+                    .append(Text.literal(" - Automatically triggers on spawn detection").formatted(Formatting.WHITE))
+            );
+            source.sendFeedback(
+                Text.literal("    • ").formatted(Formatting.DARK_GRAY)
+                    .append(Text.literal("MANUAL").formatted(Formatting.YELLOW))
+                    .append(Text.literal(" - Only triggers via command").formatted(Formatting.WHITE))
+            );
+            source.sendFeedback(
+                Text.literal("    • ").formatted(Formatting.DARK_GRAY)
+                    .append(Text.literal("OFF").formatted(Formatting.RED))
+                    .append(Text.literal(" - Disabled").formatted(Formatting.WHITE))
+            );
+            source.sendFeedback(Text.empty()); // Empty line
+            
+            // Commands
+            source.sendFeedback(Text.literal("  Commands:").formatted(Formatting.AQUA));
+            source.sendFeedback(
+                Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+                    .append(Text.literal("realm").formatted(Formatting.GREEN))
+                    .append(Text.literal(" - ").formatted(Formatting.DARK_GRAY))
+                    .append(Text.literal("Check realm automation status").formatted(Formatting.WHITE))
+            );
+            source.sendFeedback(
+                Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+                    .append(Text.literal("realm trigger").formatted(Formatting.GREEN))
+                    .append(Text.literal(" - ").formatted(Formatting.DARK_GRAY))
+                    .append(Text.literal("Manually trigger realm return").formatted(Formatting.WHITE))
+            );
+            source.sendFeedback(Text.empty()); // Empty line
+            
+            // Keybind
+            source.sendFeedback(
+                Text.literal("  ").formatted(Formatting.GRAY)
+                    .append(Text.literal("🏠").formatted(Formatting.AQUA))
+                    .append(Text.literal(" Press ").formatted(Formatting.WHITE))
+                    .append(Text.literal("[").formatted(Formatting.DARK_GRAY))
+                    .append(Text.literal("Home").formatted(Formatting.GOLD, Formatting.BOLD))
+                    .append(Text.literal("]").formatted(Formatting.DARK_GRAY))
+                    .append(Text.literal(" to cycle modes or cancel active automation").formatted(Formatting.GRAY))
+            );
+            source.sendFeedback(Text.empty()); // Empty line
+        }
         
         // Footer tip
         source.sendFeedback(Text.literal("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━").formatted(Formatting.DARK_GRAY));
@@ -1116,6 +1188,42 @@ public class PokeAlertCommand {
                 .append(Text.literal("Default egg timer duration set to ").formatted(Formatting.WHITE))
                 .append(Text.literal(minutes + " minutes").formatted(Formatting.AQUA))
         );
+        
+        return 1;
+    }
+    
+    private static int checkRealmStatus(CommandContext<FabricClientCommandSource> context) {
+        FabricClientCommandSource source = context.getSource();
+        RealmManager manager = RealmManager.getInstance();
+        
+        source.sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokeAlert").formatted(Formatting.RED))
+                .append(Text.literal("] ").formatted(Formatting.GRAY))
+                .append(Text.literal("Realm Manager Status: ").formatted(Formatting.WHITE))
+                .append(Text.literal(manager.getStatus()).formatted(
+                    manager.getStatus().equals("Disabled") ? Formatting.RED :
+                    manager.getStatus().startsWith("Running") ? Formatting.YELLOW :
+                    Formatting.GREEN
+                ))
+        );
+        
+        if (manager.isAtSpawn() && source.getClient().player != null) {
+            source.sendFeedback(
+                Text.literal("  ")
+                    .append(Text.literal("⚠ ").formatted(Formatting.YELLOW))
+                    .append(Text.literal("Currently at spawn world").formatted(Formatting.YELLOW))
+            );
+        }
+        
+        return 1;
+    }
+    
+    private static int triggerRealmReturn(CommandContext<FabricClientCommandSource> context) {
+        FabricClientCommandSource source = context.getSource();
+        RealmManager manager = RealmManager.getInstance();
+        
+        manager.manualTrigger();
         
         return 1;
     }

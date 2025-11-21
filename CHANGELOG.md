@@ -2,6 +2,84 @@
 
 All notable changes to PokéAlert will be documented in this file.
 
+## [2.0.0] - 2024-11-20
+
+### Overview
+
+Complete overhaul of the Realm Manager system with improved reliability, accurate state detection, and optimized timing.
+
+### ✨ Major Improvements
+
+#### **6-Step Automation Flow**
+- **[Step 1/6] Spawn Detection**: Detects arrival at spawn realm with 6-second initialization
+- **[Step 2/6] Anti-AFK Check**: Verifies and disables Anti-AFK
+- **[Step 3/6] Server Buffer**: 30-second wait with single clean message
+- **[Step 4/6] Realm Change**: Executes teleport command
+- **[Step 5/6] Anti-AFK Enable**: Re-enables Anti-AFK at overworld
+- **[Step 6/6] Completion**: Clean automation finish
+
+Benefits:
+- Clear separation of concerns (detection vs action)
+- Explicit verification step
+- Easier debugging with descriptive step names
+- Better user feedback at each stage
+
+#### **Accurate Spawn Detection**
+- 6-second warm-up period for reliable initial state detection
+- Accounts for Anti-AFK script initialization time
+- Prevents false negatives on server join
+
+#### **Anti-AFK Toggle at Overworld**
+- 17-second smart delay accounts for teleport and warm-up
+- Position-based teleport detection disabled during automation
+- Prevents double teleport reset issue
+
+#### **Safety Monitor Improvements**
+- Safety monitor paused during Step 5/6 toggle operation
+- Prevents race condition between toggle execution and state check
+- Cleaner logs
+
+### 🔧 Technical Improvements
+
+#### **Movement-Based State Detection**
+- Continuous background monitoring every 200ms
+- 6-second warm-up period for accurate initial readings
+- Global `currentAntiAfkState` variable updated by background thread
+- Never performs blind toggles - always verifies state first
+- Waits up to 5 seconds for state initialization before toggling
+
+#### **Smart Teleport Handling**
+- World change detection with automatic tracking reset
+- Position-based teleport detection (>50 blocks)
+- Teleport detection disabled during automation to prevent double reset
+- Prevents warm-up timer from being reset mid-automation
+
+#### **Enhanced Safety Monitor**
+- Runs every 3 seconds throughout entire process
+- Location-aware: expects OFF at spawn, ON at overworld
+- Paused during Step 5/6 to prevent race conditions
+- Graceful restart on anomaly detection
+- All scheduled tasks cancelled on restart (prevents stale execution)
+
+#### **Timing Optimizations**
+- `WARM_UP_PERIOD`: 6000ms for accurate state detection
+- `TELEPORT_WAIT_TIME`: 17000ms to account for teleport and warm-up
+- `ANTIAFK_TOGGLE_DELAY`: 100ms for responsive toggling
+- Total automation time: ~65 seconds
+
+### Performance Improvements
+
+- Reliable spawn detection
+- Consistent Anti-AFK toggling at both spawn and overworld
+- Eliminated false safety alerts
+- Optimized timing for ~65 second automation cycle
+
+### Migration Notes
+- Config is fully backward compatible
+- Existing configs will work without changes
+
+---
+
 ## [1.2.0] - 2024-11-11
 
 ### Added
