@@ -92,11 +92,17 @@ public class EggTimerManager {
     }
     
     public boolean stopTimer() {
+        return stopTimer(false);
+    }
+    
+    public boolean stopTimer(boolean silent) {
         if (currentTimer != null && !currentTimer.isDone()) {
             currentTimer.cancel(false);
             currentTimer = null;
             stopReminders();
-            sendCancelNotification();
+            if (!silent) {
+                sendCancelNotification();
+            }
             return true;
         }
         return false;

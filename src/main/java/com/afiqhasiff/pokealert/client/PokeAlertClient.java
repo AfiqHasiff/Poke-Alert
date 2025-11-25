@@ -13,6 +13,7 @@ import net.minecraft.registry.Registries;
 import net.minecraft.registry.Registry;
 import net.minecraft.sound.SoundEvent;
 import net.minecraft.text.Text;
+import net.minecraft.text.MutableText;
 import net.minecraft.util.Formatting;
 import net.minecraft.util.Identifier;
 import org.lwjgl.glfw.GLFW;
@@ -54,6 +55,10 @@ public class PokeAlertClient implements ClientModInitializer {
     public static KeyBinding toggleModKey;
     public static KeyBinding startEggTimerKey;
     public static KeyBinding realmManagerKey;
+    
+    // Confirmation tracking for disabling with running modules
+    private long lastDisableAttemptTime = 0;
+    private static final long DISABLE_CONFIRM_WINDOW = 3000; // 3 seconds in milliseconds
     
     public static PokeAlertClient getInstance() {
         return instance;
@@ -122,31 +127,155 @@ public class PokeAlertClient implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             // Process toggle mod keybinding
             while (toggleModKey.wasPressed()) {
-                config.modEnabled = !config.modEnabled;
-                ConfigManager.saveSettings(config);
-                
-                // Send feedback message only if in-game text is enabled
-                if (client.player != null && config.inGameTextEnabled) {
-                    Text message = Text.literal("[")
-                        .formatted(Formatting.GRAY)
-                        .append(Text.literal("PokeAlert").formatted(Formatting.RED))
-                        .append(Text.literal("] ").formatted(Formatting.GRAY))
-                        .append(Text.literal("Mod ").formatted(Formatting.WHITE))
-                        .append(Text.literal(config.modEnabled ? "Enabled" : "Disabled")
-                            .formatted(config.modEnabled ? Formatting.GREEN : Formatting.RED));
+                // Check if we're trying to disable the mod
+                if (config.modEnabled) {
+                    // Check if any modules are running
+                    boolean eggTimerWasRunning = EggTimerManager.getInstance().isTimerRunning();
+                    boolean realmManagerWasRunning = RealmManager.getInstance().isRunning();
+                    boolean hasRunningModules = eggTimerWasRunning || realmManagerWasRunning;
                     
-                    client.player.sendMessage(message, false);
+                    if (hasRunningModules) {
+                        long currentTime = System.currentTimeMillis();
+                        boolean withinConfirmWindow = (currentTime - lastDisableAttemptTime) < DISABLE_CONFIRM_WINDOW;
+                        
+                        if (!withinConfirmWindow) {
+                            // First attempt - show warning with details
+                            lastDisableAttemptTime = currentTime;
+                            
+                            if (client.player != null && config.inGameTextEnabled) {
+                                MutableText message = Text.literal("[")
+                                    .formatted(Formatting.GRAY)
+                                    .append(Text.literal("PokeAlert").formatted(Formatting.RED))
+                                    .append(Text.literal("] ").formatted(Formatting.GRAY))
+                                    .append(Text.literal("Warning: ").formatted(Formatting.YELLOW));
+                                
+                                if (eggTimerWasRunning && realmManagerWasRunning) {
+                                    int remainingMins = EggTimerManager.getInstance().getRemainingMinutes();
+                                    message.append(Text.literal("Egg Timer (").formatted(Formatting.WHITE))
+                                        .append(Text.literal(remainingMins + " min").formatted(Formatting.AQUA))
+                                        .append(Text.literal(") & Realm Manager running").formatted(Formatting.WHITE));
+                                } else if (eggTimerWasRunning) {
+                                    int remainingMins = EggTimerManager.getInstance().getRemainingMinutes();
+                                    message.append(Text.literal("Egg Timer running (").formatted(Formatting.WHITE))
+                                        .append(Text.literal(remainingMins + " min remaining").formatted(Formatting.AQUA))
+                                        .append(Text.literal(")").formatted(Formatting.WHITE));
+                                } else {
+                                    message.append(Text.literal("Realm Manager active").formatted(Formatting.WHITE));
+                                }
+                                
+                                message.append(Text.literal(" - Press again within 3s to force stop").formatted(Formatting.GRAY));
+                                client.player.sendMessage(message, false);
+                            }
+                            continue; // Don't disable yet
+                        }
+                        
+                        // Second attempt within window - proceed with forced disable
+                        lastDisableAttemptTime = 0; // Reset confirmation
+                        
+                        // Cancel egg timer if running
+                        if (eggTimerWasRunning) {
+                            EggTimerManager.getInstance().stopTimer(true); // true = silent stop
+                        }
+                        
+                        // Cancel realm manager if running
+                        if (realmManagerWasRunning) {
+                            RealmManager.getInstance().stopAutomation();
+                        }
+                        
+                        // Disable mod
+                        config.modEnabled = false;
+                        ConfigManager.saveSettings(config);
+                        
+                        // Send feedback message with what was cancelled
+                        if (client.player != null && config.inGameTextEnabled) {
+                            MutableText message = Text.literal("[")
+                                .formatted(Formatting.GRAY)
+                                .append(Text.literal("PokeAlert").formatted(Formatting.RED))
+                                .append(Text.literal("] ").formatted(Formatting.GRAY))
+                                .append(Text.literal("Mod ").formatted(Formatting.WHITE))
+                                .append(Text.literal("Disabled").formatted(Formatting.RED))
+                                .append(Text.literal(" - ").formatted(Formatting.GRAY));
+                            
+                            if (eggTimerWasRunning && realmManagerWasRunning) {
+                                message.append(Text.literal("Egg Timer & Realm Manager force stopped").formatted(Formatting.YELLOW));
+                            } else if (eggTimerWasRunning) {
+                                message.append(Text.literal("Egg Timer force stopped").formatted(Formatting.YELLOW));
+                            } else {
+                                message.append(Text.literal("Realm Manager force stopped").formatted(Formatting.YELLOW));
+                            }
+                            
+                            client.player.sendMessage(message, false);
+                        }
+                    } else {
+                        // No running modules - disable normally
+                        config.modEnabled = false;
+                        ConfigManager.saveSettings(config);
+                        lastDisableAttemptTime = 0; // Reset confirmation
+                        
+                        if (client.player != null && config.inGameTextEnabled) {
+                            MutableText message = Text.literal("[")
+                                .formatted(Formatting.GRAY)
+                                .append(Text.literal("PokeAlert").formatted(Formatting.RED))
+                                .append(Text.literal("] ").formatted(Formatting.GRAY))
+                                .append(Text.literal("Mod ").formatted(Formatting.WHITE))
+                                .append(Text.literal("Disabled").formatted(Formatting.RED));
+                            
+                            client.player.sendMessage(message, false);
+                        }
+                    }
+                } else {
+                    // Enabling mod - always allowed
+                    config.modEnabled = true;
+                    ConfigManager.saveSettings(config);
+                    lastDisableAttemptTime = 0; // Reset confirmation
+                    
+                    if (client.player != null && config.inGameTextEnabled) {
+                        MutableText message = Text.literal("[")
+                            .formatted(Formatting.GRAY)
+                            .append(Text.literal("PokeAlert").formatted(Formatting.RED))
+                            .append(Text.literal("] ").formatted(Formatting.GRAY))
+                            .append(Text.literal("Mod ").formatted(Formatting.WHITE))
+                            .append(Text.literal("Enabled").formatted(Formatting.GREEN));
+                        
+                        client.player.sendMessage(message, false);
+                    }
                 }
             }
             
             // Process egg timer keybinding
             while (startEggTimerKey.wasPressed()) {
+                // Check if mod is disabled
+                if (!config.modEnabled) {
+                    if (client.player != null && config.inGameTextEnabled) {
+                        Text message = Text.literal("[")
+                            .formatted(Formatting.GRAY)
+                            .append(Text.literal("PokeAlert").formatted(Formatting.RED))
+                            .append(Text.literal("] ").formatted(Formatting.GRAY))
+                            .append(Text.literal("Egg Timer disabled - Enable PokeAlert first").formatted(Formatting.YELLOW));
+                        client.player.sendMessage(message, false);
+                    }
+                    continue;
+                }
+                
                 EggTimerManager timerManager = EggTimerManager.getInstance();
                 timerManager.handleTimerToggle();
             }
             
             // Process realm manager automation keybinding
             while (realmManagerKey.wasPressed()) {
+                // Check if mod is disabled
+                if (!config.modEnabled) {
+                    if (client.player != null && config.inGameTextEnabled) {
+                        Text message = Text.literal("[")
+                            .formatted(Formatting.GRAY)
+                            .append(Text.literal("PokeAlert").formatted(Formatting.RED))
+                            .append(Text.literal("] ").formatted(Formatting.GRAY))
+                            .append(Text.literal("Realm Manager disabled - Enable PokeAlert first").formatted(Formatting.YELLOW));
+                        client.player.sendMessage(message, false);
+                    }
+                    continue;
+                }
+                
                 RealmManager realmManager = RealmManager.getInstance();
                 String status = realmManager.getStatus();
                 

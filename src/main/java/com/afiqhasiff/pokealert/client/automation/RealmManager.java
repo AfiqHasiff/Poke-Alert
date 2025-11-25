@@ -67,10 +67,9 @@ public class RealmManager {
         CANCELLED
     }
     
-    // Automation modes
+    // Automation modes (simplified to Auto/Disabled only)
     public enum AutomationMode {
-        AUTO,       // Smart detection: immediate after reconnect, delayed otherwise
-        MANUAL,     // Only triggers on manual command
+        AUTO,       // Automatically triggers at spawn with 3s grace period
         DISABLED    // Completely disabled
     }
     
@@ -78,7 +77,7 @@ public class RealmManager {
     private static final long ANTIAFK_TOGGLE_DELAY = 100; // 100ms delay after toggling anti-afk (key press buffer)
     private static final long HOME_COMMAND_DELAY = 100; // 100ms delay before sending /home (command formatting buffer)
     private static final long TELEPORT_WAIT_TIME = 17000; // 17s wait: 5s server delay + 3s world load + 3s stabilization + 6s fresh data
-    private static final long STUCK_TIMEOUT = 180000; // 3 minutes stuck detection
+    private static final long STUCK_TIMEOUT = 120000; // 2 minutes stuck detection (will force close game)
     private static final long REALM_SWITCH_BUFFER = 30000; // 30 seconds server buffer for realm switching
     private static final long AUTO_MODE_DELAY = 30000; // 30 seconds delay for normal spawn visits
     private static final long CANCEL_WINDOW = 5000; // 5 seconds to cancel automation
@@ -144,6 +143,14 @@ public class RealmManager {
         
         // Just check if we're NOT at spawn - this covers overworld, nether, end, etc.
         return !isAtSpawn();
+    }
+    
+    /**
+     * Check if automation is currently running
+     * @return true if automation is active, false otherwise
+     */
+    public boolean isRunning() {
+        return isAutomationRunning;
     }
     
     /**
@@ -247,25 +254,8 @@ public class RealmManager {
                 // Provide feedback when enabling at overworld
                 sendNotification("[PokeAlert]", "Already at overworld - monitoring active", Formatting.GRAY);
             }
-        } else if (mode == AutomationMode.AUTO) {
-            // Cycle to MANUAL mode
-            mode = AutomationMode.MANUAL;
-            
-            // Stop background monitoring in MANUAL mode
-            if (currentTask != null) {
-                currentTask.cancel(false);
-                currentTask = null;
-                PokeAlertClient.LOGGER.info("Background monitoring stopped (switched to MANUAL mode)");
-            }
-            
-            manuallyCancelled = false;
-            antiAfkDisabledOnReconnect = false;
-            spawnDetectionTime = 0;
-            
-            PokeAlertClient.LOGGER.info("Mode changed to MANUAL - all session flags reset");
-            sendNotification("[PokeAlert]", "Realm Manager: Manual mode", Formatting.AQUA);
         } else {
-            // Cycle to DISABLED
+            // AUTO -> DISABLED (simplified: removed MANUAL mode)
             mode = AutomationMode.DISABLED;
             config.realmManagerEnabled = false;
             ConfigManager.saveSettings(config);
@@ -280,127 +270,7 @@ public class RealmManager {
         }
     }
     
-    /**
-     * Manually trigger the automation
-     */
-    public void manualTrigger() {
-        if (isAtSpawn() && !isAutomationRunning) {
-            // Start Anti-AFK state monitoring
-            AntiAfkManager.startStateMonitoring();
-            
-            // Start with the full sequence including 30-second wait
-            spawnDetectionTime = System.currentTimeMillis();
-            isAutomationRunning = true;
-            automationStartTime = System.currentTimeMillis();
-            currentState = State.DETECTED_AT_SPAWN;
-            
-            // Step 1: Spawn Detection (Manual trigger)
-            sendNotification("[Realm Manager - Manual] [1/6]", "Spawn Detection: Manual trigger", Formatting.YELLOW);
-            PokeAlertClient.LOGGER.info("🎯 Step 1/6: Spawn Detection - Manual trigger initiated");
-            
-            // Step 2: Anti-AFK Check - Verify and disable if needed
-            Boolean antiAfkState = AntiAfkManager.getAntiAfkState();
-            if (antiAfkState == null) {
-                // Can't verify state yet - wait a moment and try again
-                sendNotification("[Realm Manager - Manual] [2/6]", "Anti-AFK Check: Initializing...", Formatting.YELLOW);
-                PokeAlertClient.LOGGER.info("🎯 Step 2/6: Anti-AFK Check - Waiting for state initialization");
-                // Schedule a retry in 2 seconds to allow movement detection to initialize
-                scheduler.schedule(() -> {
-                    sendNotification("[Realm Manager - Manual] [2/6]", "Anti-AFK Check: Disabling", Formatting.YELLOW);
-                    PokeAlertClient.LOGGER.info("🎯 Step 2/6: Anti-AFK Check - Disabling now");
-                    AntiAfkManager.toggleAntiAfk(false);
-                    antiAfkDisabledOnReconnect = true;
-                    startManualCountdown();
-                }, 2, TimeUnit.SECONDS);
-                return; // Exit early, countdown will start after retry
-            }
-            
-            // Check if Anti-AFK needs to be disabled
-            if (antiAfkState) {
-                // Anti-AFK is ON, disable it
-                sendNotification("[Realm Manager - Manual] [2/6]", "Anti-AFK Check: Disabling", Formatting.YELLOW);
-                PokeAlertClient.LOGGER.info("🎯 Step 2/6: Anti-AFK Check - State is ON, disabling now");
-                AntiAfkManager.toggleAntiAfk(false);
-                antiAfkDisabledOnReconnect = true;
-            } else {
-                // Anti-AFK appears OFF, verify to catch false negatives
-                sendNotification("[Realm Manager - Manual] [2/6]", "Anti-AFK Check: Verifying", Formatting.YELLOW);
-                PokeAlertClient.LOGGER.info("🎯 Step 2/6: Anti-AFK Check - State appears OFF, verifying");
-                // For manual trigger, we can trust the state more (user is actively triggering)
-                antiAfkDisabledOnReconnect = true;
-            }
-            
-            // Start safety monitor
-            startSafetyMonitor();
-            
-            // Send Step 2 notification with custom formatting
-            if (client.player != null) {
-                PokeAlertConfig config = PokeAlertClient.getInstance().config;
-                if (config.inGameTextEnabled) {
-                    Text notification = Text.literal("[").formatted(Formatting.GRAY)
-                        .append(Text.literal("PokeAlert").formatted(Formatting.RED))
-                        .append(Text.literal("] ").formatted(Formatting.GRAY))
-                        .append(Text.literal("[Realm Manager - Manual] [2/5]: ").formatted(Formatting.WHITE))
-                        .append(Text.literal("Waiting 30s for realm return").formatted(Formatting.YELLOW))
-                        .append(Text.literal(" - Press Home to cancel").formatted(Formatting.GRAY));
-                    
-                    client.player.sendMessage(notification, false);
-                }
-            }
-            
-            // Start countdown task for 30 seconds
-            startManualCountdown();
-        } else if (!isAtSpawn()) {
-            sendNotification("[Realm Manager - Manual]", "Error: Not at spawn", Formatting.RED);
-        } else {
-            sendNotification("[Realm Manager - Manual]", "Already running", Formatting.YELLOW);
-        }
-    }
-    
-    /**
-     * Handle countdown for manual trigger with 30-second server buffer
-     */
-    private void startManualCountdown() {
-        final long bufferStart = System.currentTimeMillis();
-        
-        // Step 3: Server Buffer - Show notification with custom formatting (at the start)
-        if (client.player != null) {
-            PokeAlertConfig config = PokeAlertClient.getInstance().config;
-            if (config.inGameTextEnabled) {
-                Text notification = Text.literal("[").formatted(Formatting.GRAY)
-                    .append(Text.literal("PokeAlert").formatted(Formatting.RED))
-                    .append(Text.literal("] ").formatted(Formatting.GRAY))
-                    .append(Text.literal("[Realm Manager - Manual] [3/6]: ").formatted(Formatting.WHITE))
-                    .append(Text.literal("Server Buffer: Waiting 30s").formatted(Formatting.YELLOW))
-                    .append(Text.literal(" - Press Home to cancel").formatted(Formatting.DARK_GRAY));
-                
-                client.player.sendMessage(notification, false);
-            }
-        }
-        PokeAlertClient.LOGGER.info("🎯 Step 3/6: Server Buffer - Waiting 30 seconds before realm change");
-        
-        automationDelayTask = scheduler.scheduleAtFixedRate(() -> {
-            if (currentState == State.CANCELLED) {
-                if (automationDelayTask != null) {
-                    automationDelayTask.cancel(false);
-                }
-                return;
-            }
-            
-            long elapsed = System.currentTimeMillis() - bufferStart;
-            long remaining = (REALM_SWITCH_BUFFER - elapsed) / 1000;
-            
-            if (remaining <= 0) {
-                // Buffer complete, execute automation
-                if (automationDelayTask != null) {
-                    automationDelayTask.cancel(false);
-                }
-                sendNotification("[Realm Manager - Manual] [4/6]", "Realm Change: Executing", Formatting.YELLOW);
-                PokeAlertClient.LOGGER.info("🎯 Step 4/6: Realm Change - Executing teleport command");
-                continueAutomationFromStep2();
-            }
-        }, 0, 1, TimeUnit.SECONDS);
-    }
+    // Removed manualTrigger() and startManualCountdown() methods - Manual mode removed (simplified to Auto/Disabled only)
     
     /**
      * Cancel the automation if it's waiting or monitoring
@@ -431,8 +301,7 @@ public class RealmManager {
                 automationDelayTask = null;
             }
             
-            String modePrefix = mode == AutomationMode.MANUAL ? "[Realm Manager - Manual]" : "[Realm Manager - Auto]";
-            sendNotification(modePrefix, "Realm change aborted", Formatting.YELLOW);
+            sendNotification("[Realm Manager]", "Realm change aborted", Formatting.YELLOW);
         }
     }
     
@@ -491,10 +360,6 @@ public class RealmManager {
                             shouldTrigger = true;
                         }
                         break;
-                        
-                    case MANUAL:
-                        // Don't auto-trigger in manual mode
-                        break;
                 }
                 
                 if (shouldTrigger) {
@@ -521,13 +386,8 @@ public class RealmManager {
         // Reset spawn detection time
         spawnDetectionTime = 0;
         
-        if (!isManual && mode != AutomationMode.MANUAL) {
-            // Auto mode - execute directly without additional confirmation
-                    executeAutomationSteps(antiAfkAlreadyDisabled);
-        } else {
-            // Manual trigger - start immediately
-            executeAutomationSteps(false);
-        }
+        // Auto mode - execute directly without additional confirmation
+        executeAutomationSteps(antiAfkAlreadyDisabled);
     }
     
     // Overload for backward compatibility
@@ -659,8 +519,7 @@ public class RealmManager {
             String location = AntiAfkManager.getPlayerLocationInfo();
             
             // Step 4: Realm Change - Execute teleport command
-            String modePrefix = mode == AutomationMode.MANUAL ? "[Realm Manager - Manual] [4/6]" : "[Realm Manager - Auto] [4/6]";
-            sendNotification(modePrefix, "Realm Change: Executing", Formatting.YELLOW);
+            sendNotification("[Realm Manager - Auto] [4/6]", "Realm Change: Executing", Formatting.YELLOW);
             PokeAlertClient.LOGGER.info("🎯 Step 4/6: Realm Change - Sending teleport command at " + location);
             
             // CRITICAL: Save Anti-AFK state BEFORE teleport (not at world change)
@@ -712,8 +571,7 @@ public class RealmManager {
                     
                     // Step 5: Anti-AFK Enable - Turn on Anti-AFK at overworld
                     currentState = State.ENABLING_ANTIAFK;
-                    String step5Prefix = mode == AutomationMode.MANUAL ? "[Realm Manager - Manual] [5/6]" : "[Realm Manager - Auto] [5/6]";
-                    sendNotification(step5Prefix, "Anti-AFK Enable: Turning ON", Formatting.YELLOW);
+                    sendNotification("[Realm Manager - Auto] [5/6]", "Anti-AFK Enable: Turning ON", Formatting.YELLOW);
                     PokeAlertClient.LOGGER.info("🎯 Step 5/6: Anti-AFK Enable - Enabling at " + overworldLocation + " (waited 17s: 5s delay + 3s load + 3s stabilization + 6s data)");
                         PokeAlertClient.LOGGER.info("Safety monitor paused for toggle operation");
                         
@@ -832,8 +690,7 @@ public class RealmManager {
                     PokeAlertClient.LOGGER.error("Safety monitor detected anomaly at " + location + 
                                                  ": Expected Anti-AFK " + expected + ", but found " + actual);
                     
-                    String modePrefix = mode == AutomationMode.MANUAL ? "[Realm Manager - Manual]" : "[Realm Manager - Auto]";
-                    sendNotification(modePrefix, 
+                    sendNotification("[Realm Manager]", 
                                    "Safety: Anti-AFK state mismatch - Restarting", 
                                    Formatting.RED);
                     
@@ -870,13 +727,9 @@ public class RealmManager {
                     // Wait 5 seconds to allow movement tracking to fully initialize after restart
                     // Movement detection needs time to establish baseline after world changes/restarts
                     scheduler.schedule(() -> {
-                        if (mode == AutomationMode.MANUAL) {
-                            manualTrigger();
-                        } else {
-                            // For AUTO mode: restart monitoring to properly re-detect and handle spawn
-                            // By now, movement tracking should be initialized and state detection reliable
-                            startMonitoring();
-                        }
+                        // Restart monitoring to properly re-detect and handle spawn
+                        // By now, movement tracking should be initialized and state detection reliable
+                        startMonitoring();
                     }, 5, TimeUnit.SECONDS);
                 }
                 
@@ -963,8 +816,7 @@ public class RealmManager {
         
         // Step 6: Completion - Automation complete
         String location = AntiAfkManager.getPlayerLocationInfo();
-        String modePrefix = mode == AutomationMode.MANUAL ? "[Realm Manager - Manual] [6/6]" : "[Realm Manager - Auto] [6/6]";
-        sendNotification(modePrefix, "Completion: Realm change complete ✓", Formatting.YELLOW);
+        sendNotification("[Realm Manager - Auto] [6/6]", "Completion: Realm change complete ✓", Formatting.YELLOW);
         PokeAlertClient.LOGGER.info("🎯 Step 6/6: Completion - Automation finished successfully at " + location);
         
         // Send Telegram notification
@@ -976,7 +828,7 @@ public class RealmManager {
     }
     
     /**
-     * Handle being stuck at spawn
+     * Handle being stuck at spawn - sends Telegram alert and force closes game
      */
     private void handleStuckAtSpawn() {
         isAutomationRunning = false;
@@ -990,17 +842,25 @@ public class RealmManager {
         // Cancel all automation tasks
         cancelAllAutomationTasks();
         
-        String modePrefix = mode == AutomationMode.MANUAL ? "[Realm Manager - Manual]" : "[Realm Manager - Auto]";
-        sendNotification(modePrefix, 
-            "Error: Stuck at spawn > 3 min", 
+        sendNotification("[Realm Manager]", 
+            "CRITICAL: Stuck at spawn > 2 min - Closing game", 
             Formatting.RED);
         
-        // Send Telegram alert
-        sendTelegramNotification(false, 180);
+        PokeAlertClient.LOGGER.error("❌ CRITICAL: Stuck at spawn for 2 minutes - sending Telegram alert and force closing game");
         
-        // Stop automation but keep monitoring
-        stopAutomation();
-        startMonitoring();
+        // Send Telegram alert FIRST before closing
+        sendTelegramNotification(false, 120);
+        
+        // Wait 2 seconds for Telegram to send
+        try {
+            Thread.sleep(2000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        
+        // Force close the game
+        PokeAlertClient.LOGGER.error("🚨 Forcing game shutdown...");
+        System.exit(1); // Force immediate shutdown
     }
     
     /**
@@ -1074,9 +934,8 @@ public class RealmManager {
                     message.append("• <b>Status:</b> <i>Unsuccessful</i> 🚨\n");
                 }
                 
-                // Mode line (determine if it was AUTO or MANUAL)
-                String modeStr = (mode == AutomationMode.AUTO) ? "Auto" : "Manual";
-                message.append("• <b>Mode:</b> <code>").append(modeStr).append("</code>\n");
+                // Mode line (always Auto since Manual mode was removed)
+                message.append("• <b>Mode:</b> <code>Auto</code>\n");
                 
                 // Journey line
                 message.append("• <b>Journey:</b> Spawn → Overworld\n");

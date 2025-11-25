@@ -1220,11 +1220,6 @@ public class PokeAlertCommand {
     }
     
     private static int triggerRealmReturn(CommandContext<FabricClientCommandSource> context) {
-        FabricClientCommandSource source = context.getSource();
-        RealmManager manager = RealmManager.getInstance();
-        
-        manager.manualTrigger();
-        
         return 1;
     }
 }
