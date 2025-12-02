@@ -276,33 +276,9 @@ public class RealmManager {
      * Cancel the automation if it's waiting or monitoring
      */
     public void cancelAutomation() {
-        // Can cancel during waiting or if there's an active countdown
-        boolean canCancel = currentState == State.WAITING_CONFIRMATION || 
-                           (spawnDetectionTime > 0 && !isAutomationRunning);
-        
-        if (canCancel) {
-            currentState = State.CANCELLED;
-            isAutomationRunning = false;
-            spawnDetectionTime = 0;  // Reset spawn detection
-            manuallyCancelled = true;  // Mark as manually cancelled
-            // Keep antiAfkDisabledOnReconnect true as Anti-AFK is still disabled
-            
-            // Stop Anti-AFK state monitoring
-            AntiAfkManager.stopStateMonitoring();
-            
-            // Stop safety monitor
-            stopSafetyMonitor();
-            
-            // Cancel all automation tasks
-            cancelAllAutomationTasks();
-            
-            if (automationDelayTask != null) {
-                automationDelayTask.cancel(false);
-                automationDelayTask = null;
-            }
-            
-            sendNotification("Realm Manager", "Realm change aborted", Formatting.YELLOW);
-        }
+        // Legacy method - now just delegates to stopAutomation
+        // Kept for compatibility but stopAutomation is preferred
+        stopAutomation();
     }
     
     /**
@@ -867,14 +843,22 @@ public class RealmManager {
      * Stop all automation tasks
      */
     public void stopAutomation() {
+        // Check if automation was actually running
+        boolean wasRunning = isAutomationRunning || currentState != State.IDLE || spawnDetectionTime > 0;
+        
         isAutomationRunning = false;
-        currentState = State.IDLE;
+        currentState = State.CANCELLED;
+        spawnDetectionTime = 0;  // Reset spawn detection
+        manuallyCancelled = true;  // Mark as manually cancelled
         
         // Stop Anti-AFK state monitoring
         AntiAfkManager.stopStateMonitoring();
         
         // Stop safety monitor
         stopSafetyMonitor();
+        
+        // Cancel ALL automation tasks (critical!)
+        cancelAllAutomationTasks();
         
         if (currentTask != null) {
             currentTask.cancel(false);
@@ -891,8 +875,13 @@ public class RealmManager {
             automationDelayTask = null;
         }
         
-        // Reset detection times
-        spawnDetectionTime = 0;
+        // Reset state to IDLE after cleanup
+        currentState = State.IDLE;
+        
+        // Send notification if we actually cancelled something
+        if (wasRunning) {
+            sendNotification("Realm Manager", "Automation cancelled", Formatting.YELLOW);
+        }
     }
     
     /**

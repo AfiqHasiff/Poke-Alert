@@ -282,21 +282,14 @@ public class PokeAlertClient implements ClientModInitializer {
                 }
                 
                 RealmManager realmManager = RealmManager.getInstance();
+                String status = realmManager.getStatus();
                 
-                // If automation is currently running, stop it
-                if (realmManager.isRunning()) {
+                // If automation is running OR there's an active countdown, stop it
+                if (realmManager.isRunning() || status.contains("Server Buffer") || status.contains("Starting in")) {
                     realmManager.stopAutomation();
                 } else {
-                    // Check status for server buffer countdown
-                    String status = realmManager.getStatus();
-                    
-                    // If there's an active server buffer countdown, cancel it
-                    if (status.contains("Server Buffer")) {
-                        realmManager.cancelAutomation();
-                    } else {
-                        // Otherwise toggle through modes
-                        realmManager.toggleAutomation();
-                    }
+                    // Otherwise toggle through modes
+                    realmManager.toggleAutomation();
                 }
             }
             
