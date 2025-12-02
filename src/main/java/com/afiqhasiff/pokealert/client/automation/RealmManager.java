@@ -221,7 +221,7 @@ public class RealmManager {
         
         // Prevent mode change during active automation
         if (isAutomationRunning) {
-            sendNotification("[PokeAlert]", "Cannot change mode during automation", Formatting.RED);
+            sendNotification("Realm Manager", "Cannot change mode during automation", Formatting.RED);
             PokeAlertClient.LOGGER.warn("Mode change blocked - automation is running");
             return;
         }
@@ -244,7 +244,7 @@ public class RealmManager {
             
             PokeAlertClient.LOGGER.info("Mode changed to AUTO - all session flags reset (fresh start)");
             
-            sendNotification("[PokeAlert]", "Realm Manager: Auto mode", Formatting.GREEN);
+            sendNotification("Realm Manager", "Auto mode enabled", Formatting.GREEN);
             startMonitoring();
             
             // Check current location and trigger if at spawn
@@ -252,7 +252,7 @@ public class RealmManager {
                 startAutomationSequence(false, false);
             } else if (!isAtSpawn()) {
                 // Provide feedback when enabling at overworld
-                sendNotification("[PokeAlert]", "Already at overworld - monitoring active", Formatting.GRAY);
+                sendNotification("Realm Manager", "Already at overworld - monitoring active", Formatting.GRAY);
             }
         } else {
             // AUTO -> DISABLED (simplified: removed MANUAL mode)
@@ -265,7 +265,7 @@ public class RealmManager {
             spawnDetectionTime = 0;
             
             PokeAlertClient.LOGGER.info("Mode changed to DISABLED - all session flags reset");
-            sendNotification("[PokeAlert]", "Realm Manager: Disabled", Formatting.RED);
+            sendNotification("Realm Manager", "Disabled", Formatting.RED);
             stopAutomation();
         }
     }
