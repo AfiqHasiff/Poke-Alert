@@ -301,7 +301,7 @@ public class RealmManager {
                 automationDelayTask = null;
             }
             
-            sendNotification("[Realm Manager]", "Realm change aborted", Formatting.YELLOW);
+            sendNotification("Realm Manager", "Realm change aborted", Formatting.YELLOW);
         }
     }
     
@@ -451,22 +451,22 @@ public class RealmManager {
         Boolean antiAfkState = AntiAfkManager.getAntiAfkState();
         
         // Step 1: Spawn Detection
-        sendNotification("[Realm Manager - Auto] [1/6]", "Spawn Detected", Formatting.YELLOW);
+        sendNotification("Realm Manager - Auto [1/6]", "Spawn Detected", Formatting.YELLOW);
         PokeAlertClient.LOGGER.info("🎯 Step 1/6: Spawn Detection at " + location);
         
         // Step 2: Anti-AFK Check
         if (antiAfkState == null) {
             // Still unknown? Rare, but safety monitor will handle
-            sendNotification("[Realm Manager - Auto] [2/6]", "Anti-AFK Check: State unknown (monitoring)", Formatting.YELLOW);
+            sendNotification("Realm Manager - Auto [2/6]", "Anti-AFK Check: State unknown (monitoring)", Formatting.YELLOW);
             PokeAlertClient.LOGGER.warn("⚠️ Step 2/6: Anti-AFK state unknown - safety monitor active at " + location);
         } else if (antiAfkState) {
             // Confirmed ON, disable immediately
-            sendNotification("[Realm Manager - Auto] [2/6]", "Anti-AFK Check: Disabling", Formatting.YELLOW);
+            sendNotification("Realm Manager - Auto [2/6]", "Anti-AFK Check: Disabling", Formatting.YELLOW);
             PokeAlertClient.LOGGER.info("🎯 Step 2/6: Anti-AFK Check - State is ON, disabling now at " + location);
             AntiAfkManager.toggleAntiAfk(false);
         } else {
             // Confirmed OFF
-            sendNotification("[Realm Manager - Auto] [2/6]", "Anti-AFK Check: Already OFF", Formatting.GRAY);
+            sendNotification("Realm Manager - Auto [2/6]", "Anti-AFK Check: Already OFF", Formatting.GRAY);
             PokeAlertClient.LOGGER.info("✅ Step 2/6: Anti-AFK Check - Already OFF at " + location);
         }
         
@@ -483,7 +483,7 @@ public class RealmManager {
                 Text notification = Text.literal("[").formatted(Formatting.GRAY)
                     .append(Text.literal("PokeAlert").formatted(Formatting.RED))
                     .append(Text.literal("] ").formatted(Formatting.GRAY))
-                    .append(Text.literal("[Realm Manager - Auto] [3/6]: ").formatted(Formatting.WHITE))
+                    .append(Text.literal("Realm Manager - Auto [3/6]: ").formatted(Formatting.WHITE))
                     .append(Text.literal("Server Buffer: Waiting 30s").formatted(Formatting.YELLOW))
                     .append(Text.literal(" - Press Home to cancel").formatted(Formatting.DARK_GRAY));
                 
@@ -519,7 +519,7 @@ public class RealmManager {
             String location = AntiAfkManager.getPlayerLocationInfo();
             
             // Step 4: Realm Change - Execute teleport command
-            sendNotification("[Realm Manager - Auto] [4/6]", "Realm Change: Executing", Formatting.YELLOW);
+            sendNotification("Realm Manager - Auto [4/6]", "Realm Change: Executing", Formatting.YELLOW);
             PokeAlertClient.LOGGER.info("🎯 Step 4/6: Realm Change - Sending teleport command at " + location);
             
             // CRITICAL: Save Anti-AFK state BEFORE teleport (not at world change)
@@ -571,7 +571,7 @@ public class RealmManager {
                     
                     // Step 5: Anti-AFK Enable - Turn on Anti-AFK at overworld
                     currentState = State.ENABLING_ANTIAFK;
-                    sendNotification("[Realm Manager - Auto] [5/6]", "Anti-AFK Enable: Turning ON", Formatting.YELLOW);
+                    sendNotification("Realm Manager - Auto [5/6]", "Anti-AFK Enable: Turning ON", Formatting.YELLOW);
                     PokeAlertClient.LOGGER.info("🎯 Step 5/6: Anti-AFK Enable - Enabling at " + overworldLocation + " (waited 17s: 5s delay + 3s load + 3s stabilization + 6s data)");
                         PokeAlertClient.LOGGER.info("Safety monitor paused for toggle operation");
                         
@@ -690,7 +690,7 @@ public class RealmManager {
                     PokeAlertClient.LOGGER.error("Safety monitor detected anomaly at " + location + 
                                                  ": Expected Anti-AFK " + expected + ", but found " + actual);
                     
-                    sendNotification("[Realm Manager]", 
+                    sendNotification("Realm Manager", 
                                    "Safety: Anti-AFK state mismatch - Restarting", 
                                    Formatting.RED);
                     
@@ -816,7 +816,7 @@ public class RealmManager {
         
         // Step 6: Completion - Automation complete
         String location = AntiAfkManager.getPlayerLocationInfo();
-        sendNotification("[Realm Manager - Auto] [6/6]", "Completion: Realm change complete ✓", Formatting.YELLOW);
+        sendNotification("Realm Manager - Auto [6/6]", "Completion: Realm change complete ✓", Formatting.YELLOW);
         PokeAlertClient.LOGGER.info("🎯 Step 6/6: Completion - Automation finished successfully at " + location);
         
         // Send Telegram notification
@@ -842,7 +842,7 @@ public class RealmManager {
         // Cancel all automation tasks
         cancelAllAutomationTasks();
         
-        sendNotification("[Realm Manager]", 
+        sendNotification("Realm Manager", 
             "CRITICAL: Stuck at spawn > 2 min - Closing game", 
             Formatting.RED);
         

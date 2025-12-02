@@ -113,8 +113,13 @@ public class PokeAlertClient implements ClientModInitializer {
         
         // Register connection event handlers for realm manager automation
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
-            RealmManager.getInstance().markConnected();
-            LOGGER.info("PokéAlert: Player connected to server");
+            // Only start realm manager if PokeAlert is enabled
+            if (ConfigManager.getConfig().modEnabled) {
+                RealmManager.getInstance().markConnected();
+                LOGGER.info("PokéAlert: Player connected to server - Realm Manager initialized");
+            } else {
+                LOGGER.info("PokéAlert: Player connected to server - Realm Manager skipped (mod disabled)");
+            }
         });
         
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
@@ -277,14 +282,21 @@ public class PokeAlertClient implements ClientModInitializer {
                 }
                 
                 RealmManager realmManager = RealmManager.getInstance();
-                String status = realmManager.getStatus();
                 
-                // If there's an active server buffer countdown, cancel it
-                if (status.contains("Server Buffer")) {
-                    realmManager.cancelAutomation();
+                // If automation is currently running, stop it
+                if (realmManager.isRunning()) {
+                    realmManager.stopAutomation();
                 } else {
-                    // Otherwise toggle through modes
-                    realmManager.toggleAutomation();
+                    // Check status for server buffer countdown
+                    String status = realmManager.getStatus();
+                    
+                    // If there's an active server buffer countdown, cancel it
+                    if (status.contains("Server Buffer")) {
+                        realmManager.cancelAutomation();
+                    } else {
+                        // Otherwise toggle through modes
+                        realmManager.toggleAutomation();
+                    }
                 }
             }
             

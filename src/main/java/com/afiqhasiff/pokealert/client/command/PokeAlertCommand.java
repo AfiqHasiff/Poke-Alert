@@ -164,8 +164,14 @@ public class PokeAlertCommand {
                     // Realm manager commands
                     .then(ClientCommandManager.literal("realm")
                         .executes(context -> checkRealmStatus(context))
-                        .then(ClientCommandManager.literal("trigger")
-                            .executes(context -> triggerRealmReturn(context))))
+                        .then(ClientCommandManager.literal("toggle")
+                            .executes(context -> toggleRealmManager(context)))
+                        .then(ClientCommandManager.literal("status")
+                            .executes(context -> checkRealmStatus(context))))
+                    
+                    // Egg timer toggle command for parity
+                    .then(ClientCommandManager.literal("timer")
+                        .executes(context -> toggleEggTimer(context)))
             );
         });
     }
@@ -285,6 +291,10 @@ public class PokeAlertCommand {
             .append(Text.literal("Egg Timer").formatted(Formatting.AQUA))
             .append(Text.literal(" ━━━").formatted(Formatting.DARK_GRAY)));
         source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+            .append(Text.literal("timer").formatted(Formatting.GOLD)));
+        source.sendFeedback(Text.literal("    ➤ ").formatted(Formatting.DARK_GRAY)
+            .append(Text.literal("Toggle egg timer (keybind alternative)").formatted(Formatting.WHITE)));
+        source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
             .append(Text.literal("eggtimer start ").formatted(Formatting.GREEN))
             .append(Text.literal("[minutes]").formatted(Formatting.GRAY)));
         source.sendFeedback(Text.literal("    ➤ ").formatted(Formatting.DARK_GREEN)
@@ -379,13 +389,8 @@ public class PokeAlertCommand {
             );
             source.sendFeedback(
                 Text.literal("    • ").formatted(Formatting.DARK_GRAY)
-                    .append(Text.literal("MANUAL").formatted(Formatting.YELLOW))
-                    .append(Text.literal(" - Only triggers via command").formatted(Formatting.WHITE))
-            );
-            source.sendFeedback(
-                Text.literal("    • ").formatted(Formatting.DARK_GRAY)
-                    .append(Text.literal("OFF").formatted(Formatting.RED))
-                    .append(Text.literal(" - Disabled").formatted(Formatting.WHITE))
+                    .append(Text.literal("DISABLED").formatted(Formatting.RED))
+                    .append(Text.literal(" - Completely disabled").formatted(Formatting.WHITE))
             );
             source.sendFeedback(Text.empty()); // Empty line
             
@@ -399,9 +404,15 @@ public class PokeAlertCommand {
             );
             source.sendFeedback(
                 Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
-                    .append(Text.literal("realm trigger").formatted(Formatting.GREEN))
+                    .append(Text.literal("realm toggle").formatted(Formatting.GREEN))
                     .append(Text.literal(" - ").formatted(Formatting.DARK_GRAY))
-                    .append(Text.literal("Manually trigger realm return").formatted(Formatting.WHITE))
+                    .append(Text.literal("Toggle Auto/Disabled modes").formatted(Formatting.WHITE))
+            );
+            source.sendFeedback(
+                Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+                    .append(Text.literal("realm status").formatted(Formatting.GREEN))
+                    .append(Text.literal(" - ").formatted(Formatting.DARK_GRAY))
+                    .append(Text.literal("Check current status").formatted(Formatting.WHITE))
             );
             source.sendFeedback(Text.empty()); // Empty line
             
@@ -1219,7 +1230,56 @@ public class PokeAlertCommand {
         return 1;
     }
     
-    private static int triggerRealmReturn(CommandContext<FabricClientCommandSource> context) {
+    private static int toggleRealmManager(CommandContext<FabricClientCommandSource> context) {
+        FabricClientCommandSource source = context.getSource();
+        PokeAlertConfig config = PokeAlertClient.getInstance().config;
+        
+        // Check if mod is enabled
+        if (!config.modEnabled) {
+            source.sendFeedback(
+                Text.literal("[").formatted(Formatting.GRAY)
+                    .append(Text.literal("PokeAlert").formatted(Formatting.RED))
+                    .append(Text.literal("] ").formatted(Formatting.GRAY))
+                    .append(Text.literal("Realm Manager disabled - Enable PokeAlert first").formatted(Formatting.YELLOW))
+            );
+            return 0;
+        }
+        
+        RealmManager manager = RealmManager.getInstance();
+        manager.toggleAutomation();
+        
+        String status = manager.getStatus();
+        source.sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokeAlert").formatted(Formatting.RED))
+                .append(Text.literal("] ").formatted(Formatting.GRAY))
+                .append(Text.literal("Realm Manager: ").formatted(Formatting.WHITE))
+                .append(Text.literal(status).formatted(
+                    status.equals("Disabled") ? Formatting.RED : Formatting.GREEN
+                ))
+        );
+        
+        return 1;
+    }
+    
+    private static int toggleEggTimer(CommandContext<FabricClientCommandSource> context) {
+        FabricClientCommandSource source = context.getSource();
+        PokeAlertConfig config = PokeAlertClient.getInstance().config;
+        
+        // Check if mod is enabled
+        if (!config.modEnabled) {
+            source.sendFeedback(
+                Text.literal("[").formatted(Formatting.GRAY)
+                    .append(Text.literal("PokeAlert").formatted(Formatting.RED))
+                    .append(Text.literal("] ").formatted(Formatting.GRAY))
+                    .append(Text.literal("Egg Timer disabled - Enable PokeAlert first").formatted(Formatting.YELLOW))
+            );
+            return 0;
+        }
+        
+        EggTimerManager timerManager = EggTimerManager.getInstance();
+        timerManager.handleTimerToggle();
+        
         return 1;
     }
 }

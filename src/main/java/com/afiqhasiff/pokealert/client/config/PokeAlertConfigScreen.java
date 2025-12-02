@@ -325,7 +325,7 @@ public class PokeAlertConfigScreen extends Screen {
         // Realm return mode toggle keybind button
         realmReturnKeybindButton = addEggTimerRow(currentY,
             "Mode Toggle Key",
-            "Cycle through AUTO/MANUAL/OFF",
+            "Cycle AUTO/DISABLED or cancel active automation",
             getRealmReturnKeybindText(),
             button -> {
                 waitingForRealmReturnKey = true;
@@ -630,6 +630,11 @@ public class PokeAlertConfigScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+        // Sync button states with current config (in case changed via keybind)
+        if (realmReturnToggleButton != null) {
+            realmReturnToggleButton.setMessage(Text.literal(config.realmManagerEnabled ? "Enabled" : "Disabled"));
+        }
+        
         // Render background
         this.renderBackground(context, mouseX, mouseY, delta);
         
@@ -777,7 +782,7 @@ public class PokeAlertConfigScreen extends Screen {
         currentY += ROW_HEIGHT;
         
         // Realm return mode toggle keybind label
-        drawCategoryWithDescription(context, "Mode Toggle Key", "Cycle through AUTO/MANUAL/OFF", currentY);
+        drawCategoryWithDescription(context, "Mode Toggle Key", "Cycle AUTO/DISABLED or cancel active automation", currentY);
         currentY += ROW_HEIGHT;
         
         // Anti-AFK keybind label
