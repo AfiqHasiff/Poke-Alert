@@ -204,6 +204,12 @@ public class RealmManager {
             // By now, we have 10 seconds of movement data!
             if (mode == AutomationMode.AUTO) {
                 startMonitoring();
+                
+                // Also start safety monitor if not already running
+                if (safetyMonitorTask == null || safetyMonitorTask.isDone()) {
+                    PokeAlertClient.LOGGER.info("Starting safety monitor after resource pack load (AUTO mode)");
+                    startSafetyMonitor();
+                }
             }
         }, 10, TimeUnit.SECONDS);
     }
@@ -246,6 +252,12 @@ public class RealmManager {
             
             sendNotification("Realm Manager", "Auto mode enabled", Formatting.GREEN);
             startMonitoring();
+            
+            // Start safety monitor if not already running
+            if (safetyMonitorTask == null || safetyMonitorTask.isDone()) {
+                PokeAlertClient.LOGGER.info("Starting safety monitor for AUTO mode");
+                startSafetyMonitor();
+            }
             
             // Check current location and trigger if at spawn
             if (isAtSpawn() && !isAutomationRunning) {
@@ -670,8 +682,8 @@ public class RealmManager {
         
         safetyMonitorTask = scheduler.scheduleAtFixedRate(() -> {
             try {
-                // Only monitor while automation is running
-                if (!isAutomationRunning) {
+                // Only monitor while in AUTO mode (not just during active automation)
+                if (mode != AutomationMode.AUTO) {
                     return;
                 }
                 
@@ -709,58 +721,75 @@ public class RealmManager {
                     PokeAlertClient.LOGGER.error("Safety monitor detected anomaly at " + location + 
                                                  ": Expected Anti-AFK " + expected + ", but found " + actual);
                     
-                    sendNotification("Realm Manager", 
-                                   "Safety: Anti-AFK state mismatch - Restarting", 
-                                   Formatting.RED);
-                    
-                    // Stop safety monitor
-                    stopSafetyMonitor();
-                    
-                    // DO NOT correct the state here - let the restart flow handle it
-                    // This prevents double-toggling when spawn detection also tries to toggle
-                    
-                    // Reset and restart the process
-                    isAutomationRunning = false;
-                    antiAfkDisabledOnReconnect = false; // Reset flag so spawn detection will toggle
-                    currentState = State.IDLE;
-                    spawnDetectionTime = 0; // Reset spawn detection time for clean restart
-                    
-                    // CRITICAL: Cancel ALL scheduled tasks to prevent old steps from executing
-                    cancelAllAutomationTasks();
-                    
-                    // Cancel monitoring loop (CRITICAL: prevents old loop from triggering automation during restart)
-                    if (currentTask != null) {
-                        currentTask.cancel(false);
-                        currentTask = null;
-                        PokeAlertClient.LOGGER.info("Cancelled monitoring loop during safety restart");
-                    }
-                    
-                    // Cancel delay task but preserve stuck detector
-                    if (automationDelayTask != null) {
-                        automationDelayTask.cancel(false);
-                    }
-                    
-                    // Keep stuck detector running or restart it if needed
-                    // This ensures telegram alert works even through safety restarts
-                    if (stuckDetector == null || stuckDetector.isDone()) {
-                        stuckDetector = scheduler.schedule(() -> {
-                            if (isAtSpawn() && mode == AutomationMode.AUTO) {
-                                currentState = State.STUCK;
-                                handleStuckAtSpawn();
-                            }
-                        }, STUCK_TIMEOUT, TimeUnit.MILLISECONDS);
-                        PokeAlertClient.LOGGER.info("🚨 Stuck detector (re)started by safety monitor - 2 min timeout");
+                    // Handle based on location
+                    if (isAtSpawn()) {
+                        // At spawn with Anti-AFK ON - need to turn it OFF and restart
+                        sendNotification("Realm Manager", 
+                                       "Safety: Anti-AFK ON at spawn - Fixing & Restarting", 
+                                       Formatting.RED);
+                        
+                        // Stop safety monitor temporarily
+                        stopSafetyMonitor();
+                        
+                        // Turn OFF Anti-AFK immediately (critical for spawn)
+                        PokeAlertClient.LOGGER.info("🔧 Safety: Turning OFF Anti-AFK at spawn");
+                        AntiAfkManager.toggleAntiAfk(false);
+                        
+                        // Reset and restart the process
+                        isAutomationRunning = false;
+                        antiAfkDisabledOnReconnect = true; // Mark as already disabled
+                        currentState = State.IDLE;
+                        spawnDetectionTime = 0;
+                        
+                        // CRITICAL: Cancel ALL scheduled tasks
+                        cancelAllAutomationTasks();
+                        
+                        // Cancel monitoring loop
+                        if (currentTask != null) {
+                            currentTask.cancel(false);
+                            currentTask = null;
+                            PokeAlertClient.LOGGER.info("Cancelled monitoring loop during safety restart");
+                        }
+                        
+                        // Cancel delay task but preserve stuck detector
+                        if (automationDelayTask != null) {
+                            automationDelayTask.cancel(false);
+                        }
+                        
+                        // Keep/restart stuck detector
+                        if (stuckDetector == null || stuckDetector.isDone()) {
+                            stuckDetector = scheduler.schedule(() -> {
+                                if (isAtSpawn() && mode == AutomationMode.AUTO) {
+                                    currentState = State.STUCK;
+                                    handleStuckAtSpawn();
+                                }
+                            }, STUCK_TIMEOUT, TimeUnit.MILLISECONDS);
+                            PokeAlertClient.LOGGER.info("🚨 Stuck detector (re)started by safety monitor - 2 min timeout");
+                        } else {
+                            PokeAlertClient.LOGGER.info("🚨 Stuck detector still active - preserving through restart");
+                        }
+                        
+                        // Restart monitoring and safety monitor after delay
+                        scheduler.schedule(() -> {
+                            PokeAlertClient.LOGGER.info("🔄 Restarting monitoring and safety monitor after spawn fix");
+                            startMonitoring();
+                            startSafetyMonitor(); // Restart safety monitor too!
+                        }, 5, TimeUnit.SECONDS);
+                        
                     } else {
-                        PokeAlertClient.LOGGER.info("🚨 Stuck detector still active - preserving through restart");
+                        // At overworld with Anti-AFK OFF - need to turn it ON immediately
+                        sendNotification("Realm Manager", 
+                                       "Safety: Anti-AFK OFF at overworld - Fixing", 
+                                       Formatting.YELLOW);
+                        
+                        // Don't stop safety monitor, just fix the state
+                        PokeAlertClient.LOGGER.info("🔧 Safety: Turning ON Anti-AFK at overworld");
+                        AntiAfkManager.toggleAntiAfk(true);
+                        
+                        // No need to restart anything - we fixed it in place
+                        // Safety monitor will continue running and verify the fix on next check
+                        PokeAlertClient.LOGGER.info("✅ Safety: Anti-AFK corrected at overworld, continuing monitoring");
                     }
-                    
-                    // Wait 5 seconds to allow movement tracking to fully initialize after restart
-                    // Movement detection needs time to establish baseline after world changes/restarts
-                    scheduler.schedule(() -> {
-                        // Restart monitoring to properly re-detect and handle spawn
-                        // By now, movement tracking should be initialized and state detection reliable
-                        startMonitoring();
-                    }, 5, TimeUnit.SECONDS);
                 }
                 
             } catch (Exception e) {
