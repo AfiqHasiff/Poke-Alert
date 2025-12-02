@@ -190,7 +190,7 @@ public class RealmManager {
         AntiAfkManager.resetTracking();
         
         // START STATE MONITORING IMMEDIATELY!
-        // Meteor's Anti-AFK starts at 0s, so we need to collect movement data from the start
+        // Anti-AFK starts at 0s, so we need to collect movement data from the start
         // By the time resource pack finishes (10s), we'll have 10 seconds of reliable data
         AntiAfkManager.startStateMonitoring();
         PokeAlertClient.LOGGER.info("🔌 Player connected - starting Anti-AFK monitoring immediately");
@@ -388,13 +388,17 @@ public class RealmManager {
             PokeAlertClient.LOGGER.info("Safety monitor already running (started early on server join)");
         }
         
-        // Start stuck detection timer
-        stuckDetector = scheduler.schedule(() -> {
-            if (isAutomationRunning && isAtSpawn()) {
-                currentState = State.STUCK;
-                handleStuckAtSpawn();
-            }
-        }, STUCK_TIMEOUT, TimeUnit.MILLISECONDS);
+        // Start stuck detection timer (only if not already running)
+        if (stuckDetector == null || stuckDetector.isDone()) {
+            stuckDetector = scheduler.schedule(() -> {
+                // Check if still at spawn (remove isAutomationRunning check to work through restarts)
+                if (isAtSpawn() && mode == AutomationMode.AUTO) {
+                    currentState = State.STUCK;
+                    handleStuckAtSpawn();
+                }
+            }, STUCK_TIMEOUT, TimeUnit.MILLISECONDS);
+            PokeAlertClient.LOGGER.info("🚨 Stuck detector started in executeAutomationSteps - 2 min timeout");
+        }
         
         if (!antiAfkAlreadyDisabled) {
             // Step 1: Disable anti-afk (if not already done)
@@ -425,6 +429,18 @@ public class RealmManager {
         String location = AntiAfkManager.getPlayerLocationInfo();
         
         Boolean antiAfkState = AntiAfkManager.getAntiAfkState();
+        
+        // Start stuck detection timer if not already running
+        if (stuckDetector == null || stuckDetector.isDone()) {
+            stuckDetector = scheduler.schedule(() -> {
+                // Check if still at spawn (works even through restarts)
+                if (isAtSpawn() && mode == AutomationMode.AUTO) {
+                    currentState = State.STUCK;
+                    handleStuckAtSpawn();
+                }
+            }, STUCK_TIMEOUT, TimeUnit.MILLISECONDS);
+            PokeAlertClient.LOGGER.info("🚨 Stuck detector started in proceedWithSpawnDetection - 2 min timeout");
+        }
         
         // Step 1: Spawn Detection
         sendNotification("Realm Manager - Auto [1/6]", "Spawn Detected", Formatting.YELLOW);
@@ -692,12 +708,23 @@ public class RealmManager {
                         PokeAlertClient.LOGGER.info("Cancelled monitoring loop during safety restart");
                     }
                     
-                    // Cancel delay and stuck detector tasks
+                    // Cancel delay task but preserve stuck detector
                     if (automationDelayTask != null) {
                         automationDelayTask.cancel(false);
                     }
-                    if (stuckDetector != null) {
-                        stuckDetector.cancel(false);
+                    
+                    // Keep stuck detector running or restart it if needed
+                    // This ensures telegram alert works even through safety restarts
+                    if (stuckDetector == null || stuckDetector.isDone()) {
+                        stuckDetector = scheduler.schedule(() -> {
+                            if (isAtSpawn() && mode == AutomationMode.AUTO) {
+                                currentState = State.STUCK;
+                                handleStuckAtSpawn();
+                            }
+                        }, STUCK_TIMEOUT, TimeUnit.MILLISECONDS);
+                        PokeAlertClient.LOGGER.info("🚨 Stuck detector (re)started by safety monitor - 2 min timeout");
+                    } else {
+                        PokeAlertClient.LOGGER.info("🚨 Stuck detector still active - preserving through restart");
                     }
                     
                     // Wait 5 seconds to allow movement tracking to fully initialize after restart
@@ -931,8 +958,8 @@ public class RealmManager {
                 
                 // Additional info based on failure (stuck at spawn)
                 if (!success) {
-                    message.append("\n<i>Stuck at spawn for over 3 minutes</i>\n");
-                    message.append("<i>Manual intervention required</i>");
+                    message.append("\n<i>Stuck at spawn for over 2 minutes</i>\n");
+                    message.append("<i>Game will be closed - Manual intervention required</i>");
                 }
                 
                 telegram.sendEggTimerNotification(message.toString());
