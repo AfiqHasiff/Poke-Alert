@@ -448,9 +448,36 @@ public class RealmManager {
         
         // Step 2: Anti-AFK Check
         if (antiAfkState == null) {
-            // Still unknown? Rare, but safety monitor will handle
-            sendNotification("Realm Manager - Auto [2/6]", "Anti-AFK Check: State unknown (monitoring)", Formatting.YELLOW);
-            PokeAlertClient.LOGGER.warn("⚠️ Step 2/6: Anti-AFK state unknown - safety monitor active at " + location);
+            // State unknown - restart the process after a delay
+            sendNotification("Realm Manager - Auto [2/6]", "Anti-AFK Check: State unknown - restarting in 5s", Formatting.YELLOW);
+            PokeAlertClient.LOGGER.warn("⚠️ Step 2/6: Anti-AFK state unknown - will restart process at " + location);
+            
+            // Reset state and restart after 5 seconds
+            isAutomationRunning = false;
+            currentState = State.IDLE;
+            spawnDetectionTime = 0;
+            
+            // Cancel automation tasks but keep stuck detector
+            cancelAllAutomationTasks();
+            
+            // Keep stuck detector running or restart if needed (same as safety monitor logic)
+            if (stuckDetector == null || stuckDetector.isDone()) {
+                stuckDetector = scheduler.schedule(() -> {
+                    if (isAtSpawn() && mode == AutomationMode.AUTO) {
+                        currentState = State.STUCK;
+                        handleStuckAtSpawn();
+                    }
+                }, STUCK_TIMEOUT, TimeUnit.MILLISECONDS);
+                PokeAlertClient.LOGGER.info("🚨 Stuck detector (re)started due to Anti-AFK unknown - 2 min timeout");
+            }
+            
+            // Restart monitoring after delay to allow Anti-AFK state to be determined
+            scheduler.schedule(() -> {
+                PokeAlertClient.LOGGER.info("🔄 Restarting spawn detection after Anti-AFK state unknown");
+                startMonitoring();
+            }, 5, TimeUnit.SECONDS);
+            
+            return; // Exit early - don't continue with automation
         } else if (antiAfkState) {
             // Confirmed ON, disable immediately
             sendNotification("Realm Manager - Auto [2/6]", "Anti-AFK Check: Disabling", Formatting.YELLOW);
@@ -846,7 +873,7 @@ public class RealmManager {
         cancelAllAutomationTasks();
         
         sendNotification("Realm Manager", 
-            "CRITICAL: Stuck at spawn > 2 min - Closing game", 
+            "CRITICAL: Stuck at spawn for over 2 minutes - Closing game", 
             Formatting.RED);
         
         PokeAlertClient.LOGGER.error("❌ CRITICAL: Stuck at spawn for 2 minutes - sending Telegram alert and force closing game");
@@ -955,12 +982,6 @@ public class RealmManager {
                 
                 // Journey line
                 message.append("• <b>Journey:</b> Spawn → Overworld\n");
-                
-                // Additional info based on failure (stuck at spawn)
-                if (!success) {
-                    message.append("\n<i>Stuck at spawn for over 2 minutes</i>\n");
-                    message.append("<i>Game will be closed - Manual intervention required</i>");
-                }
                 
                 telegram.sendEggTimerNotification(message.toString());
             });
