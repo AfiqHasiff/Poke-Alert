@@ -184,7 +184,7 @@ public class PokeAlertCommand {
             Text.literal("[").formatted(Formatting.GRAY)
                 .append(Text.literal("PokéAlert").formatted(Formatting.RED))
                 .append(Text.literal("] ").formatted(Formatting.GRAY))
-                .append(Text.literal("v1.2.0").formatted(Formatting.GOLD))
+                .append(Text.literal("v2.0.0").formatted(Formatting.GOLD))
                 .append(Text.literal(" - Pokémon Detection Mod").formatted(Formatting.WHITE))
         );
         

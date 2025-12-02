@@ -17,7 +17,7 @@ import org.lwjgl.glfw.GLFW;
 import java.util.Arrays;
 
 /**
- * Configuration screen for PokéAlert v1.2.0.
+ * Configuration screen for PokéAlert v2.0.0.
  * Provides GUI controls for all mod settings with descriptions.
  */
 public class PokeAlertConfigScreen extends Screen {
@@ -86,7 +86,7 @@ public class PokeAlertConfigScreen extends Screen {
     private static final int BUTTON_GAP = 5;
 
     public PokeAlertConfigScreen(Screen parent) {
-        super(Text.literal("PokéAlert v1.2.0 Configuration"));
+        super(Text.literal("PokéAlert v2.0.0 Configuration"));
         this.parent = parent;
         this.config = loadConfigCopy();
         this.scrollOffset = 0; // Initialize scroll to top when screen opens
@@ -641,7 +641,7 @@ public class PokeAlertConfigScreen extends Screen {
         // Title (always visible at top)
         context.drawCenteredTextWithShadow(
             this.textRenderer,
-            Text.literal("PokéAlert v1.2.0").formatted(Formatting.GOLD),
+            Text.literal("PokéAlert v2.0.0").formatted(Formatting.GOLD),
             this.width / 2,
             15,
             0xFFFFFF
