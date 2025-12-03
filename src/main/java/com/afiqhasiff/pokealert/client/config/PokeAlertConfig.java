@@ -37,10 +37,10 @@ public class PokeAlertConfig {
     public boolean eggTimerTextNotification = true;
     public boolean eggTimerTelegramNotification = true;
     
-    // Realm Manager Automation Settings
-    public boolean realmManagerEnabled = true;
+    // Egg Hatcher Automation Settings
+    public boolean eggHatcherEnabled = true;
     public int antiAfkKeybind = 329; // Default: Numpad 9 (GLFW.GLFW_KEY_KP_9)
-    public String realmReturnCommand = "/home new"; // Default command to return to main realm
+    public String realmReturnCommand = "/home new"; // Default command to return to main realm for egg hatching
 
     public String[] getCombinedWhitelist(){
         List<String> combinedList = new ArrayList<String>();

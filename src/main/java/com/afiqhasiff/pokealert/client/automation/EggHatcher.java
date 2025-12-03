@@ -19,8 +19,8 @@ import java.util.concurrent.TimeUnit;
  * Automation manager for handling realm transitions after disconnects
  * Automates the process of returning from spawn to main realm with anti-afk management
  */
-public class RealmManager {
-    private static RealmManager instance;
+public class EggHatcher {
+    private static EggHatcher instance;
     private final MinecraftClient client;
     private final ScheduledExecutorService scheduler;
     private ScheduledFuture<?> currentTask;
@@ -82,14 +82,14 @@ public class RealmManager {
     private static final long AUTO_MODE_DELAY = 30000; // 30 seconds delay for normal spawn visits
     private static final long CANCEL_WINDOW = 5000; // 5 seconds to cancel automation
     
-    private RealmManager() {
+    private EggHatcher() {
         this.client = MinecraftClient.getInstance();
         this.scheduler = Executors.newScheduledThreadPool(1);
     }
     
-    public static RealmManager getInstance() {
+    public static EggHatcher getInstance() {
         if (instance == null) {
-            instance = new RealmManager();
+            instance = new EggHatcher();
         }
         return instance;
     }
@@ -215,7 +215,7 @@ public class RealmManager {
     }
     
     /**
-     * Toggle the realm return automation
+     * Toggle the egg hatcher automation
      */
     public void toggleAutomation() {
         PokeAlertConfig config = PokeAlertClient.getInstance().config;
@@ -227,7 +227,7 @@ public class RealmManager {
         
         // Prevent mode change during active automation
         if (isAutomationRunning) {
-            sendNotification("Realm Manager", "Cannot change mode during automation", Formatting.RED);
+            sendNotification("Egg Hatcher", "Cannot change mode during automation", Formatting.RED);
             PokeAlertClient.LOGGER.warn("Mode change blocked - automation is running");
             return;
         }
@@ -235,7 +235,7 @@ public class RealmManager {
         if (mode == AutomationMode.DISABLED) {
             // Cycle to AUTO mode
             mode = AutomationMode.AUTO;
-            config.realmManagerEnabled = true;
+            config.eggHatcherEnabled = true;
             ConfigManager.saveSettings(config);
             
             // Reset ALL session flags for fresh start
@@ -250,7 +250,7 @@ public class RealmManager {
             
             PokeAlertClient.LOGGER.info("Mode changed to AUTO - all session flags reset (fresh start)");
             
-            sendNotification("Realm Manager", "Auto mode enabled", Formatting.GREEN);
+            sendNotification("Egg Hatcher", "Auto mode enabled", Formatting.GREEN);
             startMonitoring();
             
             // Start safety monitor if not already running
@@ -264,12 +264,12 @@ public class RealmManager {
                 startAutomationSequence(false, false);
             } else if (!isAtSpawn()) {
                 // Provide feedback when enabling at overworld
-                sendNotification("Realm Manager", "Already at overworld - monitoring active", Formatting.GRAY);
+                sendNotification("Egg Hatcher", "Already at overworld - monitoring active", Formatting.GRAY);
             }
         } else {
             // AUTO -> DISABLED (simplified: removed MANUAL mode)
             mode = AutomationMode.DISABLED;
-            config.realmManagerEnabled = false;
+            config.eggHatcherEnabled = false;
             ConfigManager.saveSettings(config);
 
             antiAfkDisabledOnReconnect = false;
@@ -277,7 +277,7 @@ public class RealmManager {
             spawnDetectionTime = 0;
             
             PokeAlertClient.LOGGER.info("Mode changed to DISABLED - all session flags reset");
-            sendNotification("Realm Manager", "Disabled", Formatting.RED);
+            sendNotification("Egg Hatcher", "Disabled", Formatting.RED);
             stopAutomation();
         }
     }
@@ -455,13 +455,13 @@ public class RealmManager {
         }
         
         // Step 1: Spawn Detection
-        sendNotification("Realm Manager - Auto [1/6]", "Spawn Detected", Formatting.YELLOW);
+        sendNotification("Egg Hatcher - Auto [1/6]", "Spawn Detected", Formatting.YELLOW);
         PokeAlertClient.LOGGER.info("🎯 Step 1/6: Spawn Detection at " + location);
         
         // Step 2: Anti-AFK Check
         if (antiAfkState == null) {
             // State unknown - restart the process after a delay
-            sendNotification("Realm Manager - Auto [2/6]", "Anti-AFK Check: State unknown - restarting in 5s", Formatting.YELLOW);
+            sendNotification("Egg Hatcher - Auto [2/6]", "Anti-AFK Check: State unknown - restarting in 5s", Formatting.YELLOW);
             PokeAlertClient.LOGGER.warn("⚠️ Step 2/6: Anti-AFK state unknown - will restart process at " + location);
             
             // Reset state and restart after 5 seconds
@@ -492,12 +492,12 @@ public class RealmManager {
             return; // Exit early - don't continue with automation
         } else if (antiAfkState) {
             // Confirmed ON, disable immediately
-            sendNotification("Realm Manager - Auto [2/6]", "Anti-AFK Check: Disabling", Formatting.YELLOW);
+            sendNotification("Egg Hatcher - Auto [2/6]", "Anti-AFK Check: Disabling", Formatting.YELLOW);
             PokeAlertClient.LOGGER.info("🎯 Step 2/6: Anti-AFK Check - State is ON, disabling now at " + location);
             AntiAfkManager.toggleAntiAfk(false);
         } else {
             // Confirmed OFF
-            sendNotification("Realm Manager - Auto [2/6]", "Anti-AFK Check: Already OFF", Formatting.GRAY);
+            sendNotification("Egg Hatcher - Auto [2/6]", "Anti-AFK Check: Already OFF", Formatting.GRAY);
             PokeAlertClient.LOGGER.info("✅ Step 2/6: Anti-AFK Check - Already OFF at " + location);
         }
         
@@ -514,7 +514,7 @@ public class RealmManager {
                 Text notification = Text.literal("[").formatted(Formatting.GRAY)
                     .append(Text.literal("PokeAlert").formatted(Formatting.RED))
                     .append(Text.literal("] ").formatted(Formatting.GRAY))
-                    .append(Text.literal("Realm Manager - Auto [3/6]: ").formatted(Formatting.WHITE))
+                    .append(Text.literal("Egg Hatcher - Auto [3/6]: ").formatted(Formatting.WHITE))
                     .append(Text.literal("Server Buffer: Waiting 30s").formatted(Formatting.YELLOW))
                     .append(Text.literal(" - Press Home to cancel").formatted(Formatting.DARK_GRAY));
                 
@@ -550,7 +550,7 @@ public class RealmManager {
             String location = AntiAfkManager.getPlayerLocationInfo();
             
             // Step 4: Realm Change - Execute teleport command
-            sendNotification("Realm Manager - Auto [4/6]", "Realm Change: Executing", Formatting.YELLOW);
+            sendNotification("Egg Hatcher - Auto [4/6]", "Realm Change: Executing", Formatting.YELLOW);
             PokeAlertClient.LOGGER.info("🎯 Step 4/6: Realm Change - Sending teleport command at " + location);
             
             // CRITICAL: Save Anti-AFK state BEFORE teleport (not at world change)
@@ -602,7 +602,7 @@ public class RealmManager {
                     
                     // Step 5: Anti-AFK Enable - Turn on Anti-AFK at overworld
                     currentState = State.ENABLING_ANTIAFK;
-                    sendNotification("Realm Manager - Auto [5/6]", "Anti-AFK Enable: Turning ON", Formatting.YELLOW);
+                    sendNotification("Egg Hatcher - Auto [5/6]", "Anti-AFK Enable: Turning ON", Formatting.YELLOW);
                     PokeAlertClient.LOGGER.info("🎯 Step 5/6: Anti-AFK Enable - Enabling at " + overworldLocation + " (waited 17s: 5s delay + 3s load + 3s stabilization + 6s data)");
                         PokeAlertClient.LOGGER.info("Safety monitor paused for toggle operation");
                         
@@ -724,7 +724,7 @@ public class RealmManager {
                     // Handle based on location
                     if (isAtSpawn()) {
                         // At spawn with Anti-AFK ON - need to turn it OFF and restart
-                        sendNotification("Realm Manager", 
+                        sendNotification("Egg Hatcher", 
                                        "Safety: Anti-AFK ON at spawn - Fixing & Restarting", 
                                        Formatting.RED);
                         
@@ -778,7 +778,7 @@ public class RealmManager {
                         
                     } else {
                         // At overworld with Anti-AFK OFF - need to turn it ON immediately
-                        sendNotification("Realm Manager", 
+                        sendNotification("Egg Hatcher", 
                                        "Safety: Anti-AFK OFF at overworld - Fixing", 
                                        Formatting.YELLOW);
                         
@@ -875,7 +875,7 @@ public class RealmManager {
         
         // Step 6: Completion - Automation complete
         String location = AntiAfkManager.getPlayerLocationInfo();
-        sendNotification("Realm Manager - Auto [6/6]", "Completion: Realm change complete ✓", Formatting.YELLOW);
+        sendNotification("Egg Hatcher - Auto [6/6]", "Completion: Realm change complete ✓", Formatting.YELLOW);
         PokeAlertClient.LOGGER.info("🎯 Step 6/6: Completion - Automation finished successfully at " + location);
         
         // Send Telegram notification
@@ -901,7 +901,7 @@ public class RealmManager {
         // Cancel all automation tasks
         cancelAllAutomationTasks();
         
-        sendNotification("Realm Manager", 
+        sendNotification("Egg Hatcher", 
             "CRITICAL: Stuck at spawn for over 2 minutes - Closing game", 
             Formatting.RED);
         
@@ -963,7 +963,7 @@ public class RealmManager {
         
         // Send notification if we actually cancelled something
         if (wasRunning) {
-            sendNotification("Realm Manager", "Automation cancelled", Formatting.YELLOW);
+            sendNotification("Egg Hatcher", "Automation cancelled", Formatting.YELLOW);
         }
     }
     
@@ -997,7 +997,7 @@ public class RealmManager {
                 telegram.initialize();
                 
                 StringBuilder message = new StringBuilder();
-                message.append("🌍 <b>Realm Manager</b>\n");
+                message.append("🥚 <b>Egg Hatcher</b>\n");
                 
                 // Status line
                 if (success) {

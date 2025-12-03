@@ -141,7 +141,7 @@ PokéAlert provides a comprehensive command system for quick configuration:
    - Notification toggles (text, sound, telegram)
    - Sound volume control (0-100%)
    - Egg timer duration and keybind settings
-   - Realm Manager settings:
+   - Egg Hatcher settings:
      - Master toggle for automation
      - Mode cycling keybind (default: Home)
      - Anti-AFK keybind configuration (default: Numpad 9)
@@ -170,7 +170,7 @@ Edit `.minecraft/config/pokealert.json`:
   "eggTimerDuration": 30,
   "eggTimerTextNotification": true,
   "eggTimerTelegramNotification": true,
-  "realmManagerEnabled": true,
+  "eggHatcherEnabled": true,
   "antiAfkKeybind": 329,
   "realmReturnCommand": "/home new"
 }
@@ -218,14 +218,14 @@ cd poke-alert
 
 The built jar will be in `build/libs/`
 
-## 🤖 Realm Manager Automation
+## 🥚 Egg Hatcher Automation
 
-This feature automates returning to the main realm after disconnects or server restarts when using Anti-AFK systems.
+This feature automates returning to the main realm after disconnects or server restarts to keep your eggs hatching with Anti-AFK systems.
 
 #### Setup Requirements:
 1. **Anti-AFK System**  Keybind configured (default: Numpad 9, customizable in Mod Menu)
 2. Server must have a realm return command (assuming you've sethome at another realm other than spawn) (default: `/home new`, customizable in Mod Menu)
-3. Configure keybinds and commands in Mod Menu → Realm Manager section
+3. Configure keybinds and commands in Mod Menu → Egg Hatcher section
 
 #### Automation Modes:
 The system has 3 modes that you can cycle through with the `Home` key:
@@ -298,7 +298,8 @@ The system has 3 modes that you can cycle through with the `Home` key:
   - If you cycle to AUTO mode at overworld → Shows "no return needed" message
 - **Cancel Automation:** Press `Home` during countdown
 - **Check Status:** `/pokealert realm`
-- **Manual Trigger:** `/pokealert realm trigger`
+- **Check Status:** `/pokealert realm status`
+- **Toggle Mode:** `/pokealert realm toggle`
 
 #### Notifications:
 - **In-Game:** Clean, simplified step-by-step progress (6 total messages)

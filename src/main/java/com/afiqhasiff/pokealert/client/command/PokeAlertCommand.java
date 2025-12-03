@@ -5,7 +5,7 @@ import com.afiqhasiff.pokealert.client.config.ConfigManager;
 import com.afiqhasiff.pokealert.client.config.PokeAlertConfig;
 import com.afiqhasiff.pokealert.client.util.PokemonLists;
 import com.afiqhasiff.pokealert.client.notification.EggTimerManager;
-import com.afiqhasiff.pokealert.client.automation.RealmManager;
+import com.afiqhasiff.pokealert.client.automation.EggHatcher;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
@@ -161,11 +161,11 @@ public class PokeAlertCommand {
                         .then(ClientCommandManager.literal("duration")
                             .then(ClientCommandManager.argument("minutes", IntegerArgumentType.integer(1, 120))
                                 .executes(context -> setEggTimerDuration(context)))))
-                    // Realm manager commands
+                    // Egg hatcher commands
                     .then(ClientCommandManager.literal("realm")
                         .executes(context -> checkRealmStatus(context))
                         .then(ClientCommandManager.literal("toggle")
-                            .executes(context -> toggleRealmManager(context)))
+                            .executes(context -> toggleEggHatcher(context)))
                         .then(ClientCommandManager.literal("status")
                             .executes(context -> checkRealmStatus(context))))
                     
@@ -362,11 +362,11 @@ public class PokeAlertCommand {
         
         source.sendFeedback(Text.empty()); // Empty line
         
-        // Realm Manager features (only show if enabled)
+        // Egg Hatcher features (only show if enabled)
         PokeAlertConfig config = PokeAlertClient.getInstance().config;
-        if (config.realmManagerEnabled) {
+        if (config.eggHatcherEnabled) {
             source.sendFeedback(Text.literal("━━━ ").formatted(Formatting.DARK_GRAY)
-                .append(Text.literal("Realm Manager").formatted(Formatting.LIGHT_PURPLE))
+                .append(Text.literal("Egg Hatcher").formatted(Formatting.LIGHT_PURPLE))
                 .append(Text.literal(" ━━━").formatted(Formatting.DARK_GRAY)));
             
             // Description
@@ -400,7 +400,7 @@ public class PokeAlertCommand {
                 Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
                     .append(Text.literal("realm").formatted(Formatting.GREEN))
                     .append(Text.literal(" - ").formatted(Formatting.DARK_GRAY))
-                    .append(Text.literal("Check realm automation status").formatted(Formatting.WHITE))
+                    .append(Text.literal("Check egg hatcher automation status").formatted(Formatting.WHITE))
             );
             source.sendFeedback(
                 Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
@@ -1205,13 +1205,13 @@ public class PokeAlertCommand {
     
     private static int checkRealmStatus(CommandContext<FabricClientCommandSource> context) {
         FabricClientCommandSource source = context.getSource();
-        RealmManager manager = RealmManager.getInstance();
+        EggHatcher manager = EggHatcher.getInstance();
         
         source.sendFeedback(
             Text.literal("[").formatted(Formatting.GRAY)
                 .append(Text.literal("PokeAlert").formatted(Formatting.RED))
                 .append(Text.literal("] ").formatted(Formatting.GRAY))
-                .append(Text.literal("Realm Manager Status: ").formatted(Formatting.WHITE))
+                .append(Text.literal("Egg Hatcher Status: ").formatted(Formatting.WHITE))
                 .append(Text.literal(manager.getStatus()).formatted(
                     manager.getStatus().equals("Disabled") ? Formatting.RED :
                     manager.getStatus().startsWith("Running") ? Formatting.YELLOW :
@@ -1230,7 +1230,7 @@ public class PokeAlertCommand {
         return 1;
     }
     
-    private static int toggleRealmManager(CommandContext<FabricClientCommandSource> context) {
+    private static int toggleEggHatcher(CommandContext<FabricClientCommandSource> context) {
         FabricClientCommandSource source = context.getSource();
         PokeAlertConfig config = PokeAlertClient.getInstance().config;
         
@@ -1240,12 +1240,12 @@ public class PokeAlertCommand {
                 Text.literal("[").formatted(Formatting.GRAY)
                     .append(Text.literal("PokeAlert").formatted(Formatting.RED))
                     .append(Text.literal("] ").formatted(Formatting.GRAY))
-                    .append(Text.literal("Realm Manager disabled - Enable PokeAlert first").formatted(Formatting.YELLOW))
+                    .append(Text.literal("Egg Hatcher disabled - Enable PokeAlert first").formatted(Formatting.YELLOW))
             );
             return 0;
         }
         
-        RealmManager manager = RealmManager.getInstance();
+        EggHatcher manager = EggHatcher.getInstance();
         manager.toggleAutomation();
         
         String status = manager.getStatus();
@@ -1253,7 +1253,7 @@ public class PokeAlertCommand {
             Text.literal("[").formatted(Formatting.GRAY)
                 .append(Text.literal("PokeAlert").formatted(Formatting.RED))
                 .append(Text.literal("] ").formatted(Formatting.GRAY))
-                .append(Text.literal("Realm Manager: ").formatted(Formatting.WHITE))
+                .append(Text.literal("Egg Hatcher: ").formatted(Formatting.WHITE))
                 .append(Text.literal(status).formatted(
                     status.equals("Disabled") ? Formatting.RED : Formatting.GREEN
                 ))

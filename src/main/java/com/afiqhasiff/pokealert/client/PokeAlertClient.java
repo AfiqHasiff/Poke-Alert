@@ -32,7 +32,7 @@ import com.afiqhasiff.pokealert.client.notification.NotificationManager;
 import com.afiqhasiff.pokealert.client.notification.PokemonSpawnData;
 import com.afiqhasiff.pokealert.client.notification.TelegramNotification;
 import com.afiqhasiff.pokealert.client.notification.EggTimerManager;
-import com.afiqhasiff.pokealert.client.automation.RealmManager;
+import com.afiqhasiff.pokealert.client.automation.EggHatcher;
 
 public class PokeAlertClient implements ClientModInitializer {
     public static final String MOD_ID = "pokealert";
@@ -54,7 +54,7 @@ public class PokeAlertClient implements ClientModInitializer {
     // Keybindings
     public static KeyBinding toggleModKey;
     public static KeyBinding startEggTimerKey;
-    public static KeyBinding realmManagerKey;
+    public static KeyBinding eggHatcherKey;
     
     // Confirmation tracking for disabling with running modules
     private long lastDisableAttemptTime = 0;
@@ -101,10 +101,10 @@ public class PokeAlertClient implements ClientModInitializer {
             "key.categories.pokealert"
         ));
         
-        realmManagerKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-            "key.pokealert.realmmanager",
+        eggHatcherKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+            "key.pokealert.egghatcher",
             InputUtil.Type.KEYSYM,
-            GLFW.GLFW_KEY_HOME, // Home key for realm manager automation
+            GLFW.GLFW_KEY_HOME, // Home key for egg hatcher automation
             "key.categories.pokealert"
         ));
         
@@ -115,15 +115,15 @@ public class PokeAlertClient implements ClientModInitializer {
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
             // Only start realm manager if PokeAlert is enabled
             if (ConfigManager.getConfig().modEnabled) {
-                RealmManager.getInstance().markConnected();
-                LOGGER.info("PokéAlert: Player connected to server - Realm Manager initialized");
+                EggHatcher.getInstance().markConnected();
+                LOGGER.info("PokéAlert: Player connected to server - Egg Hatcher initialized");
             } else {
-                LOGGER.info("PokéAlert: Player connected to server - Realm Manager skipped (mod disabled)");
+                LOGGER.info("PokéAlert: Player connected to server - Egg Hatcher skipped (mod disabled)");
             }
         });
         
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
-            RealmManager.getInstance().markDisconnected();
+            EggHatcher.getInstance().markDisconnected();
             LOGGER.info("PokéAlert: Player disconnected from server");
         });
         
@@ -136,8 +136,8 @@ public class PokeAlertClient implements ClientModInitializer {
                 if (config.modEnabled) {
                     // Check if any modules are running
                     boolean eggTimerWasRunning = EggTimerManager.getInstance().isTimerRunning();
-                    boolean realmManagerWasRunning = RealmManager.getInstance().isRunning();
-                    boolean hasRunningModules = eggTimerWasRunning || realmManagerWasRunning;
+                    boolean eggHatcherWasRunning = EggHatcher.getInstance().isRunning();
+                    boolean hasRunningModules = eggTimerWasRunning || eggHatcherWasRunning;
                     
                     if (hasRunningModules) {
                         long currentTime = System.currentTimeMillis();
@@ -154,18 +154,18 @@ public class PokeAlertClient implements ClientModInitializer {
                                     .append(Text.literal("] ").formatted(Formatting.GRAY))
                                     .append(Text.literal("Warning: ").formatted(Formatting.YELLOW));
                                 
-                                if (eggTimerWasRunning && realmManagerWasRunning) {
+                                if (eggTimerWasRunning && eggHatcherWasRunning) {
                                     int remainingMins = EggTimerManager.getInstance().getRemainingMinutes();
                                     message.append(Text.literal("Egg Timer (").formatted(Formatting.WHITE))
                                         .append(Text.literal(remainingMins + " min").formatted(Formatting.AQUA))
-                                        .append(Text.literal(") & Realm Manager running").formatted(Formatting.WHITE));
+                                        .append(Text.literal(") & Egg Hatcher running").formatted(Formatting.WHITE));
                                 } else if (eggTimerWasRunning) {
                                     int remainingMins = EggTimerManager.getInstance().getRemainingMinutes();
                                     message.append(Text.literal("Egg Timer running (").formatted(Formatting.WHITE))
                                         .append(Text.literal(remainingMins + " min remaining").formatted(Formatting.AQUA))
                                         .append(Text.literal(")").formatted(Formatting.WHITE));
                                 } else {
-                                    message.append(Text.literal("Realm Manager active").formatted(Formatting.WHITE));
+                                    message.append(Text.literal("Egg Hatcher active").formatted(Formatting.WHITE));
                                 }
                                 
                                 message.append(Text.literal(" - Press again within 3s to force stop").formatted(Formatting.GRAY));
@@ -182,9 +182,9 @@ public class PokeAlertClient implements ClientModInitializer {
                             EggTimerManager.getInstance().stopTimer(true); // true = silent stop
                         }
                         
-                        // Cancel realm manager if running
-                        if (realmManagerWasRunning) {
-                            RealmManager.getInstance().stopAutomation();
+                        // Cancel egg hatcher if running
+                        if (eggHatcherWasRunning) {
+                            EggHatcher.getInstance().stopAutomation();
                         }
                         
                         // Disable mod
@@ -201,12 +201,12 @@ public class PokeAlertClient implements ClientModInitializer {
                                 .append(Text.literal("Disabled").formatted(Formatting.RED))
                                 .append(Text.literal(" - ").formatted(Formatting.GRAY));
                             
-                            if (eggTimerWasRunning && realmManagerWasRunning) {
-                                message.append(Text.literal("Egg Timer & Realm Manager force stopped").formatted(Formatting.YELLOW));
+                            if (eggTimerWasRunning && eggHatcherWasRunning) {
+                                message.append(Text.literal("Egg Timer & Egg Hatcher force stopped").formatted(Formatting.YELLOW));
                             } else if (eggTimerWasRunning) {
                                 message.append(Text.literal("Egg Timer force stopped").formatted(Formatting.YELLOW));
                             } else {
-                                message.append(Text.literal("Realm Manager force stopped").formatted(Formatting.YELLOW));
+                                message.append(Text.literal("Egg Hatcher force stopped").formatted(Formatting.YELLOW));
                             }
                             
                             client.player.sendMessage(message, false);
@@ -266,8 +266,8 @@ public class PokeAlertClient implements ClientModInitializer {
                 timerManager.handleTimerToggle();
             }
             
-            // Process realm manager automation keybinding
-            while (realmManagerKey.wasPressed()) {
+            // Process egg hatcher automation keybinding
+            while (eggHatcherKey.wasPressed()) {
                 // Check if mod is disabled
                 if (!config.modEnabled) {
                     if (client.player != null && config.inGameTextEnabled) {
@@ -275,21 +275,21 @@ public class PokeAlertClient implements ClientModInitializer {
                             .formatted(Formatting.GRAY)
                             .append(Text.literal("PokeAlert").formatted(Formatting.RED))
                             .append(Text.literal("] ").formatted(Formatting.GRAY))
-                            .append(Text.literal("Realm Manager disabled - Enable PokeAlert first").formatted(Formatting.YELLOW));
+                            .append(Text.literal("Egg Hatcher disabled - Enable PokeAlert first").formatted(Formatting.YELLOW));
                         client.player.sendMessage(message, false);
                     }
                     continue;
                 }
                 
-                RealmManager realmManager = RealmManager.getInstance();
-                String status = realmManager.getStatus();
+                EggHatcher eggHatcher = EggHatcher.getInstance();
+                String status = eggHatcher.getStatus();
                 
                 // If automation is running OR there's an active countdown, stop it
-                if (realmManager.isRunning() || status.contains("Server Buffer") || status.contains("Starting in")) {
-                    realmManager.stopAutomation();
+                if (eggHatcher.isRunning() || status.contains("Server Buffer") || status.contains("Starting in")) {
+                    eggHatcher.stopAutomation();
                 } else {
                     // Otherwise toggle through modes
-                    realmManager.toggleAutomation();
+                    eggHatcher.toggleAutomation();
                 }
             }
             

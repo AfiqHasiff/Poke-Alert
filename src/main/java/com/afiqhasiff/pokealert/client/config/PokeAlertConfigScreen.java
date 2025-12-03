@@ -1,7 +1,7 @@
 package com.afiqhasiff.pokealert.client.config;
 
 import com.afiqhasiff.pokealert.client.PokeAlertClient;
-import com.afiqhasiff.pokealert.client.automation.RealmManager;
+import com.afiqhasiff.pokealert.client.automation.EggHatcher;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -58,7 +58,7 @@ public class PokeAlertConfigScreen extends Screen {
     private ButtonWidget eggTimerKeybindButton;
     private boolean waitingForEggTimerKey = false;
     
-    // Realm manager settings
+    // Egg hatcher settings
     private ButtonWidget realmReturnToggleButton;
     private ButtonWidget realmReturnKeybindButton;
     private boolean waitingForRealmReturnKey = false;
@@ -307,22 +307,22 @@ public class PokeAlertConfigScreen extends Screen {
             });
         currentY += ROW_HEIGHT + SECTION_SPACING;
         
-        // ========== Realm Manager Section ==========
+        // ========== Egg Hatcher Section ==========
         // (Separator drawn in render() method)
         
-        // Realm return toggle button
+        // Egg hatcher toggle button
         realmReturnToggleButton = addEggTimerRow(currentY,
-            "Realm Manager",
+            "Egg Hatcher",
             "Auto-return from spawn",
-            Text.literal(config.realmManagerEnabled ? "Enabled" : "Disabled"),
+            Text.literal(config.eggHatcherEnabled ? "Enabled" : "Disabled"),
             button -> {
-                config.realmManagerEnabled = !config.realmManagerEnabled;
-                button.setMessage(Text.literal(config.realmManagerEnabled ? "Enabled" : "Disabled"));
+                config.eggHatcherEnabled = !config.eggHatcherEnabled;
+                button.setMessage(Text.literal(config.eggHatcherEnabled ? "Enabled" : "Disabled"));
                 ConfigManager.saveSettings(config);
             });
         currentY += ROW_HEIGHT;
         
-        // Realm return mode toggle keybind button
+        // Egg hatcher mode toggle keybind button
         realmReturnKeybindButton = addEggTimerRow(currentY,
             "Mode Toggle Key",
             "Cycle AUTO/DISABLED or cancel active automation",
@@ -344,7 +344,7 @@ public class PokeAlertConfigScreen extends Screen {
             });
         currentY += ROW_HEIGHT;
         
-        // Realm return command text field
+        // Egg hatcher command text field
         int realmCmdLabelWidth = this.textRenderer.getWidth("Return Command:");
         int realmCmdFieldWidth = this.width - (SIDE_MARGIN * 2) - realmCmdLabelWidth - 15;
         int realmCmdFieldX = SIDE_MARGIN + realmCmdLabelWidth + 10;
@@ -355,7 +355,7 @@ public class PokeAlertConfigScreen extends Screen {
             currentY - (int)scrollOffset,
             realmCmdFieldWidth,
             BUTTON_HEIGHT,
-            Text.literal("Realm Manager Command")
+            Text.literal("Egg Hatcher Command")
         );
         realmReturnCommandField.setMaxLength(100);
         realmReturnCommandField.setText(config.realmReturnCommand);
@@ -586,7 +586,7 @@ public class PokeAlertConfigScreen extends Screen {
         String worldsText = excludedWorldsField.getText().trim();
         config.excludedWorlds = parseList(worldsText);
         
-        // Parse realm return command
+        // Parse egg hatcher command
         String realmCmd = realmReturnCommandField.getText().trim();
         config.realmReturnCommand = realmCmd.isEmpty() ? "/home new" : realmCmd;
 
@@ -632,7 +632,7 @@ public class PokeAlertConfigScreen extends Screen {
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         // Sync button states with current config (in case changed via keybind)
         if (realmReturnToggleButton != null) {
-            realmReturnToggleButton.setMessage(Text.literal(config.realmManagerEnabled ? "Enabled" : "Disabled"));
+            realmReturnToggleButton.setMessage(Text.literal(config.eggHatcherEnabled ? "Enabled" : "Disabled"));
         }
         
         // Render background
@@ -768,20 +768,20 @@ public class PokeAlertConfigScreen extends Screen {
         // Draw separator line
         drawHorizontalSeparator(context, currentY - 10);
         
-        // Realm Manager header
+        // Egg Hatcher header
         context.drawTextWithShadow(
             this.textRenderer,
-            Text.literal("Realm Manager").formatted(Formatting.AQUA),
+            Text.literal("Egg Hatcher").formatted(Formatting.AQUA),
             SIDE_MARGIN,
             currentY - 15,
             0xFFFFFF
         );
         
-        // Realm return toggle label
-        drawCategoryWithDescription(context, "Realm Manager", "Auto-return from spawn", currentY);
+        // Egg hatcher toggle label
+        drawCategoryWithDescription(context, "Egg Hatcher", "Auto-return from spawn", currentY);
         currentY += ROW_HEIGHT;
         
-        // Realm return mode toggle keybind label
+        // Egg hatcher mode toggle keybind label
         drawCategoryWithDescription(context, "Mode Toggle Key", "Cycle AUTO/DISABLED or cancel active automation", currentY);
         currentY += ROW_HEIGHT;
         
@@ -789,7 +789,7 @@ public class PokeAlertConfigScreen extends Screen {
         drawCategoryWithDescription(context, "Anti-AFK Keybind", "Key for Anti-AFK toggle (used by automation)", currentY);
         currentY += ROW_HEIGHT;
         
-        // Realm return command label
+        // Egg hatcher command label
         context.drawTextWithShadow(
             this.textRenderer,
             Text.literal("Return Command:"),
@@ -953,7 +953,7 @@ public class PokeAlertConfigScreen extends Screen {
             return true;
         }
         
-        // Handle keybind setting for realm return
+        // Handle keybind setting for egg hatcher
         if (waitingForRealmReturnKey) {
             // Don't rebind to Escape key
             if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
@@ -962,8 +962,8 @@ public class PokeAlertConfigScreen extends Screen {
                 return true;
             }
             
-            // Update the realm manager keybinding
-            PokeAlertClient.realmManagerKey.setBoundKey(InputUtil.Type.KEYSYM.createFromCode(keyCode));
+            // Update the egg hatcher keybinding
+            PokeAlertClient.eggHatcherKey.setBoundKey(InputUtil.Type.KEYSYM.createFromCode(keyCode));
             KeyBinding.updateKeysByCode();
             waitingForRealmReturnKey = false;
             realmReturnKeybindButton.setMessage(getRealmReturnKeybindText());
@@ -1021,7 +1021,7 @@ public class PokeAlertConfigScreen extends Screen {
     }
     
     private Text getRealmReturnKeybindText() {
-        String keyName = PokeAlertClient.realmManagerKey.getBoundKeyLocalizedText().getString();
+        String keyName = PokeAlertClient.eggHatcherKey.getBoundKeyLocalizedText().getString();
         return Text.literal("Key: ").formatted(Formatting.WHITE)
             .append(Text.literal(keyName).formatted(Formatting.YELLOW));
     }
