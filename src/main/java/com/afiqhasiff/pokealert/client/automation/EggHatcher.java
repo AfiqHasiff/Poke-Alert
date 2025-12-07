@@ -907,6 +907,12 @@ public class EggHatcher {
         long duration = (System.currentTimeMillis() - automationStartTime) / 1000;
         sendTelegramNotification(true, duration);
         
+        // Restart safety monitor to continue checking Anti-AFK state
+        if (safetyMonitorTask == null || safetyMonitorTask.isDone()) {
+            PokeAlertClient.LOGGER.info("🛡️ Restarting safety monitor after automation completion");
+            startSafetyMonitor();
+        }
+        
         // Continue monitoring
         startMonitoring();
     }
