@@ -4,10 +4,12 @@ import com.afiqhasiff.pokealert.client.PokeAlertClient;
 import com.afiqhasiff.pokealert.client.config.ConfigManager;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
+import net.minecraft.client.util.InputUtil;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import org.lwjgl.glfw.GLFW;
 
+import java.lang.reflect.Method;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -339,58 +341,140 @@ public class AntiAfkManager {
     }
     
     /**
-     * Simulate key press using Minecraft's input system
-     * This directly calls Minecraft's key handler
+     * Simulate key/button press using Minecraft's input system
+     * Supports both keyboard keys and mouse buttons
+     * Mouse buttons: 0-7 (0=left, 1=right, 2=middle, etc.)
+     * Keyboard keys: 32+ (GLFW key codes)
      */
     private static boolean simulateAntiAfkKeyPress() {
         try {
             if (client.getWindow() == null) {
-                PokeAlertClient.LOGGER.warn("Cannot simulate key - window is null");
+                PokeAlertClient.LOGGER.warn("Cannot simulate input - window is null");
                 return false;
             }
             
             if (client.currentScreen != null) {
-                PokeAlertClient.LOGGER.warn("Cannot simulate key - screen is open");
+                PokeAlertClient.LOGGER.warn("Cannot simulate input - screen is open");
                 return false;
             }
             
-            int keyCode = ConfigManager.getConfig().antiAfkKeybind;
+            // Get the input code and type from config
+            // The config is synchronized with the KeyBinding via bidirectional sync
+            int inputCode = ConfigManager.getConfig().antiAfkKeybind;
+            InputUtil.Type inputType;
+            
+            // Detect mouse button (0-7) vs keyboard key
+            if (inputCode >= 0 && inputCode <= 7) {
+                inputType = InputUtil.Type.MOUSE;
+            } else {
+                inputType = InputUtil.Type.KEYSYM;
+            }
             long windowHandle = client.getWindow().getHandle();
             
-            PokeAlertClient.LOGGER.info("Simulating key press with key code: " + keyCode);
+            // Detect if this is a mouse button or keyboard key based on InputUtil.Type
+            boolean isMouseButton = (inputType == InputUtil.Type.MOUSE);
             
-            // Execute on main client thread to ensure proper handling
-            client.execute(() -> {
+            if (isMouseButton) {
+                PokeAlertClient.LOGGER.info("Simulating mouse button press: " + inputCode + " (" + getMouseButtonName(inputCode) + ")");
+                
                 try {
-                    // Simulate key press (action = 1 for PRESS)
-                    client.keyboard.onKey(windowHandle, keyCode, 0, GLFW.GLFW_PRESS, 0);
+                    // Get GLFW's current mouse button callback and invoke it directly
+                    // This bypasses Minecraft's private Mouse class and works reliably
+                    org.lwjgl.glfw.GLFWMouseButtonCallback callback = GLFW.glfwSetMouseButtonCallback(windowHandle, null);
                     
-                    PokeAlertClient.LOGGER.info("✓ Key press sent: " + keyCode);
-                } catch (Exception e) {
-                    PokeAlertClient.LOGGER.error("Error during key press", e);
-                }
-            });
-            
-            // Wait for key press to be processed
-            Thread.sleep(50);
-            
-            // Simulate key release (action = 0 for RELEASE)
-            client.execute(() -> {
-                try {
-                    client.keyboard.onKey(windowHandle, keyCode, 0, GLFW.GLFW_RELEASE, 0);
+                    if (callback == null) {
+                        PokeAlertClient.LOGGER.error("No mouse button callback registered - cannot simulate");
+                        return false;
+                    }
                     
-                    PokeAlertClient.LOGGER.info("✓ Key release sent: " + keyCode);
+                    // Restore the callback immediately
+                    GLFW.glfwSetMouseButtonCallback(windowHandle, callback);
+                    
+                    // Execute on main client thread to ensure proper handling
+                    client.execute(() -> {
+                        try {
+                            // Simulate mouse button press by invoking the callback directly
+                            callback.invoke(windowHandle, inputCode, GLFW.GLFW_PRESS, 0);
+                            
+                            PokeAlertClient.LOGGER.info("✓ Mouse button press sent: " + inputCode);
+                        } catch (Exception e) {
+                            PokeAlertClient.LOGGER.error("Error during mouse button press", e);
+                        }
+                    });
+                    
+                    // Wait for button press to be processed
+                    Thread.sleep(50);
+                    
+                    // Simulate mouse button release
+                    client.execute(() -> {
+                        try {
+                            callback.invoke(windowHandle, inputCode, GLFW.GLFW_RELEASE, 0);
+                            
+                            PokeAlertClient.LOGGER.info("✓ Mouse button release sent: " + inputCode);
+                        } catch (Exception e) {
+                            PokeAlertClient.LOGGER.error("Error during mouse button release", e);
+                        }
+                    });
+                    
+                    PokeAlertClient.LOGGER.info("✅ Mouse button simulation completed for button: " + inputCode);
                 } catch (Exception e) {
-                    PokeAlertClient.LOGGER.error("Error during key release", e);
+                    PokeAlertClient.LOGGER.error("Failed to simulate mouse button", e);
+                    return false;
                 }
-            });
+            } else {
+                PokeAlertClient.LOGGER.info("Simulating keyboard key press: " + inputCode);
+                
+                // Execute on main client thread to ensure proper handling
+                client.execute(() -> {
+                    try {
+                        // Simulate key press (action = 1 for PRESS)
+                        client.keyboard.onKey(windowHandle, inputCode, 0, GLFW.GLFW_PRESS, 0);
+                        
+                        PokeAlertClient.LOGGER.info("✓ Key press sent: " + inputCode);
+                    } catch (Exception e) {
+                        PokeAlertClient.LOGGER.error("Error during key press", e);
+                    }
+                });
+                
+                // Wait for key press to be processed
+                Thread.sleep(50);
+                
+                // Simulate key release (action = 0 for RELEASE)
+                client.execute(() -> {
+                    try {
+                        client.keyboard.onKey(windowHandle, inputCode, 0, GLFW.GLFW_RELEASE, 0);
+                        
+                        PokeAlertClient.LOGGER.info("✓ Key release sent: " + inputCode);
+                    } catch (Exception e) {
+                        PokeAlertClient.LOGGER.error("Error during key release", e);
+                    }
+                });
+                
+                PokeAlertClient.LOGGER.info("✅ Keyboard key simulation completed for keyCode: " + inputCode);
+            }
             
-            PokeAlertClient.LOGGER.info("✅ Key simulation completed for keyCode: " + keyCode);
             return true;
             
         } catch (Exception e) {
-            PokeAlertClient.LOGGER.error("Failed to simulate key press", e);
+            PokeAlertClient.LOGGER.error("Failed to simulate input", e);
             return false;
+        }
+    }
+    
+    /**
+     * Get human-readable name for mouse button code
+     */
+    private static String getMouseButtonName(int button) {
+        switch (button) {
+            case 0: return "Left Click";
+            case 1: return "Right Click";
+            case 2: return "Middle Click";
+            case 3: return "Mouse Button 4";
+            case 4: return "Mouse Button 5";
+            case 5: return "Mouse Button 6";
+            case 6: return "Mouse Button 7";
+            case 7: return "Mouse Button 8";
+            default: return "Unknown Mouse Button";
         }
     }
     

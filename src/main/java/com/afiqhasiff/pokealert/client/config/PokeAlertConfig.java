@@ -39,7 +39,7 @@ public class PokeAlertConfig {
     
     // Egg Hatcher Automation Settings
     public boolean eggHatcherEnabled = true;
-    public int antiAfkKeybind = 329; // Default: Numpad 9 (GLFW.GLFW_KEY_KP_9)
+    public int antiAfkKeybind = 329; // Default: Numpad 9 (GLFW_KEY_KP_9) - synchronized with Controls menu
     public String realmReturnCommand = "/home new"; // Default command to return to main realm for egg hatching
 
     public String[] getCombinedWhitelist(){

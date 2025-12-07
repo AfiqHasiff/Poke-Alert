@@ -55,6 +55,7 @@ public class PokeAlertClient implements ClientModInitializer {
     public static KeyBinding toggleModKey;
     public static KeyBinding startEggTimerKey;
     public static KeyBinding eggHatcherKey;
+    public static KeyBinding antiAfkKeybind;
     
     // Confirmation tracking for disabling with running modules
     private long lastDisableAttemptTime = 0;
@@ -107,6 +108,35 @@ public class PokeAlertClient implements ClientModInitializer {
             GLFW.GLFW_KEY_HOME, // Home key for egg hatcher automation
             "key.categories.pokealert"
         ));
+        
+        antiAfkKeybind = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+            "key.pokealert.antiafk",
+            InputUtil.Type.KEYSYM,
+            GLFW.GLFW_KEY_KP_9, // Default to Numpad 9 (can be rebound to mouse in Controls)
+            "key.categories.pokealert"
+        ));
+        
+        // Sync Anti-AFK keybind from config to registered KeyBinding
+        // This ensures JSON edits are reflected in the Controls menu
+        if (config.antiAfkKeybind != GLFW.GLFW_KEY_KP_9) {
+            LOGGER.info("Syncing Anti-AFK keybind from config: " + config.antiAfkKeybind);
+            int configCode = config.antiAfkKeybind;
+            InputUtil.Type type;
+            // Detect if it's a mouse button (0-7) or keyboard key
+            if (configCode >= 0 && configCode <= 7) {
+                type = InputUtil.Type.MOUSE;
+            } else {
+                type = InputUtil.Type.KEYSYM;
+            }
+            antiAfkKeybind.setBoundKey(type.createFromCode(configCode));
+            KeyBinding.updateKeysByCode(); // Update internal mappings
+            LOGGER.info("Synced to " + (type == InputUtil.Type.MOUSE ? "mouse button" : "key") + ": " + configCode);
+        }
+        
+        // Note: Controls menu → JSON sync is disabled due to Fabric mapping issues
+        // The boundKey field name varies across Minecraft versions
+        // Use JSON or Mod Menu to configure the Anti-AFK keybind
+        LOGGER.info("Anti-AFK keybind sync: JSON ↔ Mod Menu only (Controls menu not synced)");
         
         // Register commands
         PokeAlertCommand.register();

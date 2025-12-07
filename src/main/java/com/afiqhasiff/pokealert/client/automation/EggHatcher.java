@@ -244,9 +244,19 @@ public class EggHatcher {
             antiAfkDisabledOnReconnect = false;
             spawnDetectionTime = 0;
             
+            // CRITICAL: Reset resource pack loading flag
+            // When toggling ON manually, we're not loading a resource pack
+            // This ensures safety monitor can run immediately
+            isResourcePackLoading = false;
+            
             // CRITICAL: Reset Anti-AFK tracking including stateBeforeTeleport
             // This prevents stale teleport state from previous automation runs
             AntiAfkManager.resetTracking();
+            
+            // CRITICAL: Ensure Anti-AFK state monitoring is running
+            // Without this, state detector has no data and returns "unknown"
+            AntiAfkManager.startStateMonitoring();
+            PokeAlertClient.LOGGER.info("🔍 Anti-AFK state monitoring restarted for mode toggle");
             
             PokeAlertClient.LOGGER.info("Mode changed to AUTO - all session flags reset (fresh start)");
             
@@ -264,7 +274,9 @@ public class EggHatcher {
                 startAutomationSequence(false, false);
             } else if (!isAtSpawn()) {
                 // Provide feedback when enabling at overworld
-                sendNotification("Egg Hatcher", "Already at overworld - monitoring active", Formatting.GRAY);
+                // Safety monitor will verify and correct Anti-AFK state after 5s
+                sendNotification("Egg Hatcher", "Auto mode enabled - safety monitor active", Formatting.GRAY);
+                PokeAlertClient.LOGGER.info("Enabled at overworld - safety monitor will verify Anti-AFK state");
             }
         } else {
             // AUTO -> DISABLED (simplified: removed MANUAL mode)
@@ -516,7 +528,7 @@ public class EggHatcher {
                     .append(Text.literal("] ").formatted(Formatting.GRAY))
                     .append(Text.literal("Egg Hatcher - Auto [3/6]: ").formatted(Formatting.WHITE))
                     .append(Text.literal("Server Buffer: Waiting 30s").formatted(Formatting.YELLOW))
-                    .append(Text.literal(" - Press Home to cancel").formatted(Formatting.DARK_GRAY));
+                    .append(Text.literal(" - Press Home to cancel").formatted(Formatting.GRAY));
                 
                 client.player.sendMessage(notification, false);
             }
@@ -695,16 +707,24 @@ public class EggHatcher {
                 
                 // Determine expected anti-AFK state based on location
                 boolean expectedState;
+                String location;
                 if (isAtSpawn()) {
                     // At spawn: Anti-AFK should be OFF (false)
                     expectedState = false;
+                    location = "spawn";
                 } else {
                     // At overworld: Anti-AFK should be ON (true)
                     expectedState = true;
+                    location = "overworld";
                 }
                 
                 // Check current state
                 Boolean actualState = AntiAfkManager.getAntiAfkState();
+                
+                // Log every safety check for debugging (use INFO level temporarily for troubleshooting)
+                PokeAlertClient.LOGGER.info("🛡️ Safety check: location=" + location + 
+                    ", expected Anti-AFK=" + (expectedState ? "ON" : "OFF") + 
+                    ", actual=" + (actualState == null ? "unknown" : (actualState ? "ON" : "OFF")));
                 
                 // If we can't determine state, skip this check (might be initializing)
                 if (actualState == null) {
@@ -714,7 +734,6 @@ public class EggHatcher {
                 
                 // Check for mismatch
                 if (actualState != expectedState) {
-                    String location = isAtSpawn() ? "spawn" : "overworld";
                     String expected = expectedState ? "ON" : "OFF";
                     String actual = actualState ? "ON" : "OFF";
                     
@@ -784,11 +803,17 @@ public class EggHatcher {
                         
                         // Don't stop safety monitor, just fix the state
                         PokeAlertClient.LOGGER.info("🔧 Safety: Turning ON Anti-AFK at overworld");
-                        AntiAfkManager.toggleAntiAfk(true);
+                        boolean toggleSuccess = AntiAfkManager.toggleAntiAfk(true);
+                        
+                        if (toggleSuccess) {
+                            PokeAlertClient.LOGGER.info("✅ Safety: Anti-AFK successfully enabled at overworld");
+                        } else {
+                            PokeAlertClient.LOGGER.error("❌ Safety: Failed to enable Anti-AFK at overworld");
+                        }
                         
                         // No need to restart anything - we fixed it in place
                         // Safety monitor will continue running and verify the fix on next check
-                        PokeAlertClient.LOGGER.info("✅ Safety: Anti-AFK corrected at overworld, continuing monitoring");
+                        PokeAlertClient.LOGGER.info("✅ Safety: Anti-AFK correction attempted at overworld, continuing monitoring");
                     }
                 }
                 

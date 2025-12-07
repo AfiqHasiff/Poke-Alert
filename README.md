@@ -223,7 +223,7 @@ The built jar will be in `build/libs/`
 This feature automates returning to the main realm after disconnects or server restarts to keep your eggs hatching with Anti-AFK systems.
 
 #### Setup Requirements:
-1. **Anti-AFK System**  Keybind configured (default: Numpad 9, customizable in Mod Menu)
+1. **Anti-AFK System** Keybind or mouse button configured (default: Numpad 9, supports keyboard keys and mouse buttons 0-7, customizable in Mod Menu)
 2. Server must have a realm return command (assuming you've sethome at another realm other than spawn) (default: `/home new`, customizable in Mod Menu)
 3. Configure keybinds and commands in Mod Menu → Egg Hatcher section
 

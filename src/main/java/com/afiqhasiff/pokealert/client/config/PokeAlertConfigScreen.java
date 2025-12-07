@@ -333,14 +333,14 @@ public class PokeAlertConfigScreen extends Screen {
             });
         currentY += ROW_HEIGHT;
         
-        // Anti-AFK keybind button
+        // Anti-AFK keybind button (also configurable in Controls menu)
         antiAfkKeybindButton = addEggTimerRow(currentY,
             "Anti-AFK Keybind",
-            "Key for Anti-AFK toggle (Anti-afk functionality not provided by PokéAlert)",
+            "Key or mouse button for Anti-AFK toggle (also in Controls → PokéAlert)",
             getAntiAfkKeybindText(),
             button -> {
                 waitingForAntiAfkKey = true;
-                button.setMessage(Text.literal("> Press a key <").formatted(Formatting.YELLOW));
+                button.setMessage(Text.literal("> Press any key or mouse button <").formatted(Formatting.YELLOW));
             });
         currentY += ROW_HEIGHT;
         
@@ -786,7 +786,7 @@ public class PokeAlertConfigScreen extends Screen {
         currentY += ROW_HEIGHT;
         
         // Anti-AFK keybind label
-        drawCategoryWithDescription(context, "Anti-AFK Keybind", "Key for Anti-AFK toggle (used by automation)", currentY);
+        drawCategoryWithDescription(context, "Anti-AFK Keybind", "Key or mouse button (also in Controls → PokéAlert)", currentY);
         currentY += ROW_HEIGHT;
         
         // Egg hatcher command label
@@ -883,6 +883,22 @@ public class PokeAlertConfigScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        // Handle mouse button binding for Anti-AFK
+        if (waitingForAntiAfkKey) {
+            // Update the registered keybinding with mouse button
+            InputUtil.Type type = InputUtil.Type.MOUSE;
+            PokeAlertClient.antiAfkKeybind.setBoundKey(type.createFromCode(button));
+            KeyBinding.updateKeysByCode();
+            
+            // Also save to config for JSON editing compatibility
+            config.antiAfkKeybind = button;
+            ConfigManager.saveSettings(config);
+            
+            waitingForAntiAfkKey = false;
+            antiAfkKeybindButton.setMessage(getAntiAfkKeybindText());
+            return true;
+        }
+        
         if (whitelistField.mouseClicked(mouseX, mouseY, button)) {
             setFocused(whitelistField);
             return true;
@@ -979,9 +995,15 @@ public class PokeAlertConfigScreen extends Screen {
                 return true;
             }
             
-            // Update the Anti-AFK keybinding
+            // Update the registered keybinding
+            InputUtil.Type type = InputUtil.Type.KEYSYM;
+            PokeAlertClient.antiAfkKeybind.setBoundKey(type.createFromCode(keyCode));
+            KeyBinding.updateKeysByCode();
+            
+            // Also save to config for JSON editing compatibility
             config.antiAfkKeybind = keyCode;
             ConfigManager.saveSettings(config);
+            
             waitingForAntiAfkKey = false;
             antiAfkKeybindButton.setMessage(getAntiAfkKeybindText());
             return true;
@@ -1026,10 +1048,14 @@ public class PokeAlertConfigScreen extends Screen {
             .append(Text.literal(keyName).formatted(Formatting.YELLOW));
     }
     
+    
     private Text getAntiAfkKeybindText() {
-        String keyName = InputUtil.Type.KEYSYM.createFromCode(config.antiAfkKeybind).getLocalizedText().getString();
-        return Text.literal("Key: ").formatted(Formatting.WHITE)
-            .append(Text.literal(keyName).formatted(Formatting.YELLOW));
+        // Read from the registered KeyBinding (reflects Controls menu changes)
+        // Use the translated key name that Minecraft provides
+        String inputName = PokeAlertClient.antiAfkKeybind.getBoundKeyLocalizedText().getString();
+        
+        return Text.literal("Input: ").formatted(Formatting.WHITE)
+            .append(Text.literal(inputName).formatted(Formatting.YELLOW));
     }
     
     /**
