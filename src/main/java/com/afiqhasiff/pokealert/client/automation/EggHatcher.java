@@ -467,13 +467,13 @@ public class EggHatcher {
         }
         
         // Step 1: Spawn Detection
-        sendNotification("Egg Hatcher - Auto [1/6]", "Spawn Detected", Formatting.YELLOW);
+        sendNotification("Egg Hatcher [1/6]", "Spawn Detected", Formatting.YELLOW);
         PokeAlertClient.LOGGER.info("🎯 Step 1/6: Spawn Detection at " + location);
         
         // Step 2: Anti-AFK Check
         if (antiAfkState == null) {
             // State unknown - restart the process after a delay
-            sendNotification("Egg Hatcher - Auto [2/6]", "Anti-AFK Check: State unknown - restarting in 5s", Formatting.YELLOW);
+            sendNotification("Egg Hatcher [2/6]", "Anti-AFK Check: State unknown - restarting in 5s", Formatting.YELLOW);
             PokeAlertClient.LOGGER.warn("⚠️ Step 2/6: Anti-AFK state unknown - will restart process at " + location);
             
             // Reset state and restart after 5 seconds
@@ -504,12 +504,12 @@ public class EggHatcher {
             return; // Exit early - don't continue with automation
         } else if (antiAfkState) {
             // Confirmed ON, disable immediately
-            sendNotification("Egg Hatcher - Auto [2/6]", "Anti-AFK Check: Disabling", Formatting.YELLOW);
+            sendNotification("Egg Hatcher [2/6]", "Anti-AFK Check: Disabling", Formatting.YELLOW);
             PokeAlertClient.LOGGER.info("🎯 Step 2/6: Anti-AFK Check - State is ON, disabling now at " + location);
             AntiAfkManager.toggleAntiAfk(false);
         } else {
             // Confirmed OFF
-            sendNotification("Egg Hatcher - Auto [2/6]", "Anti-AFK Check: Already OFF", Formatting.GRAY);
+            sendNotification("Egg Hatcher [2/6]", "Anti-AFK Check: Already OFF", Formatting.GRAY);
             PokeAlertClient.LOGGER.info("✅ Step 2/6: Anti-AFK Check - Already OFF at " + location);
         }
         
@@ -526,7 +526,7 @@ public class EggHatcher {
                 Text notification = Text.literal("[").formatted(Formatting.GRAY)
                     .append(Text.literal("PokeAlert").formatted(Formatting.RED))
                     .append(Text.literal("] ").formatted(Formatting.GRAY))
-                    .append(Text.literal("Egg Hatcher - Auto [3/6]: ").formatted(Formatting.WHITE))
+                    .append(Text.literal("Egg Hatcher [3/6]: ").formatted(Formatting.WHITE))
                     .append(Text.literal("Server Buffer: Waiting 30s").formatted(Formatting.YELLOW))
                     .append(Text.literal(" - Press Home to cancel").formatted(Formatting.GRAY));
                 
@@ -562,7 +562,7 @@ public class EggHatcher {
             String location = AntiAfkManager.getPlayerLocationInfo();
             
             // Step 4: Realm Change - Execute teleport command
-            sendNotification("Egg Hatcher - Auto [4/6]", "Realm Change: Executing", Formatting.YELLOW);
+            sendNotification("Egg Hatcher [4/6]", "Realm Change: Executing", Formatting.YELLOW);
             PokeAlertClient.LOGGER.info("🎯 Step 4/6: Realm Change - Sending teleport command at " + location);
             
             // CRITICAL: Save Anti-AFK state BEFORE teleport (not at world change)
@@ -614,7 +614,7 @@ public class EggHatcher {
                     
                     // Step 5: Anti-AFK Enable - Turn on Anti-AFK at overworld
                     currentState = State.ENABLING_ANTIAFK;
-                    sendNotification("Egg Hatcher - Auto [5/6]", "Anti-AFK Enable: Turning ON", Formatting.YELLOW);
+                    sendNotification("Egg Hatcher [5/6]", "Anti-AFK Enable: Turning ON", Formatting.YELLOW);
                     PokeAlertClient.LOGGER.info("🎯 Step 5/6: Anti-AFK Enable - Enabling at " + overworldLocation + " (waited 17s: 5s delay + 3s load + 3s stabilization + 6s data)");
                         PokeAlertClient.LOGGER.info("Safety monitor paused for toggle operation");
                         
@@ -900,7 +900,7 @@ public class EggHatcher {
         
         // Step 6: Completion - Automation complete
         String location = AntiAfkManager.getPlayerLocationInfo();
-        sendNotification("Egg Hatcher - Auto [6/6]", "Completion: Realm change complete ✓", Formatting.YELLOW);
+        sendNotification("Egg Hatcher [6/6]", "Completion: Realm change complete ✓", Formatting.YELLOW);
         PokeAlertClient.LOGGER.info("🎯 Step 6/6: Completion - Automation finished successfully at " + location);
         
         // Send Telegram notification
