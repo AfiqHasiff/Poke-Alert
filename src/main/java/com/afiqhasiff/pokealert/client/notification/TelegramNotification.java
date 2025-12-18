@@ -1,8 +1,7 @@
 package com.afiqhasiff.pokealert.client.notification;
 
 import com.afiqhasiff.pokealert.client.PokeAlertClient;
-import com.afiqhasiff.pokealert.client.config.ConfigManager;
-import com.afiqhasiff.pokealert.client.config.TelegramConfig;
+import com.afiqhasiff.pokealert.client.config.PokeAlertConfig;
 import com.google.gson.JsonObject;
 import okhttp3.*;
 
@@ -17,7 +16,7 @@ import java.util.concurrent.TimeUnit;
  * Sends notifications to Telegram via Bot API.
  */
 public class TelegramNotification extends NotificationService {
-    private TelegramConfig config;
+    private PokeAlertConfig config;
     private OkHttpClient httpClient;
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm")
@@ -29,7 +28,7 @@ public class TelegramNotification extends NotificationService {
 
     @Override
     public void initialize() {
-        config = ConfigManager.getTelegramConfig();
+        config = PokeAlertClient.getInstance().config;
         
         // Create HTTP client with reasonable timeouts
         httpClient = new OkHttpClient.Builder()
@@ -38,7 +37,7 @@ public class TelegramNotification extends NotificationService {
             .readTimeout(30, TimeUnit.SECONDS)
             .build();
 
-        if (config.isValid()) {
+        if (config.isTelegramValid()) {
             PokeAlertClient.LOGGER.info("Telegram notification service initialized");
         } else {
             PokeAlertClient.LOGGER.warn("Telegram notification service initialized but not configured");
@@ -47,8 +46,11 @@ public class TelegramNotification extends NotificationService {
 
     @Override
     public void sendNotification(PokemonSpawnData data) {
-        // Check if Telegram is enabled in PokéAlert config
-        if (!PokeAlertClient.getInstance().config.telegramEnabled || !config.isValid()) {
+        // Refresh config reference
+        config = PokeAlertClient.getInstance().config;
+        
+        // Check if Telegram is enabled and configured
+        if (!config.telegramEnabled || !config.isTelegramValid()) {
             return;
         }
 
@@ -64,13 +66,13 @@ public class TelegramNotification extends NotificationService {
         // Build request
         String jsonBody = String.format(
             "{\"chat_id\":\"%s\",\"text\":\"%s\",\"parse_mode\":\"HTML\"}",
-            escapeJson(config.getChatId()),
+            escapeJson(config.telegramChatId),
             escapeJson(message)
         );
 
         RequestBody body = RequestBody.create(jsonBody, JSON);
         Request request = new Request.Builder()
-            .url(config.getSendMessageUrl())
+            .url(config.getTelegramSendMessageUrl())
             .post(body)
             .build();
 
@@ -99,7 +101,8 @@ public class TelegramNotification extends NotificationService {
 
     @Override
     public boolean isEnabled() {
-        return PokeAlertClient.getInstance().config.telegramEnabled && config != null && config.isValid();
+        config = PokeAlertClient.getInstance().config;
+        return config.telegramEnabled && config.isTelegramValid();
     }
 
     @Override
@@ -119,6 +122,9 @@ public class TelegramNotification extends NotificationService {
      * Send egg timer notification to Telegram
      */
     public void sendEggTimerNotification(String message) {
+        // Refresh config reference
+        config = PokeAlertClient.getInstance().config;
+        
         if (!isEnabled()) {
             PokeAlertClient.LOGGER.debug("Egg timer Telegram notification skipped - service not enabled or config invalid");
             return;
@@ -126,7 +132,7 @@ public class TelegramNotification extends NotificationService {
         
         try {
             JsonObject jsonPayload = new JsonObject();
-            jsonPayload.addProperty("chat_id", config.getChatId());
+            jsonPayload.addProperty("chat_id", config.telegramChatId);
             jsonPayload.addProperty("text", message);
             jsonPayload.addProperty("parse_mode", "HTML");
             
@@ -135,9 +141,8 @@ public class TelegramNotification extends NotificationService {
                 jsonPayload.toString()
             );
             
-            String url = String.format("https://api.telegram.org/bot%s/sendMessage", config.getBotToken());
             Request request = new Request.Builder()
-                .url(url)
+                .url(config.getTelegramSendMessageUrl())
                 .post(body)
                 .build();
             
@@ -221,7 +226,7 @@ public class TelegramNotification extends NotificationService {
         }
 
         // Check if we've exceeded the limit
-        if (notificationCount >= config.getMaxNotificationsPerMinute()) {
+        if (notificationCount >= config.telegramMaxNotificationsPerMinute) {
             return false;
         }
 

@@ -10,13 +10,12 @@
   [![Cobblemon](https://img.shields.io/badge/Cobblemon-1.6.1-orange.svg)](https://cobblemon.com)
 </div>
 
-> ⚠️ **Important Note**: This mod detects ALL Pokémon within range, including your own! To prevent your own Pokémon from triggering notifications, consider renaming them with a prefix or suffix (e.g., "-Charizard" or "Pikachu-").
-
 ## 🎮 Features
 
 ### Real-time Detection
 - **Automatic Scanning**: Continuously monitors for Pokémon spawns within a 64-block radius
 - **Smart Filtering**: Only alerts for Pokémon you care about
+- **Player-Owned Detection**: Automatically ignores your own Pokémon - only wild spawns trigger notifications
 - **World Exclusion**: Configure worlds to exclude from notifications (e.g., spawn, the_nether)
 - **Master Toggle**: Enable/disable the entire mod with one click
 - **Keybind Support**: Quick toggle mod on/off with a customizable hotkey (default: :)
@@ -149,7 +148,7 @@ PokéAlert provides a comprehensive command system for quick configuration:
 4. Save and apply changes
 
 ### Via Config File
-Edit `.minecraft/config/pokealert.json`:
+Edit `.minecraft/config/pokealert-settings.json`:
 ```json
 {
   "modEnabled": true,
@@ -166,6 +165,11 @@ Edit `.minecraft/config/pokealert.json`:
   "inGameSoundEnabled": true,
   "inGameSoundVolume": 1.0,
   "telegramEnabled": true,
+  "telegramBotToken": "YOUR_BOT_TOKEN",
+  "telegramChatId": "YOUR_CHAT_ID",
+  "telegramApiUrl": "https://api.telegram.org",
+  "telegramMaxNotificationsPerMinute": 10,
+  "telegramCooldownSeconds": 30,
   "excludedWorlds": ["spawn"],
   "eggTimerDuration": 30,
   "eggTimerTextNotification": true,
@@ -180,14 +184,11 @@ Edit `.minecraft/config/pokealert.json`:
 1. Create a Telegram bot via [@BotFather](https://t.me/botfather)
 2. Get your bot token
 3. Get your chat ID (send a message to your bot and visit `https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates`)
-4. Edit `.minecraft/config/pokealert_telegram.json`:
-```json
-{
-  "enabled": true,
-  "botToken": "YOUR_BOT_TOKEN",
-  "chatId": "YOUR_CHAT_ID"
-}
-```
+4. Edit the Telegram fields in `.minecraft/config/pokealert-settings.json`:
+   - Set `telegramEnabled` to `true`
+   - Set `telegramBotToken` to your bot token
+   - Set `telegramChatId` to your chat ID
+5. **Note:** The old separate `pokealert-telegram.json` file is no longer used and will be automatically migrated
 
 ## 🎨 Notification Examples
 

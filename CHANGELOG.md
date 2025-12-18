@@ -2,11 +2,11 @@
 
 All notable changes to PokéAlert will be documented in this file.
 
-## [2.0.0] - 2024-12-07
+## [2.0.0] - 2024-12-18
 
 ### Overview
 
-Complete overhaul with the new **Egg Hatcher** automation system (formerly Realm Manager), mouse button support for Anti-AFK, and continuous safety monitoring. This release focuses on reliability, cross-platform compatibility, and intelligent state management.
+Complete overhaul with the new **Egg Hatcher** automation system (formerly Realm Manager), mouse button support for Anti-AFK, player-owned Pokémon filtering, and continuous safety monitoring. This release focuses on reliability, cross-platform compatibility, and intelligent state management.
 
 ### ✨ Major New Features
 
@@ -89,6 +89,37 @@ Enhanced master toggle now manages all running modules.
 - Force-stops all modules on second press
 - Keybind disabled alerts when pressing module keys while mod is disabled
 
+#### **🎯 Player-Owned Pokémon Filter**
+Intelligent detection system that distinguishes between wild and player-owned Pokémon.
+
+**Features:**
+- Uses Cobblemon's `isWild()` API to check ownership
+- Only wild Pokémon trigger notifications
+- Player-owned Pokémon are automatically skipped (no more false alerts!)
+- Works regardless of Pokémon nickname or customization
+- Debug logging shows when player-owned Pokémon are filtered out
+
+**Benefits:**
+- No more notifications when throwing out your own shiny Pokémon
+- No need to rename your Pokémon with special prefixes/suffixes
+- 100% reliable ownership detection using official Cobblemon API
+- Cleaner notification experience focused on actual wild spawns
+
+#### **📁 Unified Configuration File**
+Simplified configuration management with a single config file.
+
+**Changes:**
+- Merged `pokealert-telegram.json` into `pokealert-settings.json`
+- All settings now in one place for easier management
+- Automatic migration from old two-file system
+- Old telegram config file automatically backed up during migration
+
+**Benefits:**
+- Simpler configuration - only one file to edit
+- Easier backup and sharing of settings
+- No confusion about which file contains which settings
+- Cleaner config directory
+
 ### 🔧 Technical Improvements
 
 #### **GLFW Callback-Based Mouse Button Simulation**
@@ -151,6 +182,7 @@ callback.invoke(windowHandle, button, GLFW.GLFW_PRESS, 0);
 - Fixed safety monitor unable to detect state due to cleared tracking data
 - Fixed Home key not cancelling active automation process
 - Fixed Mod Menu not reflecting keybind toggle state changes
+- Fixed player-owned Pokémon triggering notifications (now properly filtered)
 
 #### **State Detection Fixes**
 - Fixed "State unknown" preventing automation restart
@@ -180,10 +212,20 @@ callback.invoke(windowHandle, button, GLFW.GLFW_PRESS, 0);
 #### **New Settings**
 - `eggHatcherEnabled` - Renamed from `realmManagerEnabled`
 - `antiAfkKeybind` - Default changed to `2` (middle click) for better accessibility
+- `telegramBotToken` - Moved from separate telegram config file
+- `telegramChatId` - Moved from separate telegram config file
+- `telegramApiUrl` - Moved from separate telegram config file
+- `telegramMaxNotificationsPerMinute` - Moved from separate telegram config file
+- `telegramCooldownSeconds` - Moved from separate telegram config file
 
 #### **Keybind Updates**
 - Egg Hatcher toggle: `key.pokealert.egghatcher` (renamed from `realmmanager`)
 - Anti-AFK toggle: `key.pokealert.antiafk` (NEW - visible in Controls menu)
+
+#### **File Structure Changes**
+- **Removed:** `pokealert-telegram.json` (merged into main config)
+- **Removed:** `cobblemondetector-telegram.json` (legacy file)
+- **Single Config:** All settings now in `pokealert-settings.json`
 
 ### 🚀 Performance Improvements
 
@@ -198,12 +240,16 @@ callback.invoke(windowHandle, button, GLFW.GLFW_PRESS, 0);
 #### **Automatic Migrations**
 - `realmManagerEnabled` automatically migrated to `eggHatcherEnabled`
 - Existing Anti-AFK keybind configurations preserved
-- No action required for existing users
+- **NEW:** Telegram config automatically merged from `pokealert-telegram.json` into `pokealert-settings.json`
+- **NEW:** Legacy `cobblemondetector-telegram.json` also migrated
+- Old telegram config files backed up with `.backup` extension
+- No manual action required for existing users
 
 #### **Breaking Changes**
 - Manual mode removed (simplified to AUTO and DISABLED only)
 - `/pokealert realm trigger` command removed
 - Realm Manager renamed to Egg Hatcher throughout UI
+- Separate telegram config file no longer used (merged into main config)
 
 ### 🎯 Compatibility
 

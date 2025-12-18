@@ -29,6 +29,13 @@ public class PokeAlertConfig {
     public float inGameSoundVolume = 1.0f; // 0.0 to 1.0 (0% to 100%)
     public boolean telegramEnabled = true;
     
+    // Telegram configuration (merged from separate file)
+    public String telegramBotToken = "";
+    public String telegramChatId = "";
+    public String telegramApiUrl = "https://api.telegram.org";
+    public int telegramMaxNotificationsPerMinute = 10;
+    public int telegramCooldownSeconds = 30;
+    
     // World exclusion list (users can input "spawn" or "minecraft:spawn")
     public String[] excludedWorlds = {"spawn"};
     
@@ -120,5 +127,21 @@ public class PokeAlertConfig {
             }
         }
         return false;
+    }
+    
+    /**
+     * Check if Telegram configuration is valid for sending notifications
+     */
+    public boolean isTelegramValid() {
+        return telegramEnabled 
+            && telegramBotToken != null && !telegramBotToken.trim().isEmpty() 
+            && telegramChatId != null && !telegramChatId.trim().isEmpty();
+    }
+
+    /**
+     * Get the full Telegram API URL for sending messages
+     */
+    public String getTelegramSendMessageUrl() {
+        return String.format("%s/bot%s/sendMessage", telegramApiUrl, telegramBotToken);
     }
 }

@@ -24,6 +24,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.cobblemon.mod.common.entity.pokemon.PokemonEntity;
+import com.cobblemon.mod.common.pokemon.Pokemon;
 import com.afiqhasiff.pokealert.client.config.PokeAlertConfig;
 import com.afiqhasiff.pokealert.client.config.ConfigManager;
 import com.afiqhasiff.pokealert.client.command.PokeAlertCommand;
@@ -346,6 +347,15 @@ public class PokeAlertClient implements ClientModInitializer {
                 cobblemonCache.add(entity.getUuid());
                 
                 PokemonEntity pokemonEntity = (PokemonEntity) entity;
+                Pokemon pokemon = pokemonEntity.getPokemon();
+                
+                // Skip player-owned Pokemon - only notify for wild spawns
+                if (!pokemon.isWild()) {
+                    LOGGER.debug("Skipping player-owned Pokemon: {} (UUID: {})", 
+                        pokemonEntity.getName().getString(), entity.getUuid());
+                    continue;
+                }
+                
                 String fullName = pokemonEntity.getName().getString();
                 
                 // Skip boss Pokemon (they contain formatting codes § and "Boss" text)
@@ -360,7 +370,7 @@ public class PokeAlertClient implements ClientModInitializer {
                 }
                 
                 // Use the new shouldNotify method which checks both whitelist and blacklist
-                boolean isShiny = pokemonEntity.getPokemon().getShiny();
+                boolean isShiny = pokemon.getShiny();
                 if (config.shouldNotify(pokemonName) || (isShiny && config.broadcastAllShinies)) {
                     // Create spawn data with clean Pokemon name (without "Shiny" prefix)
                     PokemonSpawnData spawnData = PokemonSpawnData.fromEntity(
