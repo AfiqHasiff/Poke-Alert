@@ -23,6 +23,9 @@ public class PokeAlertConfig {
     public String[] broadcastWhitelist = {"Mew", "Mewtwo"};
     public String[] broadcastBlacklist = new String[0];
     
+    // Name-based filtering (for player-owned Pokemon in multiplayer)
+    public String blacklistCharacter = "-"; // If Pokemon name contains this character, skip notification
+    
     // Notification toggles
     public boolean inGameTextEnabled = true;
     public boolean inGameSoundEnabled = true;

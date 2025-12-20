@@ -349,14 +349,25 @@ public class PokeAlertClient implements ClientModInitializer {
                 PokemonEntity pokemonEntity = (PokemonEntity) entity;
                 Pokemon pokemon = pokemonEntity.getPokemon();
                 
-                // Skip player-owned Pokemon - only notify for wild spawns
-                if (!pokemon.isWild()) {
-                    LOGGER.debug("Skipping player-owned Pokemon: {} (UUID: {})", 
-                        pokemonEntity.getName().getString(), entity.getUuid());
+                String fullName = pokemonEntity.getName().getString();
+                
+                // Primary filter: Check for blacklist character in name (works everywhere)
+                // Users rename their Pokémon with this character (e.g., "Charizard-") to prevent notifications
+                if (config.blacklistCharacter != null && 
+                    !config.blacklistCharacter.isEmpty() && 
+                    fullName.contains(config.blacklistCharacter)) {
+                    LOGGER.debug("Skipping Pokemon with blacklist character '{}': {}", 
+                        config.blacklistCharacter, fullName);
                     continue;
                 }
                 
-                String fullName = pokemonEntity.getName().getString();
+                // Backup filter: Check if Pokemon is owned using Cobblemon's isWild() method
+                // Note: In multiplayer, this may not work reliably for all player-owned Pokémon
+                if (!pokemon.isWild()) {
+                    LOGGER.debug("Skipping player-owned Pokemon: {} (UUID: {})", 
+                        fullName, entity.getUuid());
+                    continue;
+                }
                 
                 // Skip boss Pokemon (they contain formatting codes § and "Boss" text)
                 if (fullName.contains("§") || fullName.toLowerCase().contains("boss")) {

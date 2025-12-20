@@ -15,7 +15,9 @@
 ### Real-time Detection
 - **Automatic Scanning**: Continuously monitors for Pokémon spawns within a 64-block radius
 - **Smart Filtering**: Only alerts for Pokémon you care about
-- **Player-Owned Detection**: Automatically ignores your own Pokémon - only wild spawns trigger notifications
+- **Player-Owned Detection**:
+  - **Primary Method**: Name-based filtering - Rename your Pokémon with a special character (default: `-`)
+  - **Backup Method**: Cobblemon's ownership detection (may have limitations in multiplayer)
 - **World Exclusion**: Configure worlds to exclude from notifications (e.g., spawn, the_nether)
 - **Master Toggle**: Enable/disable the entire mod with one click
 - **Keybind Support**: Quick toggle mod on/off with a customizable hotkey (default: :)
@@ -136,6 +138,7 @@ PokéAlert provides a comprehensive command system for quick configuration:
    - Keybind for quick toggle (click to set custom key)
    - Detection categories with descriptions
    - Custom whitelist and blacklist
+   - **Name Filter** - Character to filter Pokémon names (for multiplayer)
    - World exclusions (simplified names like "spawn", "the_nether")
    - Notification toggles (text, sound, telegram)
    - Sound volume control (0-100%)
@@ -161,6 +164,7 @@ Edit `.minecraft/config/pokealert-settings.json`:
   "broadcastAllParadox": false,
   "broadcastWhitelist": ["Pikachu", "Charizard", "Mewtwo"],
   "broadcastBlacklist": [],
+  "blacklistCharacter": "-",
   "inGameTextEnabled": true,
   "inGameSoundEnabled": true,
   "inGameSoundVolume": 1.0,
@@ -179,6 +183,40 @@ Edit `.minecraft/config/pokealert-settings.json`:
   "realmReturnCommand": "/home new"
 }
 ```
+
+### Player-Owned Pokémon Filtering
+
+The mod uses a two-layer filtering system to prevent notifications from your own Pokémon:
+
+#### Primary Method: Name-Based Filter (Recommended)
+This is the most reliable method that works in all environments:
+
+**Setup:**
+1. Set a blacklist character in config (default: `-`)
+2. Rename your Pokémon to include this character
+   - Example: `Charizard-`, `Shiny Pikachu-`, `My Mewtwo-`
+3. Any Pokémon whose name contains this character will be skipped
+
+**Configuration:**
+```json
+"blacklistCharacter": "-"
+```
+
+**How it works:**
+- ✅ Checks Pokémon name FIRST (before ownership detection)
+- ✅ Works in singleplayer and multiplayer
+- ✅ 100% reliable when you rename your Pokémon
+- ✅ You control which Pokémon are filtered
+
+**Example:**
+Rename your shiny Charizard to `Charizard-` and it won't trigger notifications.
+
+#### Backup Method: Ownership Detection
+The mod also uses Cobblemon's `isWild()` method as a secondary check:
+- ✅ Works well in singleplayer
+- ⚠️ May have limitations in multiplayer (other players' Pokémon might not be detected as owned)
+
+**Recommendation:** Use name-based filtering for consistent results across all game modes.
 
 ### Telegram Setup
 1. Create a Telegram bot via [@BotFather](https://t.me/botfather)

@@ -370,7 +370,10 @@ public class PokeAlertConfigScreen extends Screen {
             this.textRenderer.getWidth("Whitelist:"),
             Math.max(
                 this.textRenderer.getWidth("Blacklist:"),
-                this.textRenderer.getWidth("Excluded:")
+                Math.max(
+                    this.textRenderer.getWidth("Name Filter:"),
+                    this.textRenderer.getWidth("Excluded:")
+                )
             )
         );
         int fieldWidth = this.width - (SIDE_MARGIN * 2) - labelWidth - 15; // Increased gap for better spacing
@@ -406,6 +409,23 @@ public class PokeAlertConfigScreen extends Screen {
         blacklistField.setPlaceholder(Text.literal("Pokémon to exclude from notifications").formatted(Formatting.GRAY));
         addSelectableChild(blacklistField);
         addDrawableChild(blacklistField);
+        currentY += 30;
+        
+        // Blacklist character field (for multiplayer filtering)
+        TextFieldWidget blacklistCharField = new TextFieldWidget(
+            this.textRenderer,
+            fieldX,
+            currentY - (int)scrollOffset,
+            fieldWidth,
+            BUTTON_HEIGHT,
+            Text.literal("Blacklist Character")
+        );
+        blacklistCharField.setMaxLength(5);
+        blacklistCharField.setText(config.blacklistCharacter != null ? config.blacklistCharacter : "-");
+        blacklistCharField.setPlaceholder(Text.literal("Character to filter Pokémon names (e.g., -)").formatted(Formatting.GRAY));
+        blacklistCharField.setChangedListener(text -> config.blacklistCharacter = text);
+        addSelectableChild(blacklistCharField);
+        addDrawableChild(blacklistCharField);
         currentY += 30;
 
         // Excluded worlds text field
@@ -829,6 +849,24 @@ public class PokeAlertConfigScreen extends Screen {
             SIDE_MARGIN,
             currentY + 2,  // Vertically center with text field
             0xFFFFFF
+        );
+        currentY += 30;
+        
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("Name Filter:"),
+            SIDE_MARGIN,
+            currentY + 2,  // Vertically center with text field
+            0xFFFFFF
+        );
+        
+        // Draw help text for name filter
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("(MP: Rename your Pokémon with this character)").formatted(Formatting.GRAY, Formatting.ITALIC),
+            SIDE_MARGIN,
+            currentY + 15,
+            0xAAAAAA
         );
         currentY += 30;
         
