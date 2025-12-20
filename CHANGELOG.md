@@ -90,19 +90,25 @@ Enhanced master toggle now manages all running modules.
 - Keybind disabled alerts when pressing module keys while mod is disabled
 
 #### **🎯 Player-Owned Pokémon Filter**
-Intelligent detection system that distinguishes between wild and player-owned Pokémon.
+Two-layer filtering system to prevent notifications from your own Pokémon.
 
-**Features:**
-- Uses Cobblemon's `isWild()` API to check ownership
-- Only wild Pokémon trigger notifications
-- Player-owned Pokémon are automatically skipped (no more false alerts!)
-- Works regardless of Pokémon nickname or customization
-- Debug logging shows when player-owned Pokémon are filtered out
+**Primary Method: Name-Based Filter (Recommended)**
+- Configure a blacklist character (default: `-`)
+- Rename your Pokémon to include this character (e.g., `Charizard-`)
+- Any Pokémon with this character in its name will be skipped
+- Works in all game modes (singleplayer and multiplayer)
+- 100% reliable when you rename your Pokémon
+- Configurable via Mod Menu or JSON
+
+**Backup Method: Ownership Detection**
+- Uses Cobblemon's `isWild()` API as secondary check
+- Works well in singleplayer
+- May have limitations in multiplayer environments
 
 **Benefits:**
-- No more notifications when throwing out your own shiny Pokémon
-- No need to rename your Pokémon with special prefixes/suffixes
-- 100% reliable ownership detection using official Cobblemon API
+- User control over which Pokémon trigger notifications
+- Rename-based system works everywhere
+- Flexible: Change the blacklist character to suit your naming convention
 - Cleaner notification experience focused on actual wild spawns
 
 #### **📁 Unified Configuration File**
@@ -212,6 +218,7 @@ callback.invoke(windowHandle, button, GLFW.GLFW_PRESS, 0);
 #### **New Settings**
 - `eggHatcherEnabled` - Renamed from `realmManagerEnabled`
 - `antiAfkKeybind` - Default changed to `2` (middle click) for better accessibility
+- `blacklistCharacter` - **NEW:** Character to filter Pokémon names (default: `-`)
 - `telegramBotToken` - Moved from separate telegram config file
 - `telegramChatId` - Moved from separate telegram config file
 - `telegramApiUrl` - Moved from separate telegram config file
