@@ -37,6 +37,8 @@ public class PokeAlertConfigScreen extends Screen {
     private static final int TOP_MARGIN = 35; // Space for title
     private static final int BOTTOM_MARGIN = 50; // Space for buttons
     private static final int SEPARATOR_COLOR = 0x40FFFFFF; // Semi-transparent white
+    private boolean isDraggingScrollbar = false;
+    private double dragStartY = 0;
     
     // Category toggles
     private ButtonWidget legendariesButton;
@@ -68,6 +70,7 @@ public class PokeAlertConfigScreen extends Screen {
     // Text fields
     private TextFieldWidget whitelistField;
     private TextFieldWidget blacklistField;
+    private TextFieldWidget blacklistCharField;
     private TextFieldWidget excludedWorldsField;
     private TextFieldWidget realmReturnCommandField;
     
@@ -292,7 +295,7 @@ public class PokeAlertConfigScreen extends Screen {
                 
                 config.eggTimerDuration = newDuration;
                 button.setMessage(Text.literal("Duration: " + newDuration + " min"));
-                ConfigManager.saveSettings(config);
+                // Config will be saved when user clicks "Save & Apply"
             });
         currentY += ROW_HEIGHT;
         
@@ -318,7 +321,7 @@ public class PokeAlertConfigScreen extends Screen {
             button -> {
                 config.eggHatcherEnabled = !config.eggHatcherEnabled;
                 button.setMessage(Text.literal(config.eggHatcherEnabled ? "Enabled" : "Disabled"));
-                ConfigManager.saveSettings(config);
+                // Config will be saved when user clicks "Save & Apply"
             });
         currentY += ROW_HEIGHT;
         
@@ -412,7 +415,7 @@ public class PokeAlertConfigScreen extends Screen {
         currentY += 30;
         
         // Blacklist character field (for multiplayer filtering)
-        TextFieldWidget blacklistCharField = new TextFieldWidget(
+        blacklistCharField = new TextFieldWidget(
             this.textRenderer,
             fieldX,
             currentY - (int)scrollOffset,
@@ -594,6 +597,9 @@ public class PokeAlertConfigScreen extends Screen {
     }
 
     private void saveAndClose() {
+        // Read all text field values into config
+        // (Buttons/toggles/sliders already update config directly)
+        
         // Parse whitelist
         String whitelistText = whitelistField.getText().trim();
         config.broadcastWhitelist = parseList(whitelistText);
@@ -602,6 +608,10 @@ public class PokeAlertConfigScreen extends Screen {
         String blacklistText = blacklistField.getText().trim();
         config.broadcastBlacklist = parseList(blacklistText);
         
+        // Parse blacklist character
+        String blacklistChar = blacklistCharField.getText().trim();
+        config.blacklistCharacter = blacklistChar.isEmpty() ? "-" : blacklistChar;
+        
         // Parse excluded worlds
         String worldsText = excludedWorldsField.getText().trim();
         config.excludedWorlds = parseList(worldsText);
@@ -609,8 +619,13 @@ public class PokeAlertConfigScreen extends Screen {
         // Parse egg hatcher command
         String realmCmd = realmReturnCommandField.getText().trim();
         config.realmReturnCommand = realmCmd.isEmpty() ? "/home new" : realmCmd;
+        
+        // Get volume from slider
+        if (soundVolumeSlider != null) {
+            config.inGameSoundVolume = (float) soundVolumeSlider.getValue();
+        }
 
-        // Save configuration
+        // Save configuration to file
         ConfigManager.updateConfig(config);
         
         // Reload config in the client
@@ -928,9 +943,9 @@ public class PokeAlertConfigScreen extends Screen {
             PokeAlertClient.antiAfkKeybind.setBoundKey(type.createFromCode(button));
             KeyBinding.updateKeysByCode();
             
-            // Also save to config for JSON editing compatibility
+            // Update config for JSON editing compatibility
             config.antiAfkKeybind = button;
-            ConfigManager.saveSettings(config);
+            // Config will be saved when user clicks "Save & Apply"
             
             waitingForAntiAfkKey = false;
             antiAfkKeybindButton.setMessage(getAntiAfkKeybindText());
@@ -949,7 +964,54 @@ public class PokeAlertConfigScreen extends Screen {
             setFocused(excludedWorldsField);
             return true;
         }
+        
+        // Check if clicking on scrollbar
+        if (maxScroll > 0 && button == 0) {
+            int scrollbarX = this.width - 10;
+            int scrollbarY = TOP_MARGIN;
+            int scrollbarHeight = this.height - TOP_MARGIN - BOTTOM_MARGIN;
+            
+            if (mouseX >= scrollbarX && mouseX <= scrollbarX + 5 &&
+                mouseY >= scrollbarY && mouseY <= scrollbarY + scrollbarHeight) {
+                isDraggingScrollbar = true;
+                dragStartY = mouseY;
+                return true;
+            }
+        }
+        
         return super.mouseClicked(mouseX, mouseY, button);
+    }
+    
+    @Override
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
+        if (isDraggingScrollbar && maxScroll > 0) {
+            int scrollbarY = TOP_MARGIN;
+            int scrollbarHeight = this.height - TOP_MARGIN - BOTTOM_MARGIN;
+            int thumbHeight = Math.max(20, (int)(scrollbarHeight * (scrollbarHeight / (double)(contentHeight + scrollbarHeight))));
+            
+            // Calculate new scroll position based on mouse Y
+            double relativeY = mouseY - scrollbarY;
+            double scrollableHeight = scrollbarHeight - thumbHeight;
+            double scrollPercent = Math.max(0, Math.min(1, relativeY / scrollableHeight));
+            
+            double oldScroll = scrollOffset;
+            scrollOffset = scrollPercent * maxScroll;
+            
+            // Reinitialize if scroll changed significantly
+            if (Math.abs(oldScroll - scrollOffset) > 1) {
+                init();
+            }
+            return true;
+        }
+        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
+    }
+    
+    @Override
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (button == 0) {
+            isDraggingScrollbar = false;
+        }
+        return super.mouseReleased(mouseX, mouseY, button);
     }
     
     @Override
@@ -1038,9 +1100,9 @@ public class PokeAlertConfigScreen extends Screen {
             PokeAlertClient.antiAfkKeybind.setBoundKey(type.createFromCode(keyCode));
             KeyBinding.updateKeysByCode();
             
-            // Also save to config for JSON editing compatibility
+            // Update config for JSON editing compatibility
             config.antiAfkKeybind = keyCode;
-            ConfigManager.saveSettings(config);
+            // Config will be saved when user clicks "Save & Apply"
             
             waitingForAntiAfkKey = false;
             antiAfkKeybindButton.setMessage(getAntiAfkKeybindText());
