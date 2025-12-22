@@ -620,10 +620,7 @@ public class PokeAlertConfigScreen extends Screen {
         String realmCmd = realmReturnCommandField.getText().trim();
         config.realmReturnCommand = realmCmd.isEmpty() ? "/home new" : realmCmd;
         
-        // Get volume from slider
-        if (soundVolumeSlider != null) {
-            config.inGameSoundVolume = (float) soundVolumeSlider.getValue();
-        }
+        // Note: Volume is already updated by VolumeSliderWidget.applyValue()
 
         // Save configuration to file
         ConfigManager.updateConfig(config);
