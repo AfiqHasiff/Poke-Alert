@@ -99,8 +99,10 @@ public class PokeAlertConfigScreen extends Screen {
         PokeAlertConfig original = ConfigManager.getConfig();
         PokeAlertConfig copy = new PokeAlertConfig();
         
-        // Copy all fields
+        // Copy all fields from original config
         copy.modEnabled = original.modEnabled;
+        
+        // Detection categories
         copy.broadcastAllLegendaries = original.broadcastAllLegendaries;
         copy.broadcastAllMythics = original.broadcastAllMythics;
         copy.broadcastAllStarter = original.broadcastAllStarter;
@@ -108,13 +110,37 @@ public class PokeAlertConfigScreen extends Screen {
         copy.broadcastAllUltraBeasts = original.broadcastAllUltraBeasts;
         copy.broadcastAllShinies = original.broadcastAllShinies;
         copy.broadcastAllParadox = original.broadcastAllParadox;
+        
+        // Whitelist/Blacklist
         copy.broadcastWhitelist = Arrays.copyOf(original.broadcastWhitelist, original.broadcastWhitelist.length);
         copy.broadcastBlacklist = Arrays.copyOf(original.broadcastBlacklist, original.broadcastBlacklist.length);
+        copy.blacklistCharacter = original.blacklistCharacter;
+        
+        // World exclusions
         copy.excludedWorlds = Arrays.copyOf(original.excludedWorlds, original.excludedWorlds.length);
+        
+        // Notification settings
         copy.inGameTextEnabled = original.inGameTextEnabled;
         copy.inGameSoundEnabled = original.inGameSoundEnabled;
         copy.inGameSoundVolume = original.inGameSoundVolume;
         copy.telegramEnabled = original.telegramEnabled;
+        
+        // Telegram config
+        copy.telegramBotToken = original.telegramBotToken;
+        copy.telegramChatId = original.telegramChatId;
+        copy.telegramApiUrl = original.telegramApiUrl;
+        copy.telegramMaxNotificationsPerMinute = original.telegramMaxNotificationsPerMinute;
+        copy.telegramCooldownSeconds = original.telegramCooldownSeconds;
+        
+        // Egg timer settings
+        copy.eggTimerDuration = original.eggTimerDuration;
+        copy.eggTimerTextNotification = original.eggTimerTextNotification;
+        copy.eggTimerTelegramNotification = original.eggTimerTelegramNotification;
+        
+        // Egg hatcher settings
+        copy.eggHatcherEnabled = original.eggHatcherEnabled;
+        copy.antiAfkKeybind = original.antiAfkKeybind;
+        copy.realmReturnCommand = original.realmReturnCommand;
         
         return copy;
     }
@@ -871,16 +897,7 @@ public class PokeAlertConfigScreen extends Screen {
             currentY + 2,  // Vertically center with text field
             0xFFFFFF
         );
-        
-        // Draw help text for name filter
-        context.drawTextWithShadow(
-            this.textRenderer,
-            Text.literal("(MP: Rename your Pokémon with this character)").formatted(Formatting.GRAY, Formatting.ITALIC),
-            SIDE_MARGIN,
-            currentY + 15,
-            0xAAAAAA
-        );
-        currentY += 30;
+        currentY += 30;  // Move to next row
         
         context.drawTextWithShadow(
             this.textRenderer,

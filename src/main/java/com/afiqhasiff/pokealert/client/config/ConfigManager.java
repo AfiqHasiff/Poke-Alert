@@ -23,15 +23,10 @@ public class ConfigManager {
     // File paths
     private static final File CONFIG_DIR = new File("config");
     
-    // Legacy file paths (for migration)
-    private static final File OLD_CONFIG_FILE = new File(CONFIG_DIR, "PokeAlert.json");
-    private static final File LEGACY_SETTINGS_FILE = new File(CONFIG_DIR, "cobblemondetector-settings.json");
-    private static final File LEGACY_TELEGRAM_FILE = new File(CONFIG_DIR, "cobblemondetector-telegram.json");
-    
-    // Current file path (unified config)
+    // Current main config file
     private static final File SETTINGS_FILE = new File(CONFIG_DIR, "pokealert-settings.json");
     
-    // Legacy telegram file (for migration)
+    // Old telegram file (for migration into main config)
     private static final File TELEGRAM_FILE = new File(CONFIG_DIR, "pokealert-telegram.json");
     
     private static PokeAlertConfig currentConfig;
@@ -42,23 +37,34 @@ public class ConfigManager {
     public static void initialize() {
         CONFIG_DIR.mkdirs();
         
-        // Migrate from legacy config files if needed
-        if (!SETTINGS_FILE.exists()) {
-            if (LEGACY_SETTINGS_FILE.exists()) {
-                // Migrate from cobblemondetector-settings.json
-                migrateLegacySettings();
-            } else if (OLD_CONFIG_FILE.exists()) {
-                // Migrate from very old PokeAlert.json
-                migrateOldConfig();
-            }
-        }
-        
-        // Load main configuration
+        // Load main configuration (pokealert-settings.json)
         currentConfig = loadSettings();
         
-        // Migrate telegram config if it exists (merge into main config)
-        if (TELEGRAM_FILE.exists() || LEGACY_TELEGRAM_FILE.exists()) {
-            migrateTelegramConfig();
+        // Smart telegram config migration:
+        // - If old telegram file exists AND main config telegram is empty: migrate from old file
+        // - If old telegram file exists AND main config telegram is populated: skip migration (manual config)
+        // - If old telegram file doesn't exist: use main config values (even if empty)
+        if (TELEGRAM_FILE.exists()) {
+            // Check if main config telegram values are empty (need migration)
+            boolean telegramIsEmpty = (currentConfig.telegramBotToken == null || currentConfig.telegramBotToken.trim().isEmpty()) &&
+                                     (currentConfig.telegramChatId == null || currentConfig.telegramChatId.trim().isEmpty());
+            
+            if (telegramIsEmpty) {
+                // Main config telegram is empty, migrate from old file
+                migrateTelegramConfig();
+            } else {
+                // Main config telegram is already populated (manual configuration), skip migration
+                PokeAlertClient.LOGGER.info("Skipping telegram migration - main config already has telegram values (manual configuration detected)");
+                
+                // Optionally backup the old telegram file without migrating
+                try {
+                    File backupFile = new File(CONFIG_DIR, "pokealert-telegram.json.backup");
+                    Files.move(TELEGRAM_FILE.toPath(), backupFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                    PokeAlertClient.LOGGER.info("Old telegram file backed up as pokealert-telegram.json.backup");
+                } catch (Exception e) {
+                    PokeAlertClient.LOGGER.warn("Could not backup old telegram file: {}", e.getMessage());
+                }
+            }
         }
     }
 
@@ -98,32 +104,33 @@ public class ConfigManager {
     }
 
     /**
-     * Migrate Telegram configuration from separate file into main config
+     * Migrate Telegram configuration from separate file (pokealert-telegram.json) into main config.
+     * This is only called when main config telegram values are empty.
      */
     private static void migrateTelegramConfig() {
         try {
-            File telegramFile = TELEGRAM_FILE.exists() ? TELEGRAM_FILE : LEGACY_TELEGRAM_FILE;
-            
-            if (!telegramFile.exists()) {
+            if (!TELEGRAM_FILE.exists()) {
                 return;
             }
             
-            PokeAlertClient.LOGGER.info("Migrating Telegram config from {} into main config...", telegramFile.getName());
+            PokeAlertClient.LOGGER.info("Migrating telegram config from pokealert-telegram.json (main config telegram is empty)...");
             
-            // Read telegram config as JsonObject to avoid dependency on deleted TelegramConfig class
-            FileReader reader = new FileReader(telegramFile);
+            // Read telegram config as JsonObject
+            FileReader reader = new FileReader(TELEGRAM_FILE);
             com.google.gson.JsonObject telegramJson = GSON.fromJson(reader, com.google.gson.JsonObject.class);
             reader.close();
             
-            // Merge into main config
+            // Merge into main config (only overwrites empty values)
             if (telegramJson.has("enabled")) {
                 currentConfig.telegramEnabled = telegramJson.get("enabled").getAsBoolean();
             }
-            if (telegramJson.has("botToken")) {
+            if (telegramJson.has("botToken") && !telegramJson.get("botToken").getAsString().trim().isEmpty()) {
                 currentConfig.telegramBotToken = telegramJson.get("botToken").getAsString();
+                PokeAlertClient.LOGGER.info("✓ Migrated telegram bot token");
             }
-            if (telegramJson.has("chatId")) {
+            if (telegramJson.has("chatId") && !telegramJson.get("chatId").getAsString().trim().isEmpty()) {
                 currentConfig.telegramChatId = telegramJson.get("chatId").getAsString();
+                PokeAlertClient.LOGGER.info("✓ Migrated telegram chat ID");
             }
             if (telegramJson.has("apiUrl")) {
                 currentConfig.telegramApiUrl = telegramJson.get("apiUrl").getAsString();
@@ -135,67 +142,16 @@ public class ConfigManager {
                 currentConfig.telegramCooldownSeconds = telegramJson.get("cooldownSeconds").getAsInt();
             }
             
-            // Save merged config
+            // Save merged config to pokealert-settings.json
             saveSettings(currentConfig);
             
-            // Backup and delete old telegram file
-            File backupFile = new File(CONFIG_DIR, telegramFile.getName() + ".backup");
-            Files.move(telegramFile.toPath(), backupFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            // Backup old telegram file
+            File backupFile = new File(CONFIG_DIR, "pokealert-telegram.json.backup");
+            Files.move(TELEGRAM_FILE.toPath(), backupFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
             
-            PokeAlertClient.LOGGER.info("Telegram config migration complete! Backed up as {}", backupFile.getName());
+            PokeAlertClient.LOGGER.info("✓ Telegram config migration complete! Old file backed up as pokealert-telegram.json.backup");
         } catch (Exception e) {
             PokeAlertClient.LOGGER.error("Failed to migrate Telegram config", e);
-        }
-    }
-
-    /**
-     * Migrate from legacy cobblemondetector-settings.json to pokealert-settings.json
-     */
-    private static void migrateLegacySettings() {
-        try {
-            PokeAlertClient.LOGGER.info("Migrating cobblemondetector-settings.json to pokealert-settings.json...");
-            
-            // Read legacy config
-            FileReader reader = new FileReader(LEGACY_SETTINGS_FILE);
-            PokeAlertConfig legacyConfig = GSON.fromJson(reader, PokeAlertConfig.class);
-            reader.close();
-            
-            // Save to new location
-            saveSettings(legacyConfig);
-            
-            // Backup legacy file
-            File backupFile = new File(CONFIG_DIR, "cobblemondetector-settings.json.backup");
-            Files.move(LEGACY_SETTINGS_FILE.toPath(), backupFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
-            
-            PokeAlertClient.LOGGER.info("Settings migration complete! Backed up as {}", backupFile.getName());
-        } catch (Exception e) {
-            PokeAlertClient.LOGGER.error("Failed to migrate legacy settings", e);
-        }
-    }
-    
-    
-    /**
-     * Migrate from very old PokeAlert.json format to new format
-     */
-    private static void migrateOldConfig() {
-        try {
-            PokeAlertClient.LOGGER.info("Migrating PokeAlert.json to new format...");
-            
-            // Read old config
-            FileReader reader = new FileReader(OLD_CONFIG_FILE);
-            PokeAlertConfig oldConfig = GSON.fromJson(reader, PokeAlertConfig.class);
-            reader.close();
-            
-            // Save to new location
-            saveSettings(oldConfig);
-            
-            // Backup old file
-            File backupFile = new File(CONFIG_DIR, "PokeAlert.json.backup");
-            Files.move(OLD_CONFIG_FILE.toPath(), backupFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
-            
-            PokeAlertClient.LOGGER.info("Migration complete! Old config backed up as {}", backupFile.getName());
-        } catch (Exception e) {
-            PokeAlertClient.LOGGER.error("Failed to migrate old config", e);
         }
     }
 
