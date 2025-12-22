@@ -91,6 +91,10 @@ public class PokeAlertConfigScreen extends Screen {
     public PokeAlertConfigScreen(Screen parent) {
         super(Text.literal("PokéAlert v2.0.0 Configuration"));
         this.parent = parent;
+        
+        // Reload config from file to pick up any manual edits
+        ConfigManager.reload();
+        
         this.config = loadConfigCopy();
         this.scrollOffset = 0; // Initialize scroll to top when screen opens
     }
