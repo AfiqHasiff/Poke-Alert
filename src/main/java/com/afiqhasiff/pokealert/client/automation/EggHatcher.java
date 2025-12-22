@@ -893,6 +893,7 @@ public class EggHatcher {
         // Cancel stuck detector
         if (stuckDetector != null) {
             stuckDetector.cancel(false);
+            stuckDetector = null;
         }
         
         // Reset flags
@@ -911,6 +912,17 @@ public class EggHatcher {
         if (safetyMonitorTask == null || safetyMonitorTask.isDone()) {
             PokeAlertClient.LOGGER.info("🛡️ Restarting safety monitor after automation completion");
             startSafetyMonitor();
+        }
+        
+        // Restart stuck detector if still at spawn (edge case: automation completed but still at spawn)
+        if (isAtSpawn() && (stuckDetector == null || stuckDetector.isDone())) {
+            stuckDetector = scheduler.schedule(() -> {
+                if (isAtSpawn() && mode == AutomationMode.AUTO) {
+                    currentState = State.STUCK;
+                    handleStuckAtSpawn();
+                }
+            }, STUCK_TIMEOUT, TimeUnit.MILLISECONDS);
+            PokeAlertClient.LOGGER.info("🚨 Stuck detector restarted after automation completion (still at spawn)");
         }
         
         // Continue monitoring
