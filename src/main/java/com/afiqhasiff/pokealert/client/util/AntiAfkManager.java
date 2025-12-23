@@ -19,7 +19,11 @@ import java.util.concurrent.TimeUnit;
  * Anti-AFK management using continuous background state monitoring
  * 
  * Architecture:
- * - Background thread continuously monitors Anti-AFK state every 200ms
+ * - Background thread continuously monitors Anti-AFK state with dynamic intervals
+ * - At spawn: checks every 200ms (aggressive monitoring)
+ * - At overworld: checks every 30 seconds (reduced frequency)
+ * - Separate world change monitor runs every 500ms to detect realm switches immediately
+ * - When world change detected, monitoring interval is immediately rescheduled
  * - Global variable holds current state (always up-to-date during realm change)
  * - toggleAntiAfk() waits for state to be known (NEVER blind toggles)
  * - Uses GLFW key simulation to trigger Anti-AFK keybind
@@ -27,7 +31,12 @@ import java.util.concurrent.TimeUnit;
  * Movement Detection:
  * - Monitors player position (X, Y, Z) and state (sneaking, sprinting)
  * - Checks every 1 second for actual state determination
- * - Background thread polls every 200ms to keep state fresh
+ * - Background thread polls at dynamic intervals based on location
+ * 
+ * World Change Detection:
+ * - Dedicated monitor checks location every 500ms
+ * - Immediately reschedules main monitor when spawn ↔ overworld transition detected
+ * - Ensures interval adjustment happens within 500ms of world change (manual or automatic)
  */
 public class AntiAfkManager {
     private static final MinecraftClient client = MinecraftClient.getInstance();
@@ -36,6 +45,7 @@ public class AntiAfkManager {
     private static volatile Boolean currentAntiAfkState = null;
     private static ScheduledExecutorService stateMonitor;
     private static ScheduledFuture<?> monitorTask;
+    private static ScheduledFuture<?> worldChangeMonitorTask; // Separate task for world change detection
     
     // Movement tracking for Anti-AFK detection
     private static double lastX = 0;
@@ -51,11 +61,129 @@ public class AntiAfkManager {
     private static final double MOVEMENT_THRESHOLD = 0.01; // Minimum movement to consider active
     private static final long TELEPORT_STABILIZATION_TIME = 3000; // Wait 3s after world change for position to stabilize
     
+    // Dynamic check intervals based on location
+    private static final long CHECK_INTERVAL_SPAWN = 200; // 200ms at spawn (aggressive)
+    private static final long CHECK_INTERVAL_OVERWORLD = 30000; // 30 seconds at overworld
+    private static final long WORLD_CHANGE_CHECK_INTERVAL = 500; // Check for world changes every 500ms
+    
     /**
      * Check if state monitoring is currently running
      */
     public static boolean isStateMonitoringActive() {
         return monitorTask != null && !monitorTask.isDone();
+    }
+    
+    /**
+     * Check if player is currently at spawn world
+     * @return true if at spawn, false if at overworld or unknown
+     */
+    private static boolean isAtSpawn() {
+        if (client == null || client.world == null) {
+            return false;
+        }
+        
+        String worldName = client.world.getRegistryKey().getValue().toString();
+        return ConfigManager.getConfig().isWorldExcluded(worldName);
+    }
+    
+    /**
+     * Get the appropriate check interval based on current location
+     * @return interval in milliseconds
+     */
+    private static long getCheckInterval() {
+        return isAtSpawn() ? CHECK_INTERVAL_SPAWN : CHECK_INTERVAL_OVERWORLD;
+    }
+    
+    /**
+     * Schedule the next monitoring check with dynamic interval based on location
+     */
+    private static void scheduleNextCheck() {
+        if (stateMonitor == null || stateMonitor.isShutdown()) {
+            return;
+        }
+        
+        // Cancel existing task if running
+        if (monitorTask != null && !monitorTask.isDone()) {
+            monitorTask.cancel(false);
+        }
+        
+        long interval = getCheckInterval();
+        String location = isAtSpawn() ? "spawn" : "overworld";
+        
+        monitorTask = stateMonitor.schedule(() -> {
+            try {
+                Boolean newState = detectAntiAfkState();
+                if (newState != null && !newState.equals(currentAntiAfkState)) {
+                    PokeAlertClient.LOGGER.info("📊 State monitor: Anti-AFK " + 
+                        (currentAntiAfkState == null ? "initialized" : "changed") + " → " + 
+                        (newState ? "ON" : "OFF"));
+                }
+                currentAntiAfkState = newState;
+                
+                // Schedule next check with dynamic interval
+                scheduleNextCheck();
+            } catch (Exception e) {
+                PokeAlertClient.LOGGER.error("Error in state monitor", e);
+                // Schedule next check even on error to keep monitoring alive
+                scheduleNextCheck();
+            }
+        }, interval, TimeUnit.MILLISECONDS);
+    }
+    
+    /**
+     * Start world change monitoring to detect realm switches and immediately reschedule intervals
+     * This runs more frequently than the main monitor to catch world changes quickly
+     */
+    private static void startWorldChangeMonitoring() {
+        if (stateMonitor == null || stateMonitor.isShutdown()) {
+            return;
+        }
+        
+        // Cancel existing world change monitor if running
+        if (worldChangeMonitorTask != null && !worldChangeMonitorTask.isDone()) {
+            worldChangeMonitorTask.cancel(false);
+        }
+        
+        // Track last known location for comparison
+        final boolean[] lastKnownAtSpawn = {isAtSpawn()};
+        
+        worldChangeMonitorTask = stateMonitor.scheduleAtFixedRate(() -> {
+            try {
+                if (client == null || client.world == null) {
+                    return;
+                }
+                
+                boolean currentlyAtSpawn = isAtSpawn();
+                
+                // Detect location change
+                if (currentlyAtSpawn != lastKnownAtSpawn[0]) {
+                    String oldLocation = lastKnownAtSpawn[0] ? "spawn" : "overworld";
+                    String newLocation = currentlyAtSpawn ? "spawn" : "overworld";
+                    long newInterval = currentlyAtSpawn ? CHECK_INTERVAL_SPAWN : CHECK_INTERVAL_OVERWORLD;
+                    
+                    PokeAlertClient.LOGGER.info("🌍 Location change detected: " + oldLocation + " → " + newLocation + 
+                        " - Rescheduling monitor to " + newInterval + "ms interval");
+                    
+                    // Immediately reschedule the main monitor with new interval
+                    scheduleNextCheck();
+                    
+                    // Update tracked location
+                    lastKnownAtSpawn[0] = currentlyAtSpawn;
+                }
+            } catch (Exception e) {
+                PokeAlertClient.LOGGER.error("Error in world change monitor", e);
+            }
+        }, 0, WORLD_CHANGE_CHECK_INTERVAL, TimeUnit.MILLISECONDS);
+    }
+    
+    /**
+     * Stop world change monitoring
+     */
+    private static void stopWorldChangeMonitoring() {
+        if (worldChangeMonitorTask != null && !worldChangeMonitorTask.isDone()) {
+            worldChangeMonitorTask.cancel(false);
+            worldChangeMonitorTask = null;
+        }
     }
     
     /**
@@ -83,22 +211,15 @@ public class AntiAfkManager {
         // Reset tracking for fresh start
         resetTracking();
         
-        // Start continuous monitoring
-        monitorTask = stateMonitor.scheduleAtFixedRate(() -> {
-            try {
-                Boolean newState = detectAntiAfkState();
-                if (newState != null && !newState.equals(currentAntiAfkState)) {
-                    PokeAlertClient.LOGGER.info("📊 State monitor: Anti-AFK " + 
-                        (currentAntiAfkState == null ? "initialized" : "changed") + " → " + 
-                        (newState ? "ON" : "OFF"));
-                }
-                currentAntiAfkState = newState;
-            } catch (Exception e) {
-                PokeAlertClient.LOGGER.error("Error in state monitor", e);
-            }
-        }, 0, 200, TimeUnit.MILLISECONDS);  // Check every 200ms (aggressive!)
+        // Start monitoring with dynamic intervals
+        long initialInterval = getCheckInterval();
+        String initialLocation = isAtSpawn() ? "spawn" : "overworld";
+        PokeAlertClient.LOGGER.info("✅ Anti-AFK state monitoring started (dynamic intervals: " + 
+            initialInterval + "ms at " + initialLocation + ")");
         
-        PokeAlertClient.LOGGER.info("✅ Anti-AFK state monitoring started (200ms interval)");
+        // Start both the main monitor and world change detector
+        scheduleNextCheck();
+        startWorldChangeMonitoring();
     }
     
     /**
@@ -110,6 +231,7 @@ public class AntiAfkManager {
             monitorTask.cancel(false);
             PokeAlertClient.LOGGER.info("🛑 Anti-AFK state monitoring stopped");
         }
+        stopWorldChangeMonitoring();
         currentAntiAfkState = null;  // Reset state
     }
     

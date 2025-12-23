@@ -260,7 +260,7 @@ public class EggHatcher {
             
             PokeAlertClient.LOGGER.info("Mode changed to AUTO - all session flags reset (fresh start)");
             
-            sendNotification("Egg Hatcher", "Auto mode enabled", Formatting.GREEN);
+            sendNotification("Egg Hatcher", "Enabled", Formatting.GREEN);
             startMonitoring();
             
             // Start safety monitor if not already running
@@ -275,7 +275,7 @@ public class EggHatcher {
             } else if (!isAtSpawn()) {
                 // Provide feedback when enabling at overworld
                 // Safety monitor will verify and correct Anti-AFK state after 5s
-                sendNotification("Egg Hatcher", "Auto mode enabled - safety monitor active", Formatting.GRAY);
+                sendNotification("Egg Hatcher", "Enabled - safety monitor active", Formatting.GRAY);
                 PokeAlertClient.LOGGER.info("Enabled at overworld - safety monitor will verify Anti-AFK state");
             }
         } else {
