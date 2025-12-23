@@ -626,23 +626,45 @@ public class EggHatcher {
                                 completeAutomation();
                             }, ANTIAFK_TOGGLE_DELAY, TimeUnit.MILLISECONDS);
                         } else {
-                            // Toggle failed - restart the entire process
-                            PokeAlertClient.LOGGER.error("❌ Step 5/6 FAILED: Anti-AFK toggle aborted, restarting automation");
-                            sendNotification("", "Step 5 failed - restarting process", Formatting.RED);
+                            // Toggle failed - check location and restart appropriately
+                            PokeAlertClient.LOGGER.error("❌ Step 5/6 FAILED: Anti-AFK toggle aborted");
                             
                             // Cancel all pending tasks
                             cancelAllAutomationTasks();
                             
-                            // Wait 3 seconds then restart
+                            // Wait 3 seconds then check location and restart accordingly
                             scheduler.schedule(() -> {
-                                stopAutomation();
-                                // Reset flags for fresh start
-                                manuallyCancelled = false;
-                                antiAfkDisabledOnReconnect = false;
-                                spawnDetectionTime = 0;
-                                
-                                // Restart monitoring (which will detect spawn and restart the process)
-                                startMonitoring();
+                                if (isInOverworld()) {
+                                    // Still at overworld - retry Step 5
+                                    PokeAlertClient.LOGGER.info("🔄 Step 5 failed at overworld - retrying Step 5");
+                                    sendNotification("", "Step 5 failed - retrying at overworld", Formatting.YELLOW);
+                                    
+                                    // Retry Step 5 directly
+                                    retryStep5();
+                                } else if (isAtSpawn()) {
+                                    // Back at spawn - restart from Step 1
+                                    PokeAlertClient.LOGGER.info("🔄 Step 5 failed, back at spawn - restarting from Step 1");
+                                    sendNotification("", "Step 5 failed - restarting from spawn", Formatting.RED);
+                                    
+                                    stopAutomation();
+                                    // Reset flags for fresh start
+                                    manuallyCancelled = false;
+                                    antiAfkDisabledOnReconnect = false;
+                                    spawnDetectionTime = 0;
+                                    
+                                    // Restart monitoring (which will detect spawn and restart the process)
+                                    startMonitoring();
+                                } else {
+                                    // Unknown location - just restart monitoring
+                                    PokeAlertClient.LOGGER.warn("⚠️ Step 5 failed at unknown location - restarting monitoring");
+                                    sendNotification("", "Step 5 failed - restarting monitoring", Formatting.RED);
+                                    
+                                    stopAutomation();
+                                    manuallyCancelled = false;
+                                    antiAfkDisabledOnReconnect = false;
+                                    spawnDetectionTime = 0;
+                                    startMonitoring();
+                                }
                             }, 3, TimeUnit.SECONDS);
                         }
                 }, TELEPORT_WAIT_TIME, TimeUnit.MILLISECONDS);
@@ -650,6 +672,77 @@ public class EggHatcher {
             }, HOME_COMMAND_DELAY, TimeUnit.MILLISECONDS);
             
         }, REALM_SWITCH_BUFFER, TimeUnit.MILLISECONDS); // 30 seconds to respect server realm switch buffer
+    }
+    
+    /**
+     * Retry Step 5 (Anti-AFK Enable) when still at overworld
+     * This is called when Step 5 fails but we're still in overworld
+     */
+    private void retryStep5() {
+        if (!isInOverworld()) {
+            PokeAlertClient.LOGGER.warn("⚠️ Cannot retry Step 5 - not in overworld");
+            return;
+        }
+        
+        String overworldLocation = AntiAfkManager.getPlayerLocationInfo();
+        currentState = State.ENABLING_ANTIAFK;
+        sendNotification("Egg Hatcher [5/6]", "Anti-AFK Enable: Retrying", Formatting.YELLOW);
+        PokeAlertClient.LOGGER.info("🔄 Retrying Step 5/6: Anti-AFK Enable at " + overworldLocation);
+        
+        // Pause safety monitor for toggle operation
+        PokeAlertClient.LOGGER.info("Safety monitor paused for toggle operation");
+        
+        boolean toggleSuccess = toggleAntiAfk(true);
+        
+        if (toggleSuccess) {
+            // Complete automation (this will do final cleanup)
+            step5Task = scheduler.schedule(() -> {
+                completeAutomation();
+            }, ANTIAFK_TOGGLE_DELAY, TimeUnit.MILLISECONDS);
+        } else {
+            // Toggle failed again - check location and restart accordingly
+            PokeAlertClient.LOGGER.error("❌ Step 5/6 FAILED again: Anti-AFK toggle aborted");
+            
+            // Cancel all pending tasks
+            cancelAllAutomationTasks();
+            
+            // Wait 3 seconds then check location and restart accordingly
+            scheduler.schedule(() -> {
+                if (isInOverworld()) {
+                    // Still at overworld - retry Step 5 one more time (with longer delay)
+                    PokeAlertClient.LOGGER.info("🔄 Step 5 failed again at overworld - retrying Step 5 with longer delay");
+                    sendNotification("", "Step 5 failed again - retrying with delay", Formatting.YELLOW);
+                    
+                    // Retry Step 5 with longer delay (5 seconds instead of 3)
+                    scheduler.schedule(() -> {
+                        retryStep5();
+                    }, 5, TimeUnit.SECONDS);
+                } else if (isAtSpawn()) {
+                    // Back at spawn - restart from Step 1
+                    PokeAlertClient.LOGGER.info("🔄 Step 5 failed again, back at spawn - restarting from Step 1");
+                    sendNotification("", "Step 5 failed - restarting from spawn", Formatting.RED);
+                    
+                    stopAutomation();
+                    // Reset flags for fresh start
+                    manuallyCancelled = false;
+                    antiAfkDisabledOnReconnect = false;
+                    spawnDetectionTime = 0;
+                    
+                    // Restart monitoring (which will detect spawn and restart the process)
+                    startMonitoring();
+                } else {
+                    // Unknown location - just restart monitoring
+                    PokeAlertClient.LOGGER.warn("⚠️ Step 5 failed again at unknown location - restarting monitoring");
+                    sendNotification("", "Step 5 failed - restarting monitoring", Formatting.RED);
+                    
+                    stopAutomation();
+                    manuallyCancelled = false;
+                    antiAfkDisabledOnReconnect = false;
+                    spawnDetectionTime = 0;
+                    startMonitoring();
+                }
+            }, 3, TimeUnit.SECONDS);
+        }
     }
     
     /**

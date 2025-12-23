@@ -285,12 +285,20 @@ public class AntiAfkManager {
         if (lastWorld != null && !lastWorld.equals(currentWorld)) {
             PokeAlertClient.LOGGER.info("🌍 World change detected (" + lastWorld + " → " + currentWorld + "), entering stabilization period");
             
-            // Save current state before resetting
-            stateBeforeTeleport = currentAntiAfkState;
+            // Preserve saved state if it was already set (from saveStateForTeleport)
+            // Otherwise, save current state before resetting
+            if (stateBeforeTeleport == null) {
+                stateBeforeTeleport = currentAntiAfkState;
+            }
             worldChangeTime = currentTime;
             
-            // Reset tracking for new world
+            // Reset tracking for new world (but preserve stateBeforeTeleport and worldChangeTime)
+            long savedWorldChangeTime = worldChangeTime;
+            Boolean savedStateBeforeTeleport = stateBeforeTeleport;
             resetTracking();
+            // Restore preserved values
+            worldChangeTime = savedWorldChangeTime;
+            stateBeforeTeleport = savedStateBeforeTeleport;
             lastWorld = currentWorld;
             
             // During stabilization, return the pre-teleport state
@@ -308,8 +316,11 @@ public class AntiAfkManager {
         }
         
         // Stabilization period over, clear saved state
+        Boolean postStabilizationState = null;
         if (worldChangeTime > 0 && (currentTime - worldChangeTime) >= TELEPORT_STABILIZATION_TIME) {
             PokeAlertClient.LOGGER.info("✅ Teleport stabilization complete, resuming normal detection");
+            // Save the state we were returning during stabilization as a fallback
+            postStabilizationState = stateBeforeTeleport;
             worldChangeTime = 0;
             stateBeforeTeleport = null;
         }
@@ -324,6 +335,16 @@ public class AntiAfkManager {
             lastMovementCheck = currentTime;
             lastWorld = currentWorld;
             PokeAlertClient.LOGGER.info("📊 Movement tracking initialized");
+            // If we just finished stabilization, return the post-stabilization state as fallback
+            // If no saved state but we're in overworld, assume OFF (safe default for Step 5)
+            // Otherwise return null (need at least 2 data points)
+            if (postStabilizationState != null) {
+                return postStabilizationState;
+            } else if (!isAtSpawn()) {
+                // In overworld without saved state, assume OFF (safe default)
+                PokeAlertClient.LOGGER.info("📊 No saved state after stabilization, assuming OFF in overworld");
+                return false;
+            }
             return null;  // Need at least 2 data points
         }
         
