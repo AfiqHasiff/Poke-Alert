@@ -65,6 +65,9 @@ public class AntiAfkManager {
     private static final long CHECK_INTERVAL_SPAWN = 200; // 200ms at spawn (aggressive)
     private static final long CHECK_INTERVAL_OVERWORLD = 30000; // 30 seconds at overworld
     private static final long WORLD_CHANGE_CHECK_INTERVAL = 500; // Check for world changes every 500ms
+    private static final long POST_WORLD_CHANGE_INTERVAL = 1000; // 1 second after world change to quickly establish state
+    private static volatile long worldChangeDetectedTime = 0; // Track when world change was detected
+    private static final long POST_WORLD_CHANGE_DURATION = 5000; // Use shorter interval for 5 seconds after world change
     
     /**
      * Check if state monitoring is currently running
@@ -88,9 +91,17 @@ public class AntiAfkManager {
     
     /**
      * Get the appropriate check interval based on current location
+     * Uses shorter interval immediately after world change to quickly establish state
      * @return interval in milliseconds
      */
     private static long getCheckInterval() {
+        // If we recently detected a world change, use shorter interval to quickly establish state
+        long currentTime = System.currentTimeMillis();
+        if (worldChangeDetectedTime > 0 && (currentTime - worldChangeDetectedTime) < POST_WORLD_CHANGE_DURATION) {
+            return POST_WORLD_CHANGE_INTERVAL;
+        }
+        
+        // Normal intervals based on location
         return isAtSpawn() ? CHECK_INTERVAL_SPAWN : CHECK_INTERVAL_OVERWORLD;
     }
     
@@ -159,12 +170,24 @@ public class AntiAfkManager {
                 if (currentlyAtSpawn != lastKnownAtSpawn[0]) {
                     String oldLocation = lastKnownAtSpawn[0] ? "spawn" : "overworld";
                     String newLocation = currentlyAtSpawn ? "spawn" : "overworld";
-                    long newInterval = currentlyAtSpawn ? CHECK_INTERVAL_SPAWN : CHECK_INTERVAL_OVERWORLD;
                     
                     PokeAlertClient.LOGGER.info("🌍 Location change detected: " + oldLocation + " → " + newLocation + 
-                        " - Rescheduling monitor to " + newInterval + "ms interval");
+                        " - Using temporary 1s interval for 5s to quickly establish state");
                     
-                    // Immediately reschedule the main monitor with new interval
+                    // Mark world change time to trigger temporary shorter interval
+                    worldChangeDetectedTime = System.currentTimeMillis();
+                    
+                    // CRITICAL: Immediately run a state check to update currentAntiAfkState
+                    // This ensures state is available when automation steps need it
+                    Boolean immediateState = detectAntiAfkState();
+                    if (immediateState != null && !immediateState.equals(currentAntiAfkState)) {
+                        PokeAlertClient.LOGGER.info("📊 State monitor: Anti-AFK " + 
+                            (currentAntiAfkState == null ? "initialized" : "changed") + " → " + 
+                            (immediateState ? "ON" : "OFF") + " (immediate check after world change)");
+                    }
+                    currentAntiAfkState = immediateState;
+                    
+                    // Immediately reschedule the main monitor with temporary shorter interval
                     scheduleNextCheck();
                     
                     // Update tracked location
@@ -351,6 +374,7 @@ public class AntiAfkManager {
         currentAntiAfkState = null;  // Also reset global state
         worldChangeTime = 0;  // Reset teleport tracking
         stateBeforeTeleport = null;  // Clear saved state
+        worldChangeDetectedTime = 0;  // Reset world change detection time
         PokeAlertClient.LOGGER.info("AntiAfkManager: Movement tracking reset");
     }
     
