@@ -689,6 +689,40 @@ public class EggHatcher {
         sendNotification("Egg Hatcher [5/6]", "Anti-AFK Enable: Retrying", Formatting.YELLOW);
         PokeAlertClient.LOGGER.info("🔄 Retrying Step 5/6: Anti-AFK Enable at " + overworldLocation);
         
+        // Wait for state to be known before retrying (up to 2 seconds)
+        // This ensures we don't retry when state is still unknown
+        PokeAlertClient.LOGGER.info("⏳ Waiting for Anti-AFK state to be known before retry...");
+        int maxWaitAttempts = 4; // 4 attempts * 500ms = 2 seconds max
+        int attempt = 0;
+        Boolean currentState = AntiAfkManager.getAntiAfkState();
+        
+        while (currentState == null && attempt < maxWaitAttempts) {
+            attempt++;
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                PokeAlertClient.LOGGER.error("❌ Interrupted while waiting for state");
+                return;
+            }
+            currentState = AntiAfkManager.getAntiAfkState();
+        }
+        
+        if (currentState == null) {
+            PokeAlertClient.LOGGER.warn("⚠️ State still unknown after " + (maxWaitAttempts * 500) + "ms - retrying anyway");
+        } else {
+            PokeAlertClient.LOGGER.info("✅ State known: " + (currentState ? "ON" : "OFF") + " - proceeding with retry");
+        }
+        
+        // Additional delay to ensure timing is right (especially after world changes)
+        try {
+            Thread.sleep(2000); // 2 second delay to ensure state has stabilized
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            PokeAlertClient.LOGGER.error("❌ Interrupted during retry delay");
+            return;
+        }
+        
         // Pause safety monitor for toggle operation
         PokeAlertClient.LOGGER.info("Safety monitor paused for toggle operation");
         

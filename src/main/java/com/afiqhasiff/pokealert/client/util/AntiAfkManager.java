@@ -510,14 +510,33 @@ public class AntiAfkManager {
             Thread.currentThread().interrupt();
         }
         
-        // Check if tracking was just initialized - if so, we need more time for movement detection
+        // Check if tracking needs to be initialized
+        // If it does, detectAntiAfkState() will initialize it, but then we need to wait for movement detection
+        boolean trackingNeedsInit = (lastMovementCheck == 0);
+        
+        // Force an initial state check to initialize tracking if needed
+        // This will return a fallback state if tracking was just initialized
+        PokeAlertClient.LOGGER.info("🔍 Initial state check (to initialize tracking if needed)");
+        Boolean tempState = detectAntiAfkState();
+        long trackingInitTime = lastMovementCheck;
+        
+        // If tracking was just initialized, we need to wait for movement detection to work
         // Movement detection needs at least MOVEMENT_CHECK_INTERVAL (1000ms) after initialization
-        long timeSinceToggle = System.currentTimeMillis() - toggleStartTime;
-        if (lastMovementCheck > 0 && (System.currentTimeMillis() - lastMovementCheck) < MOVEMENT_CHECK_INTERVAL + 500) {
+        if (trackingNeedsInit && trackingInitTime > 0) {
+            // Tracking was just initialized, need to wait for movement detection
+            long additionalWait = MOVEMENT_CHECK_INTERVAL + 1500; // 1s for detection + 1.5s buffer
+            PokeAlertClient.LOGGER.info("⏳ Tracking just initialized at " + trackingInitTime + ", waiting additional " + additionalWait + "ms for movement detection");
+            try {
+                Thread.sleep(additionalWait);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        } else if (lastMovementCheck > 0 && (System.currentTimeMillis() - lastMovementCheck) < MOVEMENT_CHECK_INTERVAL + 500) {
             // Tracking was recently initialized, need to wait for movement detection
-            long additionalWait = MOVEMENT_CHECK_INTERVAL + 500 - (System.currentTimeMillis() - lastMovementCheck);
+            long timeSinceInit = System.currentTimeMillis() - lastMovementCheck;
+            long additionalWait = MOVEMENT_CHECK_INTERVAL + 500 - timeSinceInit;
             if (additionalWait > 0) {
-                PokeAlertClient.LOGGER.info("⏳ Tracking recently initialized, waiting additional " + additionalWait + "ms for movement detection");
+                PokeAlertClient.LOGGER.info("⏳ Tracking initialized " + timeSinceInit + "ms ago, waiting additional " + additionalWait + "ms for movement detection");
                 try {
                     Thread.sleep(additionalWait);
                 } catch (InterruptedException e) {
@@ -526,15 +545,28 @@ public class AntiAfkManager {
             }
         }
         
-        // Force a state check after waiting (helps when monitor interval is long)
+        // Force a final state check after waiting (helps when monitor interval is long)
         // This is safe now because stabilization should have ended and tracking has had time to detect
-        PokeAlertClient.LOGGER.info("🔍 Forcing state check after " + (System.currentTimeMillis() - toggleStartTime) + "ms total wait");
+        PokeAlertClient.LOGGER.info("🔍 Final state check after " + (System.currentTimeMillis() - toggleStartTime) + "ms total wait");
         Boolean newState = detectAntiAfkState();
         boolean success = (newState != null && newState == enable);
         
         if (success) {
+            // CRITICAL: Update currentAntiAfkState immediately so safety monitor sees correct state
+            // Without this, safety monitor might check getAntiAfkState() and see stale state
+            if (newState != null && !newState.equals(currentAntiAfkState)) {
+                PokeAlertClient.LOGGER.info("📊 Updating currentAntiAfkState: " + 
+                    (currentAntiAfkState == null ? "null" : (currentAntiAfkState ? "ON" : "OFF")) + 
+                    " → " + (newState ? "ON" : "OFF"));
+            }
+            currentAntiAfkState = newState;
             PokeAlertClient.LOGGER.info("✅ Toggle verified successfully after " + (System.currentTimeMillis() - toggleStartTime) + "ms: State is now " + (enable ? "ON" : "OFF"));
         } else {
+            // Even if verification failed, update state if we got a valid reading
+            // This prevents safety monitor from seeing stale state
+            if (newState != null) {
+                currentAntiAfkState = newState;
+            }
             PokeAlertClient.LOGGER.warn("⚠️ Toggle verification failed after " + (System.currentTimeMillis() - toggleStartTime) + "ms - expected " + 
                 (enable ? "ON" : "OFF") + ", got " + (newState != null ? (newState ? "ON" : "OFF") : "unknown"));
             PokeAlertClient.LOGGER.warn("⚠️ This may be a transient issue - safety monitor will verify");
