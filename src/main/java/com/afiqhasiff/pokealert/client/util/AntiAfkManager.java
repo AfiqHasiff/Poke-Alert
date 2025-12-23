@@ -486,19 +486,20 @@ public class AntiAfkManager {
         // After world changes, we need to account for stabilization period + detection time
         long waitTime = 2500; // Default wait time
         long currentTime = System.currentTimeMillis();
+        long toggleStartTime = currentTime;
         
         // Check if we're in stabilization period
         if (worldChangeTime > 0 && (currentTime - worldChangeTime) < TELEPORT_STABILIZATION_TIME) {
             // We're still in stabilization - wait until it ends + detection time
             // During stabilization, detectAntiAfkState() returns pre-teleport state, so we must wait
             long remainingStabilization = TELEPORT_STABILIZATION_TIME - (currentTime - worldChangeTime);
-            waitTime = remainingStabilization + 3000; // Stabilization + 3 seconds for detection
+            waitTime = remainingStabilization + 4000; // Stabilization + 4 seconds for detection
             PokeAlertClient.LOGGER.info("⏳ In stabilization period - waiting " + waitTime + "ms for verification " +
-                "(stabilization: " + remainingStabilization + "ms + detection: 3000ms)");
-        } else if (worldChangeTime > 0 && (currentTime - worldChangeTime) < TELEPORT_STABILIZATION_TIME + 3000) {
+                "(stabilization: " + remainingStabilization + "ms + detection: 4000ms)");
+        } else if (worldChangeTime > 0 && (currentTime - worldChangeTime) < TELEPORT_STABILIZATION_TIME + 4000) {
             // Just finished stabilization - need extra time for detection
             long timeSinceStabilizationEnd = (currentTime - worldChangeTime) - TELEPORT_STABILIZATION_TIME;
-            waitTime = Math.max(3000 - timeSinceStabilizationEnd, 1500); // Ensure at least 1.5s for detection
+            waitTime = Math.max(4000 - timeSinceStabilizationEnd, 2000); // Ensure at least 2s for detection
             PokeAlertClient.LOGGER.info("⏳ Just finished stabilization - waiting " + waitTime + "ms for verification");
         }
         
@@ -509,16 +510,32 @@ public class AntiAfkManager {
             Thread.currentThread().interrupt();
         }
         
+        // Check if tracking was just initialized - if so, we need more time for movement detection
+        // Movement detection needs at least MOVEMENT_CHECK_INTERVAL (1000ms) after initialization
+        long timeSinceToggle = System.currentTimeMillis() - toggleStartTime;
+        if (lastMovementCheck > 0 && (System.currentTimeMillis() - lastMovementCheck) < MOVEMENT_CHECK_INTERVAL + 500) {
+            // Tracking was recently initialized, need to wait for movement detection
+            long additionalWait = MOVEMENT_CHECK_INTERVAL + 500 - (System.currentTimeMillis() - lastMovementCheck);
+            if (additionalWait > 0) {
+                PokeAlertClient.LOGGER.info("⏳ Tracking recently initialized, waiting additional " + additionalWait + "ms for movement detection");
+                try {
+                    Thread.sleep(additionalWait);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        }
+        
         // Force a state check after waiting (helps when monitor interval is long)
-        // This is safe now because stabilization should have ended
-        PokeAlertClient.LOGGER.info("🔍 Forcing state check after " + waitTime + "ms wait");
+        // This is safe now because stabilization should have ended and tracking has had time to detect
+        PokeAlertClient.LOGGER.info("🔍 Forcing state check after " + (System.currentTimeMillis() - toggleStartTime) + "ms total wait");
         Boolean newState = detectAntiAfkState();
         boolean success = (newState != null && newState == enable);
         
         if (success) {
-            PokeAlertClient.LOGGER.info("✅ Toggle verified successfully after " + waitTime + "ms: State is now " + (enable ? "ON" : "OFF"));
+            PokeAlertClient.LOGGER.info("✅ Toggle verified successfully after " + (System.currentTimeMillis() - toggleStartTime) + "ms: State is now " + (enable ? "ON" : "OFF"));
         } else {
-            PokeAlertClient.LOGGER.warn("⚠️ Toggle verification failed after " + waitTime + "ms - expected " + 
+            PokeAlertClient.LOGGER.warn("⚠️ Toggle verification failed after " + (System.currentTimeMillis() - toggleStartTime) + "ms - expected " + 
                 (enable ? "ON" : "OFF") + ", got " + (newState != null ? (newState ? "ON" : "OFF") : "unknown"));
             PokeAlertClient.LOGGER.warn("⚠️ This may be a transient issue - safety monitor will verify");
         }
