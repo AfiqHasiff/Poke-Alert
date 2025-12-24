@@ -4,39 +4,39 @@ import com.afiqhasiff.pokealert.client.PokeAlertClient;
 import com.afiqhasiff.pokealert.client.config.ConfigManager;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.client.util.InputUtil;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
-import org.lwjgl.glfw.GLFW;
 
-import java.lang.reflect.Method;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Anti-AFK management using continuous background state monitoring
+ * Anti-AFK management utility class.
  * 
- * Architecture:
+ * v3.0.0 DEPRECATION NOTICE:
+ * -------------------------
+ * The following methods are DEPRECATED and should NOT be used in v3.0.0:
+ * - toggleAntiAfk() - External keybind simulation removed
+ * - simulateAntiAfkKeyPress() - No longer needed
+ * 
+ * The following methods are STILL USED in v3.0.0:
+ * - getPlayerLocationInfo() - Used for logging
+ * - resetTracking() - Used on disconnect
+ * - startStateMonitoring() / stopStateMonitoring() - Legacy, kept for compatibility
+ * 
+ * v3.0.0 uses internal Baritone-based Anti-AFK via:
+ * - BaritoneController (sends #goto commands)
+ * - CoordinateMonitor (tracks position/teleport)
+ * - PlayerMonitor (detects avoided players)
+ * - SafetyManager (centralized safety stop)
+ * 
+ * Legacy v2.0.0 Architecture (for reference):
  * - Background thread continuously monitors Anti-AFK state with dynamic intervals
  * - At spawn: checks every 200ms (aggressive monitoring)
  * - At overworld: checks every 30 seconds (reduced frequency)
- * - Separate world change monitor runs every 500ms to detect realm switches immediately
- * - When world change detected, monitoring interval is immediately rescheduled
- * - Global variable holds current state (always up-to-date during realm change)
- * - toggleAntiAfk() waits for state to be known (NEVER blind toggles)
  * - Uses GLFW key simulation to trigger Anti-AFK keybind
- * 
- * Movement Detection:
- * - Monitors player position (X, Y, Z) and state (sneaking, sprinting)
- * - Checks every 1 second for actual state determination
- * - Background thread polls at dynamic intervals based on location
- * 
- * World Change Detection:
- * - Dedicated monitor checks location every 500ms
- * - Immediately reschedules main monitor when spawn ↔ overworld transition detected
- * - Ensures interval adjustment happens within 500ms of world change (manual or automatic)
  */
 public class AntiAfkManager {
     private static final MinecraftClient client = MinecraftClient.getInstance();
@@ -488,246 +488,16 @@ public class AntiAfkManager {
             return true;  // Already in desired state = success
         }
         
-        // Perform toggle
-        PokeAlertClient.LOGGER.info("🔧 Toggling Anti-AFK: " + (currentAntiAfkState ? "ON" : "OFF") + " → " + (enable ? "ON" : "OFF"));
-        
-        boolean keyPressSent = simulateAntiAfkKeyPress();
-        if (!keyPressSent) {
-            PokeAlertClient.LOGGER.error("❌ Failed to simulate key press");
-            sendNotification("Anti-AFK", "Toggle failed", Formatting.RED);
-            return false;
-        }
-        
-        // Verification: Wait appropriately for movement detection to update
-        // After world changes, we need to account for stabilization period + detection time
-        long waitTime = 2500; // Default wait time
-        long currentTime = System.currentTimeMillis();
-        long toggleStartTime = currentTime;
-        
-        // Check if we're in stabilization period
-        if (worldChangeTime > 0 && (currentTime - worldChangeTime) < TELEPORT_STABILIZATION_TIME) {
-            // We're still in stabilization - wait until it ends + detection time
-            // During stabilization, detectAntiAfkState() returns pre-teleport state, so we must wait
-            long remainingStabilization = TELEPORT_STABILIZATION_TIME - (currentTime - worldChangeTime);
-            waitTime = remainingStabilization + 4000; // Stabilization + 4 seconds for detection
-            PokeAlertClient.LOGGER.info("⏳ In stabilization period - waiting " + waitTime + "ms for verification " +
-                "(stabilization: " + remainingStabilization + "ms + detection: 4000ms)");
-        } else if (worldChangeTime > 0 && (currentTime - worldChangeTime) < TELEPORT_STABILIZATION_TIME + 4000) {
-            // Just finished stabilization - need extra time for detection
-            long timeSinceStabilizationEnd = (currentTime - worldChangeTime) - TELEPORT_STABILIZATION_TIME;
-            waitTime = Math.max(4000 - timeSinceStabilizationEnd, 2000); // Ensure at least 2s for detection
-            PokeAlertClient.LOGGER.info("⏳ Just finished stabilization - waiting " + waitTime + "ms for verification");
-        }
-        
-        // Wait for state to update (stabilization must end first, then detection needs time)
-        try {
-            Thread.sleep(waitTime);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-        
-        // Check if tracking needs to be initialized
-        // If it does, detectAntiAfkState() will initialize it, but then we need to wait for movement detection
-        boolean trackingNeedsInit = (lastMovementCheck == 0);
-        
-        // Force an initial state check to initialize tracking if needed
-        // This will return a fallback state if tracking was just initialized
-        PokeAlertClient.LOGGER.info("🔍 Initial state check (to initialize tracking if needed)");
-        Boolean tempState = detectAntiAfkState();
-        long trackingInitTime = lastMovementCheck;
-        
-        // If tracking was just initialized, we need to wait for movement detection to work
-        // Movement detection needs at least MOVEMENT_CHECK_INTERVAL (1000ms) after initialization
-        if (trackingNeedsInit && trackingInitTime > 0) {
-            // Tracking was just initialized, need to wait for movement detection
-            long additionalWait = MOVEMENT_CHECK_INTERVAL + 1500; // 1s for detection + 1.5s buffer
-            PokeAlertClient.LOGGER.info("⏳ Tracking just initialized at " + trackingInitTime + ", waiting additional " + additionalWait + "ms for movement detection");
-            try {
-                Thread.sleep(additionalWait);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        } else if (lastMovementCheck > 0 && (System.currentTimeMillis() - lastMovementCheck) < MOVEMENT_CHECK_INTERVAL + 500) {
-            // Tracking was recently initialized, need to wait for movement detection
-            long timeSinceInit = System.currentTimeMillis() - lastMovementCheck;
-            long additionalWait = MOVEMENT_CHECK_INTERVAL + 500 - timeSinceInit;
-            if (additionalWait > 0) {
-                PokeAlertClient.LOGGER.info("⏳ Tracking initialized " + timeSinceInit + "ms ago, waiting additional " + additionalWait + "ms for movement detection");
-                try {
-                    Thread.sleep(additionalWait);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
-            }
-        }
-        
-        // Force a final state check after waiting (helps when monitor interval is long)
-        // This is safe now because stabilization should have ended and tracking has had time to detect
-        PokeAlertClient.LOGGER.info("🔍 Final state check after " + (System.currentTimeMillis() - toggleStartTime) + "ms total wait");
-        Boolean newState = detectAntiAfkState();
-        boolean success = (newState != null && newState == enable);
-        
-        if (success) {
-            // CRITICAL: Update currentAntiAfkState immediately so safety monitor sees correct state
-            // Without this, safety monitor might check getAntiAfkState() and see stale state
-            if (newState != null && !newState.equals(currentAntiAfkState)) {
-                PokeAlertClient.LOGGER.info("📊 Updating currentAntiAfkState: " + 
-                    (currentAntiAfkState == null ? "null" : (currentAntiAfkState ? "ON" : "OFF")) + 
-                    " → " + (newState ? "ON" : "OFF"));
-            }
-            currentAntiAfkState = newState;
-            PokeAlertClient.LOGGER.info("✅ Toggle verified successfully after " + (System.currentTimeMillis() - toggleStartTime) + "ms: State is now " + (enable ? "ON" : "OFF"));
-        } else {
-            // Even if verification failed, update state if we got a valid reading
-            // This prevents safety monitor from seeing stale state
-            if (newState != null) {
-                currentAntiAfkState = newState;
-            }
-            PokeAlertClient.LOGGER.warn("⚠️ Toggle verification failed after " + (System.currentTimeMillis() - toggleStartTime) + "ms - expected " + 
-                (enable ? "ON" : "OFF") + ", got " + (newState != null ? (newState ? "ON" : "OFF") : "unknown"));
-            PokeAlertClient.LOGGER.warn("⚠️ This may be a transient issue - safety monitor will verify");
-        }
-        
-        return success;
+        // v3.0.0: This method is DEPRECATED
+        // The external keybind toggle has been replaced with internal Baritone-based Anti-AFK
+        // This method now always returns false (no-op)
+        PokeAlertClient.LOGGER.warn("⚠️ toggleAntiAfk() is DEPRECATED in v3.0.0 - use Baritone Anti-AFK instead");
+        sendNotification("Anti-AFK", "External toggle deprecated in v3.0.0", Formatting.YELLOW);
+        return false;
     }
     
-    /**
-     * Simulate key/button press using Minecraft's input system
-     * Supports both keyboard keys and mouse buttons
-     * Mouse buttons: 0-7 (0=left, 1=right, 2=middle, etc.)
-     * Keyboard keys: 32+ (GLFW key codes)
-     */
-    private static boolean simulateAntiAfkKeyPress() {
-        try {
-            if (client.getWindow() == null) {
-                PokeAlertClient.LOGGER.warn("Cannot simulate input - window is null");
-                return false;
-            }
-            
-            if (client.currentScreen != null) {
-                PokeAlertClient.LOGGER.warn("Cannot simulate input - screen is open");
-                return false;
-            }
-            
-            // Get the input code and type from config
-            // The config is synchronized with the KeyBinding via bidirectional sync
-            int inputCode = ConfigManager.getConfig().antiAfkKeybind;
-            InputUtil.Type inputType;
-            
-            // Detect mouse button (0-7) vs keyboard key
-            if (inputCode >= 0 && inputCode <= 7) {
-                inputType = InputUtil.Type.MOUSE;
-            } else {
-                inputType = InputUtil.Type.KEYSYM;
-            }
-            long windowHandle = client.getWindow().getHandle();
-            
-            // Detect if this is a mouse button or keyboard key based on InputUtil.Type
-            boolean isMouseButton = (inputType == InputUtil.Type.MOUSE);
-            
-            if (isMouseButton) {
-                PokeAlertClient.LOGGER.info("Simulating mouse button press: " + inputCode + " (" + getMouseButtonName(inputCode) + ")");
-                
-                try {
-                    // Get GLFW's current mouse button callback and invoke it directly
-                    // This bypasses Minecraft's private Mouse class and works reliably
-                    org.lwjgl.glfw.GLFWMouseButtonCallback callback = GLFW.glfwSetMouseButtonCallback(windowHandle, null);
-                    
-                    if (callback == null) {
-                        PokeAlertClient.LOGGER.error("No mouse button callback registered - cannot simulate");
-                        return false;
-                    }
-                    
-                    // Restore the callback immediately
-                    GLFW.glfwSetMouseButtonCallback(windowHandle, callback);
-                    
-                    // Execute on main client thread to ensure proper handling
-                    client.execute(() -> {
-                        try {
-                            // Simulate mouse button press by invoking the callback directly
-                            callback.invoke(windowHandle, inputCode, GLFW.GLFW_PRESS, 0);
-                            
-                            PokeAlertClient.LOGGER.info("✓ Mouse button press sent: " + inputCode);
-                        } catch (Exception e) {
-                            PokeAlertClient.LOGGER.error("Error during mouse button press", e);
-                        }
-                    });
-                    
-                    // Wait for button press to be processed
-                    Thread.sleep(50);
-                    
-                    // Simulate mouse button release
-                    client.execute(() -> {
-                        try {
-                            callback.invoke(windowHandle, inputCode, GLFW.GLFW_RELEASE, 0);
-                            
-                            PokeAlertClient.LOGGER.info("✓ Mouse button release sent: " + inputCode);
-                        } catch (Exception e) {
-                            PokeAlertClient.LOGGER.error("Error during mouse button release", e);
-                        }
-                    });
-                    
-                    PokeAlertClient.LOGGER.info("✅ Mouse button simulation completed for button: " + inputCode);
-                } catch (Exception e) {
-                    PokeAlertClient.LOGGER.error("Failed to simulate mouse button", e);
-                    return false;
-                }
-            } else {
-                PokeAlertClient.LOGGER.info("Simulating keyboard key press: " + inputCode);
-                
-                // Execute on main client thread to ensure proper handling
-                client.execute(() -> {
-                    try {
-                        // Simulate key press (action = 1 for PRESS)
-                        client.keyboard.onKey(windowHandle, inputCode, 0, GLFW.GLFW_PRESS, 0);
-                        
-                        PokeAlertClient.LOGGER.info("✓ Key press sent: " + inputCode);
-                    } catch (Exception e) {
-                        PokeAlertClient.LOGGER.error("Error during key press", e);
-                    }
-                });
-                
-                // Wait for key press to be processed
-                Thread.sleep(50);
-                
-                // Simulate key release (action = 0 for RELEASE)
-                client.execute(() -> {
-                    try {
-                        client.keyboard.onKey(windowHandle, inputCode, 0, GLFW.GLFW_RELEASE, 0);
-                        
-                        PokeAlertClient.LOGGER.info("✓ Key release sent: " + inputCode);
-                    } catch (Exception e) {
-                        PokeAlertClient.LOGGER.error("Error during key release", e);
-                    }
-                });
-                
-                PokeAlertClient.LOGGER.info("✅ Keyboard key simulation completed for keyCode: " + inputCode);
-            }
-            
-            return true;
-            
-        } catch (Exception e) {
-            PokeAlertClient.LOGGER.error("Failed to simulate input", e);
-            return false;
-        }
-    }
-    
-    /**
-     * Get human-readable name for mouse button code
-     */
-    private static String getMouseButtonName(int button) {
-        switch (button) {
-            case 0: return "Left Click";
-            case 1: return "Right Click";
-            case 2: return "Middle Click";
-            case 3: return "Mouse Button 4";
-            case 4: return "Mouse Button 5";
-            case 5: return "Mouse Button 6";
-            case 6: return "Mouse Button 7";
-            case 7: return "Mouse Button 8";
-            default: return "Unknown Mouse Button";
-        }
-    }
+    // v3.0.0: simulateAntiAfkKeyPress() REMOVED - no longer using external keybind simulation
+    // v3.0.0: getMouseButtonName() REMOVED - no longer needed
     
     /**
      * Send notification to player

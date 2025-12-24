@@ -17,8 +17,9 @@ import org.lwjgl.glfw.GLFW;
 import java.util.Arrays;
 
 /**
- * Configuration screen for PokéAlert v2.0.0.
+ * Configuration screen for PokéAlert v3.0.0.
  * Provides GUI controls for all mod settings with descriptions.
+ * v3.0.0: Removed Anti-AFK keybind, added Baritone Anti-AFK region settings
  */
 public class PokeAlertConfigScreen extends Screen {
     private final Screen parent;
@@ -64,8 +65,14 @@ public class PokeAlertConfigScreen extends Screen {
     private ButtonWidget realmReturnToggleButton;
     private ButtonWidget realmReturnKeybindButton;
     private boolean waitingForRealmReturnKey = false;
-    private ButtonWidget antiAfkKeybindButton;
-    private boolean waitingForAntiAfkKey = false;
+    // v3.0.0: Anti-AFK keybind REMOVED - now using internal Baritone control
+    
+    // v3.0.0: Anti-AFK Region settings
+    private TextFieldWidget regionX1Field;
+    private TextFieldWidget regionZ1Field;
+    private TextFieldWidget regionX2Field;
+    private TextFieldWidget regionZ2Field;
+    private TextFieldWidget playersToAvoidField;
     
     // Text fields
     private TextFieldWidget whitelistField;
@@ -89,7 +96,7 @@ public class PokeAlertConfigScreen extends Screen {
     private static final int BUTTON_GAP = 5;
 
     public PokeAlertConfigScreen(Screen parent) {
-        super(Text.literal("PokéAlert v2.0.0 Configuration"));
+        super(Text.literal("PokéAlert v3.0.0 Configuration"));
         this.parent = parent;
         
         // Reload config from file to pick up any manual edits
@@ -143,8 +150,28 @@ public class PokeAlertConfigScreen extends Screen {
         
         // Egg hatcher settings
         copy.eggHatcherEnabled = original.eggHatcherEnabled;
-        copy.antiAfkKeybind = original.antiAfkKeybind;
         copy.realmReturnCommand = original.realmReturnCommand;
+        
+        // v3.0.0: Anti-AFK Region settings
+        copy.antiAfkRegionX1 = original.antiAfkRegionX1;
+        copy.antiAfkRegionZ1 = original.antiAfkRegionZ1;
+        copy.antiAfkRegionX2 = original.antiAfkRegionX2;
+        copy.antiAfkRegionZ2 = original.antiAfkRegionZ2;
+        copy.arrivalThreshold = original.arrivalThreshold;
+        copy.teleportDetectionOffset = original.teleportDetectionOffset;
+        copy.coordinateCheckInterval = original.coordinateCheckInterval;
+        copy.realmCheckIntervalSpawn = original.realmCheckIntervalSpawn;
+        copy.realmCheckIntervalOverworld = original.realmCheckIntervalOverworld;
+        copy.playerMonitorInterval = original.playerMonitorInterval;
+        copy.locationTimeout = original.locationTimeout;
+        copy.playersToAvoid = Arrays.copyOf(original.playersToAvoid, original.playersToAvoid.length);
+        copy.enablePlayerListMonitoring = original.enablePlayerListMonitoring;
+        copy.enableNearbyPlayerDetection = original.enableNearbyPlayerDetection;
+        copy.nearbyPlayerDetectionRadius = original.nearbyPlayerDetectionRadius;
+        copy.initialQueueSize = original.initialQueueSize;
+        copy.replenishCount = original.replenishCount;
+        copy.locationsForStep6 = original.locationsForStep6;
+        copy.maxConsecutiveTimeouts = original.maxConsecutiveTimeouts;
         
         return copy;
     }
@@ -366,16 +393,7 @@ public class PokeAlertConfigScreen extends Screen {
             });
         currentY += ROW_HEIGHT;
         
-        // Anti-AFK keybind button (also configurable in Controls menu)
-        antiAfkKeybindButton = addEggTimerRow(currentY,
-            "Anti-AFK Keybind",
-            "Key or mouse button for Anti-AFK toggle (also in Controls → PokéAlert)",
-            getAntiAfkKeybindText(),
-            button -> {
-                waitingForAntiAfkKey = true;
-                button.setMessage(Text.literal("> Press any key or mouse button <").formatted(Formatting.YELLOW));
-            });
-        currentY += ROW_HEIGHT;
+        // v3.0.0: Anti-AFK keybind REMOVED - now using internal Baritone control
         
         // Egg hatcher command text field
         int realmCmdLabelWidth = this.textRenderer.getWidth("Return Command:");
@@ -395,6 +413,111 @@ public class PokeAlertConfigScreen extends Screen {
         realmReturnCommandField.setPlaceholder(Text.literal("/home new").formatted(Formatting.GRAY));
         addSelectableChild(realmReturnCommandField);
         addDrawableChild(realmReturnCommandField);
+        currentY += 30 + SECTION_SPACING;
+        
+        // ========== v3.0.0: Anti-AFK Region Section ==========
+        int regionFieldWidth = 60;
+        int regionLabelWidth = this.textRenderer.getWidth("Region Corner 1 (X, Z):");
+        int regionFieldX = SIDE_MARGIN + regionLabelWidth + 10;
+        
+        // Corner 1 (X1, Z1)
+        regionX1Field = new TextFieldWidget(
+            this.textRenderer,
+            regionFieldX,
+            currentY - (int)scrollOffset,
+            regionFieldWidth,
+            BUTTON_HEIGHT,
+            Text.literal("X1")
+        );
+        regionX1Field.setMaxLength(10);
+        regionX1Field.setText(String.valueOf(config.antiAfkRegionX1));
+        addSelectableChild(regionX1Field);
+        addDrawableChild(regionX1Field);
+        
+        regionZ1Field = new TextFieldWidget(
+            this.textRenderer,
+            regionFieldX + regionFieldWidth + 10,
+            currentY - (int)scrollOffset,
+            regionFieldWidth,
+            BUTTON_HEIGHT,
+            Text.literal("Z1")
+        );
+        regionZ1Field.setMaxLength(10);
+        regionZ1Field.setText(String.valueOf(config.antiAfkRegionZ1));
+        addSelectableChild(regionZ1Field);
+        addDrawableChild(regionZ1Field);
+        
+        // Set Corner 1 to current position button
+        ButtonWidget setCorner1Button = ButtonWidget.builder(
+            Text.literal("Set Pos"),
+            button -> {
+                if (client != null && client.player != null) {
+                    regionX1Field.setText(String.valueOf((int) client.player.getX()));
+                    regionZ1Field.setText(String.valueOf((int) client.player.getZ()));
+                }
+            }
+        ).dimensions(regionFieldX + (regionFieldWidth * 2) + 20, currentY - (int)scrollOffset, 50, BUTTON_HEIGHT).build();
+        addDrawableChild(setCorner1Button);
+        currentY += 30;
+        
+        // Corner 2 (X2, Z2)
+        regionX2Field = new TextFieldWidget(
+            this.textRenderer,
+            regionFieldX,
+            currentY - (int)scrollOffset,
+            regionFieldWidth,
+            BUTTON_HEIGHT,
+            Text.literal("X2")
+        );
+        regionX2Field.setMaxLength(10);
+        regionX2Field.setText(String.valueOf(config.antiAfkRegionX2));
+        addSelectableChild(regionX2Field);
+        addDrawableChild(regionX2Field);
+        
+        regionZ2Field = new TextFieldWidget(
+            this.textRenderer,
+            regionFieldX + regionFieldWidth + 10,
+            currentY - (int)scrollOffset,
+            regionFieldWidth,
+            BUTTON_HEIGHT,
+            Text.literal("Z2")
+        );
+        regionZ2Field.setMaxLength(10);
+        regionZ2Field.setText(String.valueOf(config.antiAfkRegionZ2));
+        addSelectableChild(regionZ2Field);
+        addDrawableChild(regionZ2Field);
+        
+        // Set Corner 2 to current position button
+        ButtonWidget setCorner2Button = ButtonWidget.builder(
+            Text.literal("Set Pos"),
+            button -> {
+                if (client != null && client.player != null) {
+                    regionX2Field.setText(String.valueOf((int) client.player.getX()));
+                    regionZ2Field.setText(String.valueOf((int) client.player.getZ()));
+                }
+            }
+        ).dimensions(regionFieldX + (regionFieldWidth * 2) + 20, currentY - (int)scrollOffset, 50, BUTTON_HEIGHT).build();
+        addDrawableChild(setCorner2Button);
+        currentY += 30;
+        
+        // Players to avoid text field
+        int avoidLabelWidth = this.textRenderer.getWidth("Players to Avoid:");
+        int avoidFieldWidth = this.width - (SIDE_MARGIN * 2) - avoidLabelWidth - 15;
+        int avoidFieldX = SIDE_MARGIN + avoidLabelWidth + 10;
+        
+        playersToAvoidField = new TextFieldWidget(
+            this.textRenderer,
+            avoidFieldX,
+            currentY - (int)scrollOffset,
+            avoidFieldWidth,
+            BUTTON_HEIGHT,
+            Text.literal("Players to Avoid")
+        );
+        playersToAvoidField.setMaxLength(500);
+        playersToAvoidField.setText(String.join(", ", config.playersToAvoid));
+        playersToAvoidField.setPlaceholder(Text.literal("Usernames to trigger safety stop (comma-separated)").formatted(Formatting.GRAY));
+        addSelectableChild(playersToAvoidField);
+        addDrawableChild(playersToAvoidField);
         currentY += 30 + SECTION_SPACING;
 
         // ========== Custom Lists Section ==========
@@ -650,6 +773,24 @@ public class PokeAlertConfigScreen extends Screen {
         String realmCmd = realmReturnCommandField.getText().trim();
         config.realmReturnCommand = realmCmd.isEmpty() ? "/home new" : realmCmd;
         
+        // v3.0.0: Parse Anti-AFK region coordinates
+        try {
+            config.antiAfkRegionX1 = Integer.parseInt(regionX1Field.getText().trim());
+            config.antiAfkRegionZ1 = Integer.parseInt(regionZ1Field.getText().trim());
+            config.antiAfkRegionX2 = Integer.parseInt(regionX2Field.getText().trim());
+            config.antiAfkRegionZ2 = Integer.parseInt(regionZ2Field.getText().trim());
+        } catch (NumberFormatException e) {
+            // Keep existing values if parsing fails
+            PokeAlertClient.LOGGER.warn("Invalid region coordinates, keeping existing values");
+        }
+        
+        // Parse players to avoid
+        String playersText = playersToAvoidField.getText().trim();
+        config.playersToAvoid = parseList(playersText);
+        
+        // Validate timing config
+        config.validateTimingConfig();
+        
         // Note: Volume is already updated by VolumeSliderWidget.applyValue()
 
         // Save configuration to file
@@ -703,7 +844,7 @@ public class PokeAlertConfigScreen extends Screen {
         // Title (always visible at top)
         context.drawCenteredTextWithShadow(
             this.textRenderer,
-            Text.literal("PokéAlert v2.0.0").formatted(Formatting.GOLD),
+            Text.literal("PokéAlert v3.0.0").formatted(Formatting.GOLD),
             this.width / 2,
             15,
             0xFFFFFF
@@ -847,14 +988,54 @@ public class PokeAlertConfigScreen extends Screen {
         drawCategoryWithDescription(context, "Mode Toggle Key", "Cycle AUTO/DISABLED or cancel active automation", currentY);
         currentY += ROW_HEIGHT;
         
-        // Anti-AFK keybind label
-        drawCategoryWithDescription(context, "Anti-AFK Keybind", "Key or mouse button (also in Controls → PokéAlert)", currentY);
-        currentY += ROW_HEIGHT;
+        // v3.0.0: Anti-AFK keybind REMOVED
         
         // Egg hatcher command label
         context.drawTextWithShadow(
             this.textRenderer,
             Text.literal("Return Command:"),
+            SIDE_MARGIN,
+            currentY + 2,
+            0xFFFFFF
+        );
+        currentY += 30 + SECTION_SPACING;
+        
+        // Draw separator line
+        drawHorizontalSeparator(context, currentY - 10);
+        
+        // v3.0.0: Anti-AFK Region header
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("Anti-AFK Region (v3.0.0)").formatted(Formatting.AQUA),
+            SIDE_MARGIN,
+            currentY - 15,
+            0xFFFFFF
+        );
+        
+        // Region Corner 1 label
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("Region Corner 1 (X, Z):"),
+            SIDE_MARGIN,
+            currentY + 2,
+            0xFFFFFF
+        );
+        currentY += 30;
+        
+        // Region Corner 2 label
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("Region Corner 2 (X, Z):"),
+            SIDE_MARGIN,
+            currentY + 2,
+            0xFFFFFF
+        );
+        currentY += 30;
+        
+        // Players to avoid label
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("Players to Avoid:"),
             SIDE_MARGIN,
             currentY + 2,
             0xFFFFFF
@@ -954,21 +1135,7 @@ public class PokeAlertConfigScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        // Handle mouse button binding for Anti-AFK
-        if (waitingForAntiAfkKey) {
-            // Update the registered keybinding with mouse button
-            InputUtil.Type type = InputUtil.Type.MOUSE;
-            PokeAlertClient.antiAfkKeybind.setBoundKey(type.createFromCode(button));
-            KeyBinding.updateKeysByCode();
-            
-            // Update config for JSON editing compatibility
-            config.antiAfkKeybind = button;
-            // Config will be saved when user clicks "Save & Apply"
-            
-            waitingForAntiAfkKey = false;
-            antiAfkKeybindButton.setMessage(getAntiAfkKeybindText());
-            return true;
-        }
+        // v3.0.0: Anti-AFK keybind handling REMOVED
         
         if (whitelistField.mouseClicked(mouseX, mouseY, button)) {
             setFocused(whitelistField);
@@ -1104,31 +1271,10 @@ public class PokeAlertConfigScreen extends Screen {
             return true;
         }
         
-        // Handle keybind setting for Anti-AFK
-        if (waitingForAntiAfkKey) {
-            // Don't rebind to Escape key
-            if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
-                waitingForAntiAfkKey = false;
-                antiAfkKeybindButton.setMessage(getAntiAfkKeybindText());
-                return true;
-            }
-            
-            // Update the registered keybinding
-            InputUtil.Type type = InputUtil.Type.KEYSYM;
-            PokeAlertClient.antiAfkKeybind.setBoundKey(type.createFromCode(keyCode));
-            KeyBinding.updateKeysByCode();
-            
-            // Update config for JSON editing compatibility
-            config.antiAfkKeybind = keyCode;
-            // Config will be saved when user clicks "Save & Apply"
-            
-            waitingForAntiAfkKey = false;
-            antiAfkKeybindButton.setMessage(getAntiAfkKeybindText());
-            return true;
-        }
+        // v3.0.0: Anti-AFK keybind handling REMOVED
         
         // Allow escape to close the screen when not setting keybind
-        if (keyCode == GLFW.GLFW_KEY_ESCAPE && !waitingForKey && !waitingForEggTimerKey && !waitingForRealmReturnKey && !waitingForAntiAfkKey) {
+        if (keyCode == GLFW.GLFW_KEY_ESCAPE && !waitingForKey && !waitingForEggTimerKey && !waitingForRealmReturnKey) {
             this.close();
             return true;
         }
@@ -1166,15 +1312,7 @@ public class PokeAlertConfigScreen extends Screen {
             .append(Text.literal(keyName).formatted(Formatting.YELLOW));
     }
     
-    
-    private Text getAntiAfkKeybindText() {
-        // Read from the registered KeyBinding (reflects Controls menu changes)
-        // Use the translated key name that Minecraft provides
-        String inputName = PokeAlertClient.antiAfkKeybind.getBoundKeyLocalizedText().getString();
-        
-        return Text.literal("Input: ").formatted(Formatting.WHITE)
-            .append(Text.literal(inputName).formatted(Formatting.YELLOW));
-    }
+    // v3.0.0: getAntiAfkKeybindText() REMOVED - no longer using external Anti-AFK keybind
     
     /**
      * Custom slider widget for volume control

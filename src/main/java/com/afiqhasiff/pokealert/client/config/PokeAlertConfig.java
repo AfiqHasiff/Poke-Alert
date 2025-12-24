@@ -49,8 +49,38 @@ public class PokeAlertConfig {
     
     // Egg Hatcher Automation Settings
     public boolean eggHatcherEnabled = true;
-    public int antiAfkKeybind = 329; // Default: Numpad 9 (GLFW_KEY_KP_9) - synchronized with Controls menu
     public String realmReturnCommand = "/home new"; // Default command to return to main realm for egg hatching
+    
+    // ========== v3.0.0 Anti-AFK Settings ==========
+    
+    // Anti-AFK Region (X, Z only - Y handled by Baritone)
+    public int antiAfkRegionX1 = 0;
+    public int antiAfkRegionZ1 = 0;
+    public int antiAfkRegionX2 = 100;
+    public int antiAfkRegionZ2 = 100;
+    
+    // Coordinate Monitoring Thresholds
+    public int arrivalThreshold = 3;           // Blocks to consider "arrived" (1-10)
+    public int teleportDetectionOffset = 10;   // Blocks to trigger teleport detection (5-50)
+    
+    // Timing Configuration (all in milliseconds)
+    public int coordinateCheckInterval = 500;        // Position check during movement (100-2000)
+    public int realmCheckIntervalSpawn = 200;        // Realm check at spawn (100-5000)
+    public int realmCheckIntervalOverworld = 30000;  // Realm check in overworld (5000-60000)
+    public int playerMonitorInterval = 5000;         // Player list/nearby check (1000-30000)
+    public int locationTimeout = 45000;              // Max time per Baritone destination (10000-120000)
+    
+    // Player Safety
+    public String[] playersToAvoid = {};       // Usernames to watch for
+    public boolean enablePlayerListMonitoring = true;
+    public boolean enableNearbyPlayerDetection = true;
+    public double nearbyPlayerDetectionRadius = 32.0; // (1-128)
+    
+    // Anti-AFK Queue Settings
+    public int initialQueueSize = 5;           // Initial locations in queue (3-10)
+    public int replenishCount = 3;             // Locations to add when queue runs low (1-5)
+    public int locationsForStep6 = 3;          // Successful visits before Step 5/completion (1-10) - kept as Step6 for migration
+    public int maxConsecutiveTimeouts = 3;     // Timeouts before safety stop (1-10)
 
     public String[] getCombinedWhitelist(){
         List<String> combinedList = new ArrayList<String>();
@@ -146,5 +176,74 @@ public class PokeAlertConfig {
      */
     public String getTelegramSendMessageUrl() {
         return String.format("%s/bot%s/sendMessage", telegramApiUrl, telegramBotToken);
+    }
+    
+    // ========== v3.0.0 Helper Methods ==========
+    
+    /**
+     * Check if Anti-AFK region has valid non-zero area
+     * @return true if region is properly configured
+     */
+    public boolean isAntiAfkRegionValid() {
+        return antiAfkRegionX1 != antiAfkRegionX2 && antiAfkRegionZ1 != antiAfkRegionZ2;
+    }
+    
+    /**
+     * Check if Anti-AFK region might be too small for effective movement
+     * Recommended minimum is 20x20 blocks
+     * @return true if region is smaller than recommended
+     */
+    public boolean isAntiAfkRegionTooSmall() {
+        int width = Math.abs(antiAfkRegionX2 - antiAfkRegionX1);
+        int depth = Math.abs(antiAfkRegionZ2 - antiAfkRegionZ1);
+        return width < 20 || depth < 20;
+    }
+    
+    /**
+     * Get the Anti-AFK region width
+     * @return Width in blocks
+     */
+    public int getAntiAfkRegionWidth() {
+        return Math.abs(antiAfkRegionX2 - antiAfkRegionX1);
+    }
+    
+    /**
+     * Get the Anti-AFK region depth
+     * @return Depth in blocks
+     */
+    public int getAntiAfkRegionDepth() {
+        return Math.abs(antiAfkRegionZ2 - antiAfkRegionZ1);
+    }
+    
+    /**
+     * Validate all v3.0.0 timing configuration values
+     * Clamps values to valid ranges
+     */
+    public void validateTimingConfig() {
+        arrivalThreshold = clamp(arrivalThreshold, 1, 10);
+        teleportDetectionOffset = clamp(teleportDetectionOffset, 5, 50);
+        coordinateCheckInterval = clamp(coordinateCheckInterval, 100, 2000);
+        realmCheckIntervalSpawn = clamp(realmCheckIntervalSpawn, 100, 5000);
+        realmCheckIntervalOverworld = clamp(realmCheckIntervalOverworld, 5000, 60000);
+        playerMonitorInterval = clamp(playerMonitorInterval, 1000, 30000);
+        locationTimeout = clamp(locationTimeout, 10000, 120000);
+        nearbyPlayerDetectionRadius = clamp(nearbyPlayerDetectionRadius, 1.0, 128.0);
+        initialQueueSize = clamp(initialQueueSize, 3, 10);
+        replenishCount = clamp(replenishCount, 1, 5);
+        locationsForStep6 = clamp(locationsForStep6, 1, 10);
+        maxConsecutiveTimeouts = clamp(maxConsecutiveTimeouts, 1, 10);
+        
+        // Ensure teleport detection is at least 2x arrival threshold
+        if (teleportDetectionOffset < arrivalThreshold * 2) {
+            teleportDetectionOffset = arrivalThreshold * 2;
+        }
+    }
+    
+    private int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
+    }
+    
+    private double clamp(double value, double min, double max) {
+        return Math.max(min, Math.min(max, value));
     }
 }

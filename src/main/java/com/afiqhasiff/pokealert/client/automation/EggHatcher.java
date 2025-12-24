@@ -5,6 +5,12 @@ import com.afiqhasiff.pokealert.client.config.PokeAlertConfig;
 import com.afiqhasiff.pokealert.client.config.ConfigManager;
 import com.afiqhasiff.pokealert.client.notification.TelegramNotification;
 import com.afiqhasiff.pokealert.client.util.AntiAfkManager;
+import com.afiqhasiff.pokealert.client.util.AntiAfkRegion;
+import com.afiqhasiff.pokealert.client.util.BaritoneController;
+import com.afiqhasiff.pokealert.client.util.CoordinateMonitor;
+import com.afiqhasiff.pokealert.client.util.LocationQueue;
+import com.afiqhasiff.pokealert.client.util.PlayerMonitor;
+import com.afiqhasiff.pokealert.client.util.SafetyManager;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
@@ -16,8 +22,15 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Automation manager for handling realm transitions after disconnects
- * Automates the process of returning from spawn to main realm with anti-afk management
+ * Automation manager for handling realm transitions after disconnects.
+ * v3.0.0: Now uses internal Baritone-based Anti-AFK instead of external keybind.
+ * 
+ * Flow (5 Steps):
+ * Step 1: Spawn Detection
+ * Step 2: Server Buffer (30s wait)
+ * Step 3: Realm Change (/home)
+ * Step 4: Anti-AFK Start (Baritone movement - perpetual)
+ * Step 5: Completion (after 3 successful locations - Anti-AFK continues)
  */
 public class EggHatcher {
     private static EggHatcher instance;
@@ -55,6 +68,12 @@ public class EggHatcher {
     
     // Step 5 retry tracking for logging purposes
     private int step5RetryCount = 0;
+    
+    // v3.0.0: Anti-AFK components
+    private final LocationQueue locationQueue = new LocationQueue();
+    private AntiAfkRegion antiAfkRegion;
+    private boolean antiAfkActive = false;
+    private ScheduledFuture<?> locationTimeoutTask;
     
     // State machine for tracking automation progress
     private enum State {
@@ -400,47 +419,24 @@ public class EggHatcher {
     }
     
     /**
-     * Execute the actual automation steps
+     * v3.0.0: Execute the automation steps (simplified - no external Anti-AFK to disable)
      */
     private void executeAutomationSteps(boolean antiAfkAlreadyDisabled) {
         currentState = State.DETECTED_AT_SPAWN;
         
-        // Don't show "Step 3" yet - that happens when we actually send /home command
-        // This method is just preparing to execute the steps
-        
-        // Start safety monitor if not already running
-        if (safetyMonitorTask == null || safetyMonitorTask.isDone()) {
-            PokeAlertClient.LOGGER.info("Starting safety monitor at Step 3 (normal timing)");
-            startSafetyMonitor();
-        } else {
-            PokeAlertClient.LOGGER.info("Safety monitor already running (started early on server join)");
-        }
-        
         // Start stuck detection timer (only if not already running)
         if (stuckDetector == null || stuckDetector.isDone()) {
             stuckDetector = scheduler.schedule(() -> {
-                // Check if still at spawn (remove isAutomationRunning check to work through restarts)
                 if (isAtSpawn() && mode == AutomationMode.AUTO) {
                     currentState = State.STUCK;
                     handleStuckAtSpawn();
                 }
             }, STUCK_TIMEOUT, TimeUnit.MILLISECONDS);
-            PokeAlertClient.LOGGER.info("🚨 Stuck detector started in executeAutomationSteps - 2 min timeout");
+            PokeAlertClient.LOGGER.info("🚨 Stuck detector started - 2 min timeout");
         }
         
-        if (!antiAfkAlreadyDisabled) {
-            // Step 1: Disable anti-afk (if not already done)
-            step1Task = scheduler.schedule(() -> {
-                currentState = State.DISABLING_ANTIAFK;
-                toggleAntiAfk(false);
-                
-                // Continue with the rest of the steps
-                continueAutomationFromStep2();
-            }, 3000, TimeUnit.MILLISECONDS);  // Wait 3s for movement tracking to re-initialize after teleport
-        } else {
-            // Anti-AFK already disabled, skip to step 2
-            continueAutomationFromStep2();
-        }
+        // v3.0.0: No external Anti-AFK to disable, proceed directly to Step 2 (Server Buffer)
+        continueAutomationFromStep2();
     }
     
     // Overload for backward compatibility
@@ -449,103 +445,62 @@ public class EggHatcher {
     }
     
     /**
-     * Proceed with spawn detection and automation steps (Steps 1-3)
-     * Universal 3-second grace period ensures reliable state detection for all spawn scenarios
+     * v3.0.0: Proceed with spawn detection (Step 1)
+     * Simplified - no longer needs to check external Anti-AFK state
      */
     private void proceedWithSpawnDetection() {
         long currentTime = System.currentTimeMillis();
         String location = AntiAfkManager.getPlayerLocationInfo();
         
-        Boolean antiAfkState = AntiAfkManager.getAntiAfkState();
-        
         // Start stuck detection timer if not already running
         if (stuckDetector == null || stuckDetector.isDone()) {
             stuckDetector = scheduler.schedule(() -> {
-                // Check if still at spawn (works even through restarts)
                 if (isAtSpawn() && mode == AutomationMode.AUTO) {
                     currentState = State.STUCK;
                     handleStuckAtSpawn();
                 }
             }, STUCK_TIMEOUT, TimeUnit.MILLISECONDS);
-            PokeAlertClient.LOGGER.info("🚨 Stuck detector started in proceedWithSpawnDetection - 2 min timeout");
+            PokeAlertClient.LOGGER.info("🚨 Stuck detector started - 2 min timeout");
         }
         
-        // Step 1: Spawn Detection
-        sendNotification("Egg Hatcher [1/6]", "Spawn Detected", Formatting.YELLOW);
-        PokeAlertClient.LOGGER.info("🎯 Step 1/6: Spawn Detection at " + location);
+        // v3.0.0: Stop any existing Baritone movement from previous session
+        BaritoneController.stop();
+        antiAfkActive = false;
         
-        // Step 2: Anti-AFK Check
-        if (antiAfkState == null) {
-            // State unknown - restart the process after a delay
-            sendNotification("Egg Hatcher [2/6]", "Anti-AFK Check: State unknown - restarting in 5s", Formatting.YELLOW);
-            PokeAlertClient.LOGGER.warn("⚠️ Step 2/6: Anti-AFK state unknown - will restart process at " + location);
-            
-            // Reset state and restart after 5 seconds
-            isAutomationRunning = false;
-            currentState = State.IDLE;
-            spawnDetectionTime = 0;
-            
-            // Cancel automation tasks but keep stuck detector
-            cancelAllAutomationTasks();
-            
-            // Keep stuck detector running or restart if needed (same as safety monitor logic)
-            if (stuckDetector == null || stuckDetector.isDone()) {
-                stuckDetector = scheduler.schedule(() -> {
-                    if (isAtSpawn() && mode == AutomationMode.AUTO) {
-                        currentState = State.STUCK;
-                        handleStuckAtSpawn();
-                    }
-                }, STUCK_TIMEOUT, TimeUnit.MILLISECONDS);
-                PokeAlertClient.LOGGER.info("🚨 Stuck detector (re)started due to Anti-AFK unknown - 2 min timeout");
-            }
-            
-            // Restart monitoring after delay to allow Anti-AFK state to be determined
-            scheduler.schedule(() -> {
-                PokeAlertClient.LOGGER.info("🔄 Restarting spawn detection after Anti-AFK state unknown");
-                startMonitoring();
-            }, 5, TimeUnit.SECONDS);
-            
-            return; // Exit early - don't continue with automation
-        } else if (antiAfkState) {
-            // Confirmed ON, disable immediately
-            sendNotification("Egg Hatcher [2/6]", "Anti-AFK Check: Disabling", Formatting.YELLOW);
-            PokeAlertClient.LOGGER.info("🎯 Step 2/6: Anti-AFK Check - State is ON, disabling now at " + location);
-            AntiAfkManager.toggleAntiAfk(false);
-        } else {
-            // Confirmed OFF
-            sendNotification("Egg Hatcher [2/6]", "Anti-AFK Check: Already OFF", Formatting.GRAY);
-            PokeAlertClient.LOGGER.info("✅ Step 2/6: Anti-AFK Check - Already OFF at " + location);
-        }
+        // Step 1: Spawn Detection (v3.0.0 - 5 steps total)
+        sendNotification("Egg Hatcher [1/5]", "Spawn Detected", Formatting.YELLOW);
+        PokeAlertClient.LOGGER.info("🎯 Step 1/5: Spawn Detection at " + location);
+        
+        // v3.0.0: Step 2 (Anti-AFK Check) removed - no external Anti-AFK to check
+        // Proceed directly to server buffer
         
         antiAfkDisabledOnReconnect = true;
-        
-        // Set spawn detection time for 30s buffer
         spawnDetectionTime = currentTime;
         PokeAlertClient.LOGGER.info("Spawn detection time set, starting automation");
         
-        // Step 3: Server Buffer - Show notification with custom formatting
+        // Step 2: Server Buffer (was Step 3 in v2.0.0)
         if (client.player != null) {
             PokeAlertConfig stepConfig = PokeAlertClient.getInstance().config;
             if (stepConfig.inGameTextEnabled) {
                 Text notification = Text.literal("[").formatted(Formatting.GRAY)
                     .append(Text.literal("PokeAlert").formatted(Formatting.RED))
                     .append(Text.literal("] ").formatted(Formatting.GRAY))
-                    .append(Text.literal("Egg Hatcher [3/6]: ").formatted(Formatting.WHITE))
+                    .append(Text.literal("Egg Hatcher [2/5]: ").formatted(Formatting.WHITE))
                     .append(Text.literal("Server Buffer: Waiting 30s").formatted(Formatting.YELLOW))
                     .append(Text.literal(" - Press Home to cancel").formatted(Formatting.GRAY));
                 
                 client.player.sendMessage(notification, false);
             }
         }
-        PokeAlertClient.LOGGER.info("🎯 Step 3/6: Server Buffer - Waiting 30 seconds before realm change at " + location);
+        PokeAlertClient.LOGGER.info("🎯 Step 2/5: Server Buffer - Waiting 30 seconds before realm change at " + location);
     }
     
     /**
-     * Continue automation from step 2 (after Anti-AFK is handled)
-     * Note: Continuous safety monitoring is active, no need for checkpoint checks
+     * v3.0.0: Continue automation from Step 2 (Server Buffer)
+     * Handles Step 3 (Realm Change) and Step 4 (Anti-AFK Start via Baritone)
      */
     private void continueAutomationFromStep2() {
-        // Step 2: Send /home command after delay
+        // Step 3: Send /home command after 30s buffer
         step2Task = scheduler.schedule(() -> {
             // Check teleport cooldown to prevent command spam during restarts
             long currentTime = System.currentTimeMillis();
@@ -562,16 +517,11 @@ public class EggHatcher {
             }
             
             currentState = State.SENDING_HOME_COMMAND;
-            
             String location = AntiAfkManager.getPlayerLocationInfo();
             
-            // Step 4: Realm Change - Execute teleport command
-            sendNotification("Egg Hatcher [4/6]", "Realm Change: Executing", Formatting.YELLOW);
-            PokeAlertClient.LOGGER.info("🎯 Step 4/6: Realm Change - Sending teleport command at " + location);
-            
-            // CRITICAL: Save Anti-AFK state BEFORE teleport (not at world change)
-            // This ensures we capture the state while player is still moving/standing at spawn
-            AntiAfkManager.saveStateForTeleport();
+            // Step 3: Realm Change (was Step 4 in v2.0.0)
+            sendNotification("Egg Hatcher [3/5]", "Realm Change: Executing", Formatting.YELLOW);
+            PokeAlertClient.LOGGER.info("🎯 Step 3/5: Realm Change - Sending teleport command at " + location);
             
             PokeAlertConfig config = PokeAlertClient.getInstance().config;
             String returnCmd = config.realmReturnCommand;
@@ -580,27 +530,23 @@ public class EggHatcher {
             // Update last teleport time
             lastTeleportCommandTime = currentTime;
             
-            // CRITICAL: Stop safety monitor immediately after sending teleport
-            // It will interfere with Step 5 (enable Anti-AFK) if it checks during transition
+            // Stop safety monitor during teleport
             stopSafetyMonitor();
-            PokeAlertClient.LOGGER.info("🛡️ Safety monitor paused for teleport and Step 5/6 execution");
+            PokeAlertClient.LOGGER.info("🛡️ Safety monitor paused for teleport");
             
-            // Step 3: Wait for teleport
+            // Wait for teleport then start Step 4 (Anti-AFK)
             step3Task = scheduler.schedule(() -> {
                 currentState = State.WAITING_FOR_TELEPORT;
                 
-                // Step 4: Re-enable anti-afk after teleport
-                // CRITICAL: Wait 17s total = 5s server delay + 3s world load + 3s stabilization + 6s fresh data
+                // Step 4: Anti-AFK Start via Baritone (was Step 5 in v2.0.0)
                 step4Task = scheduler.schedule(() -> {
                     // Verify we successfully teleported to overworld
                     if (!isInOverworld()) {
-                        // Not in overworld yet - log and restart
                         String currentWorld = client.world != null ? 
                                             client.world.getRegistryKey().getValue().toString() : "unknown";
-                        PokeAlertClient.LOGGER.error("❌ Step 5/6 FAILED: Not in overworld after 17s (current: " + currentWorld + ")");
+                        PokeAlertClient.LOGGER.error("❌ Step 4/5 FAILED: Not in overworld after 17s (current: " + currentWorld + ")");
                         sendNotification("", "World verification failed - restarting", Formatting.RED);
                         
-                        // Cancel all tasks and restart
                         cancelAllAutomationTasks();
                         scheduler.schedule(() -> {
                             stopAutomation();
@@ -612,220 +558,258 @@ public class EggHatcher {
                         return;
                     }
                     
-                    // Confirmed in overworld - proceed with Step 5
+                    // Confirmed in overworld - proceed with Step 4: Baritone Anti-AFK
                     String overworldLocation = AntiAfkManager.getPlayerLocationInfo();
                     PokeAlertClient.LOGGER.info("✅ World verification passed: In overworld at " + overworldLocation);
                     
-                    // Step 5: Anti-AFK Enable - Turn on Anti-AFK at overworld
+                    // v3.0.0: Start Baritone-based Anti-AFK
                     currentState = State.ENABLING_ANTIAFK;
-                    sendNotification("Egg Hatcher [5/6]", "Anti-AFK Enable: Turning ON", Formatting.YELLOW);
-                    PokeAlertClient.LOGGER.info("🎯 Step 5/6: Anti-AFK Enable - Enabling at " + overworldLocation + " (waited 17s: 5s delay + 3s load + 3s stabilization + 6s data)");
-                        PokeAlertClient.LOGGER.info("Safety monitor paused for toggle operation");
-                        
-                        boolean toggleSuccess = toggleAntiAfk(true);
-                        
-                        if (toggleSuccess) {
-                            // Complete automation (this will do final cleanup)
-                            step5RetryCount = 0; // Reset counter on success
-                            step5Task = scheduler.schedule(() -> {
-                                completeAutomation();
-                            }, ANTIAFK_TOGGLE_DELAY, TimeUnit.MILLISECONDS);
-                        } else {
-                            // Toggle failed - check location and restart appropriately
-                            PokeAlertClient.LOGGER.error("❌ Step 5/6 FAILED: Anti-AFK toggle aborted");
-                            
-                            // Cancel all pending tasks
-                            cancelAllAutomationTasks();
-                            
-                            // Wait 3 seconds then check location and restart accordingly
-                            scheduler.schedule(() -> {
-                                if (isInOverworld()) {
-                                    // Still at overworld - keep retrying Step 5 indefinitely
-                                    // Going back to spawn would require manual intervention, so we keep trying here
-                                    PokeAlertClient.LOGGER.info("🔄 Step 5 failed at overworld - retrying Step 5");
-                                    sendNotification("", "Step 5 failed - retrying at overworld", Formatting.YELLOW);
-                                    
-                                    // Retry Step 5 directly
-                                    retryStep5();
-                                } else if (isAtSpawn()) {
-                                    // Back at spawn - restart from Step 1
-                                    // At spawn we can restart the whole process automatically
-                                    step5RetryCount = 0; // Reset counter when restarting from spawn
-                                    PokeAlertClient.LOGGER.info("🔄 Step 5 failed, back at spawn - restarting from Step 1");
-                                    sendNotification("", "Step 5 failed - restarting from spawn", Formatting.RED);
-                                    
-                                    stopAutomation();
-                                    // Reset flags for fresh start
-                                    manuallyCancelled = false;
-                                    antiAfkDisabledOnReconnect = false;
-                                    spawnDetectionTime = 0;
-                                    
-                                    // Restart monitoring (which will detect spawn and restart the process)
-                                    startMonitoring();
-                                } else {
-                                    // Unknown location - restart from step 1
-                                    step5RetryCount = 0; // Reset counter when restarting
-                                    PokeAlertClient.LOGGER.warn("⚠️ Step 5 failed at unknown location - restarting from step 1");
-                                    sendNotification("", "Step 5 failed - restarting", Formatting.RED);
-                                    
-                                    stopAutomation();
-                                    manuallyCancelled = false;
-                                    antiAfkDisabledOnReconnect = false;
-                                    spawnDetectionTime = 0;
-                                    startMonitoring();
-                                }
-                            }, 3, TimeUnit.SECONDS);
-                        }
+                    sendNotification("Egg Hatcher [4/5]", "Anti-AFK Start: Initializing Baritone", Formatting.YELLOW);
+                    PokeAlertClient.LOGGER.info("🎯 Step 4/5: Anti-AFK Start - Initializing Baritone at " + overworldLocation);
+                    
+                    // Start the Baritone Anti-AFK system
+                    startBaritoneAntiAfk();
+                    
                 }, TELEPORT_WAIT_TIME, TimeUnit.MILLISECONDS);
                 
             }, HOME_COMMAND_DELAY, TimeUnit.MILLISECONDS);
             
-        }, REALM_SWITCH_BUFFER, TimeUnit.MILLISECONDS); // 30 seconds to respect server realm switch buffer
+        }, REALM_SWITCH_BUFFER, TimeUnit.MILLISECONDS);
     }
     
     /**
-     * Retry Step 5 (Anti-AFK Enable) when still at overworld
-     * This is called when Step 5 fails but we're still in overworld
+     * v3.0.0: Start Baritone-based Anti-AFK movement
+     * Initializes region, queue, monitors, and starts navigation
      */
-    private void retryStep5() {
-        if (!isInOverworld()) {
-            PokeAlertClient.LOGGER.warn("⚠️ Cannot retry Step 5 - not in overworld");
-            step5RetryCount = 0; // Reset counter if not in overworld
+    private void startBaritoneAntiAfk() {
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        // Validate region
+        if (!config.isAntiAfkRegionValid()) {
+            PokeAlertClient.LOGGER.error("❌ Anti-AFK region not configured!");
+            SafetyManager.triggerSafetyStop(SafetyManager.REASON_REGION_INVALID, true);
             return;
         }
         
-        step5RetryCount++;
-        String overworldLocation = AntiAfkManager.getPlayerLocationInfo();
-        currentState = State.ENABLING_ANTIAFK;
-        sendNotification("Egg Hatcher [5/6]", "Anti-AFK Enable: Retrying (attempt " + step5RetryCount + ")", Formatting.YELLOW);
-        PokeAlertClient.LOGGER.info("🔄 Retrying Step 5/6: Anti-AFK Enable at " + overworldLocation + " (attempt " + step5RetryCount + ")");
-        
-        // Force immediate state detection if state is unknown
-        Boolean currentState = AntiAfkManager.getAntiAfkState();
-        if (currentState == null) {
-            PokeAlertClient.LOGGER.info("⏳ State unknown - forcing immediate state detection...");
-            currentState = AntiAfkManager.forceStateDetection();
+        // Warn if region is too small
+        if (config.isAntiAfkRegionTooSmall()) {
+            PokeAlertClient.LOGGER.warn("⚠️ Anti-AFK region is smaller than recommended (20x20)");
         }
         
-        // Wait for state to be known before retrying (up to 5 seconds)
-        // Increased wait time to allow monitor to run and detect state
-        PokeAlertClient.LOGGER.info("⏳ Waiting for Anti-AFK state to be known before retry...");
-        int maxWaitAttempts = 10; // 10 attempts * 500ms = 5 seconds max
-        int attempt = 0;
+        // Initialize region
+        antiAfkRegion = new AntiAfkRegion(
+            config.antiAfkRegionX1, config.antiAfkRegionZ1,
+            config.antiAfkRegionX2, config.antiAfkRegionZ2
+        );
+        PokeAlertClient.LOGGER.info("📍 Anti-AFK Region: " + antiAfkRegion);
         
-        while (currentState == null && attempt < maxWaitAttempts) {
-            attempt++;
-            try {
-                Thread.sleep(500);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                PokeAlertClient.LOGGER.error("❌ Interrupted while waiting for state");
-                return;
-            }
-            // Force detection every 2 attempts to ensure state is updated
-            if (attempt % 2 == 0) {
-                currentState = AntiAfkManager.forceStateDetection();
-            } else {
-                currentState = AntiAfkManager.getAntiAfkState();
-            }
-        }
+        // Reset safety manager for new cycle
+        SafetyManager.reset();
         
-        if (currentState == null) {
-            PokeAlertClient.LOGGER.warn("⚠️ State still unknown after " + (maxWaitAttempts * 500) + "ms - will attempt toggle anyway");
-        } else {
-            PokeAlertClient.LOGGER.info("✅ State known: " + (currentState ? "ON" : "OFF") + " - proceeding with retry");
-        }
+        // Initialize location queue
+        locationQueue.initialize(antiAfkRegion, config);
         
-        // Additional delay to ensure timing is right (especially after world changes)
-        // Longer delay for later retries to allow more time for state detection
-        int delayMs = 2000 + (step5RetryCount * 1000); // 2s base + 1s per retry attempt
-        try {
-            PokeAlertClient.LOGGER.info("⏳ Waiting " + delayMs + "ms for state to stabilize before toggle...");
-            Thread.sleep(delayMs);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            PokeAlertClient.LOGGER.error("❌ Interrupted during retry delay");
-            return;
-        }
+        // Start monitors
+        CoordinateMonitor.startMonitoring(config);
+        PlayerMonitor.startMonitoring(config);
         
-        // Pause safety monitor for toggle operation
-        PokeAlertClient.LOGGER.info("Safety monitor paused for toggle operation");
+        // Register callbacks
+        setupMonitorCallbacks();
         
-        boolean toggleSuccess = toggleAntiAfk(true);
+        // Start Anti-AFK
+        antiAfkActive = true;
         
-        if (toggleSuccess) {
-            // Complete automation (this will do final cleanup)
-            step5RetryCount = 0; // Reset counter on success
-            step5Task = scheduler.schedule(() -> {
-                completeAutomation();
-            }, ANTIAFK_TOGGLE_DELAY, TimeUnit.MILLISECONDS);
-        } else {
-            // Toggle failed again - check location and restart accordingly
-            PokeAlertClient.LOGGER.error("❌ Step 5/6 FAILED again: Anti-AFK toggle aborted (retry " + step5RetryCount + ")");
+        // Navigate to first location
+        navigateToNextLocation();
+        
+        PokeAlertClient.LOGGER.info("✅ Baritone Anti-AFK started with {} initial locations", 
+            locationQueue.getQueueSize());
+    }
+    
+    /**
+     * v3.0.0: Setup callbacks for coordinate and player monitors
+     */
+    private void setupMonitorCallbacks() {
+        // Arrival callback
+        CoordinateMonitor.onArrival(() -> {
+            if (!antiAfkActive) return;
             
-            // Cancel all pending tasks
+            // Cancel timeout timer
+            if (locationTimeoutTask != null) {
+                locationTimeoutTask.cancel(false);
+            }
+            
+            BaritoneController.markPathComplete();
+            
+            // Check if Step 5 should trigger (3 successful visits)
+            locationQueue.markVisitedAndAdvance();
+            
+            if (locationQueue.shouldTriggerStep5()) {
+                locationQueue.markStep5Completed();
+                completeAutomation();
+            }
+            
+            // Continue to next location (perpetual)
+            if (antiAfkActive && !SafetyManager.isSafetyTriggered()) {
+                navigateToNextLocation();
+            }
+        });
+        
+        // Teleport detection callback
+        CoordinateMonitor.onTeleportDetected(() -> {
+            PokeAlertClient.LOGGER.warn("⚠️ Teleport/manual movement detected!");
+            SafetyManager.triggerSafetyStop(SafetyManager.REASON_TELEPORT, true);
+            stopBaritoneAntiAfk();
+        });
+        
+        // World change callback
+        CoordinateMonitor.onWorldChange(newWorld -> {
+            PokeAlertClient.LOGGER.warn("⚠️ World changed to: " + newWorld);
+            
+            // Stop Anti-AFK first
+            stopBaritoneAntiAfk();
+            
+            // Check if we went to spawn (server kicked us back)
+            // In this case, we want to auto-restart, not permanent stop
+            if (isAtSpawn()) {
+                PokeAlertClient.LOGGER.info("📍 Teleported to spawn - will auto-restart automation");
+                // Trigger safety stop with notification but allow restart
+                SafetyManager.triggerSafetyStop(SafetyManager.REASON_WORLD_CHANGE + " (to spawn)", false); // No telegram for spawn return
+            } else {
+                // Went to unexpected world (not spawn, not overworld where we started)
+                PokeAlertClient.LOGGER.warn("📍 Teleported to unknown world - stopping");
+                SafetyManager.triggerSafetyStop(SafetyManager.REASON_WORLD_CHANGE, true);
+            }
+        });
+        
+        // Player detection callback
+        PlayerMonitor.onPlayerDetectedWithType((playerName, type) -> {
+            String reason = type.equals("nearby") ? 
+                SafetyManager.REASON_PLAYER_NEARBY : SafetyManager.REASON_PLAYER_LIST;
+            PokeAlertClient.LOGGER.warn("⚠️ Avoided player detected: " + playerName + " (" + type + ")");
+            SafetyManager.triggerSafetyStop(reason + ": " + playerName, true);
+            stopBaritoneAntiAfk();
+        });
+        
+        // Safety manager callback
+        SafetyManager.onSafetyStop(reason -> {
+            PokeAlertClient.LOGGER.error("🛑 Safety stop triggered: " + reason);
+            stopBaritoneAntiAfk();
+            
+            // v3.0.0: Don't call stopAutomation() which sets manuallyCancelled=true
+            // Instead, reset state to allow auto-restart if at spawn
+            isAutomationRunning = false;
+            currentState = State.IDLE;
+            spawnDetectionTime = 0;
+            antiAfkDisabledOnReconnect = false;
+            
+            // Cancel automation tasks but NOT monitoring
             cancelAllAutomationTasks();
             
-            // Wait 3 seconds then check location and restart accordingly
-            scheduler.schedule(() -> {
-                if (isInOverworld()) {
-                    // Still at overworld - keep retrying Step 5 indefinitely
-                    // Going back to spawn would require manual intervention, so we keep trying here
-                    PokeAlertClient.LOGGER.info("🔄 Step 5 failed again at overworld - retrying Step 5 with longer delay");
-                    sendNotification("", "Step 5 failed again - retrying with delay", Formatting.YELLOW);
-                    
-                    // Retry Step 5 with longer delay (5 seconds instead of 3)
-                    scheduler.schedule(() -> {
-                        retryStep5();
-                    }, 5, TimeUnit.SECONDS);
-                } else if (isAtSpawn()) {
-                    // Back at spawn - restart from Step 1
-                    // At spawn we can restart the whole process automatically
-                    step5RetryCount = 0; // Reset counter when restarting from spawn
-                    PokeAlertClient.LOGGER.info("🔄 Step 5 failed again, back at spawn - restarting from Step 1");
-                    sendNotification("", "Step 5 failed - restarting from spawn", Formatting.RED);
-                    
-                    stopAutomation();
-                    // Reset flags for fresh start
-                    manuallyCancelled = false;
-                    antiAfkDisabledOnReconnect = false;
-                    spawnDetectionTime = 0;
-                    
-                    // Restart monitoring (which will detect spawn and restart the process)
-                    startMonitoring();
-                } else {
-                    // Unknown location - restart from step 1
-                    step5RetryCount = 0; // Reset counter when restarting
-                    PokeAlertClient.LOGGER.warn("⚠️ Step 5 failed again at unknown location - restarting from step 1");
-                    sendNotification("", "Step 5 failed - restarting", Formatting.RED);
-                    
-                    stopAutomation();
-                    manuallyCancelled = false;
-                    antiAfkDisabledOnReconnect = false;
-                    spawnDetectionTime = 0;
-                    startMonitoring();
-                }
-            }, 3, TimeUnit.SECONDS);
-        }
+            // If we're at spawn in AUTO mode, restart monitoring to trigger re-automation
+            if (mode == AutomationMode.AUTO && isAtSpawn()) {
+                PokeAlertClient.LOGGER.info("🔄 Safety stop at spawn - restarting automation in 5s");
+                sendNotification("Egg Hatcher", "Teleported to spawn - restarting", Formatting.YELLOW);
+                
+                // Wait 5 seconds then restart monitoring (fresh start)
+                scheduler.schedule(() -> {
+                    if (mode == AutomationMode.AUTO && isAtSpawn()) {
+                        SafetyManager.reset(); // Clear safety lock for new cycle
+                        manuallyCancelled = false; // Allow monitoring to trigger
+                        PokeAlertClient.LOGGER.info("🔄 Restarting monitoring after safety stop");
+                        startMonitoring();
+                    }
+                }, 5, TimeUnit.SECONDS);
+            } else {
+                // Not at spawn - just log
+                PokeAlertClient.LOGGER.info("🛑 Safety stop at overworld/unknown - waiting for manual action or spawn detection");
+            }
+        });
     }
     
     /**
-     * Toggle Anti-AFK using the AntiAfkManager utility
-     * This will try multiple approaches to toggle Anti-AFK via keybinding simulation
-     * @return true if toggle succeeded or already in desired state, false if failed
+     * v3.0.0: Navigate to the next location in queue
      */
-    private boolean toggleAntiAfk(boolean enable) {
-        if (client.player != null && client.currentScreen == null) {
-            // Use the AntiAfkManager utility which tries multiple approaches
-            boolean success = AntiAfkManager.toggleAntiAfk(enable);
-            
-            // Log the action
-            PokeAlertClient.LOGGER.info("Anti-AFK toggle requested: " + (enable ? "Enable" : "Disable"));
-            
-            return success;
+    private void navigateToNextLocation() {
+        if (!antiAfkActive || SafetyManager.isSafetyTriggered()) {
+            return;
         }
-        return false;  // Failed - no player or screen is open
+        
+        int[] destination = locationQueue.getCurrentDestination();
+        if (destination == null) {
+            PokeAlertClient.LOGGER.error("❌ No destination available!");
+            return;
+        }
+        
+        // Set destination in monitor
+        CoordinateMonitor.setDestination(destination[0], destination[1]);
+        
+        // Start navigation via Baritone
+        BaritoneController.gotoLocation(destination[0], destination[1]);
+        
+        PokeAlertClient.LOGGER.info("🚶 Navigating to {} - {}", 
+            locationQueue.getStatus(), 
+            String.format("(%d, %d)", destination[0], destination[1]));
+        
+        // Start timeout timer
+        PokeAlertConfig config = ConfigManager.getConfig();
+        locationTimeoutTask = scheduler.schedule(() -> {
+            handleLocationTimeout();
+        }, config.locationTimeout, TimeUnit.MILLISECONDS);
     }
+    
+    /**
+     * v3.0.0: Handle location timeout
+     */
+    private void handleLocationTimeout() {
+        if (!antiAfkActive) return;
+        
+        PokeAlertClient.LOGGER.warn("⏱️ Location timeout - skipping to next");
+        sendNotification("Egg Hatcher", "Location timeout - skipping", Formatting.YELLOW);
+        
+        // Mark timeout and check if we should stop
+        boolean shouldContinue = locationQueue.markTimeoutAndAdvance();
+        
+        if (!shouldContinue) {
+            // Too many consecutive timeouts
+            SafetyManager.triggerSafetyStop(SafetyManager.REASON_TIMEOUT, true);
+            stopBaritoneAntiAfk();
+            return;
+        }
+        
+        // Stop current path and try next location
+        BaritoneController.stop();
+        
+        // Small delay before next navigation
+        scheduler.schedule(() -> {
+            if (antiAfkActive && !SafetyManager.isSafetyTriggered()) {
+                navigateToNextLocation();
+            }
+        }, 500, TimeUnit.MILLISECONDS);
+    }
+    
+    /**
+     * v3.0.0: Stop Baritone Anti-AFK system
+     */
+    private void stopBaritoneAntiAfk() {
+        antiAfkActive = false;
+        
+        // Cancel timeout
+        if (locationTimeoutTask != null) {
+            locationTimeoutTask.cancel(false);
+            locationTimeoutTask = null;
+        }
+        
+        // Stop all systems
+        BaritoneController.stop();
+        CoordinateMonitor.stopMonitoring();
+        PlayerMonitor.stopMonitoring();
+        
+        PokeAlertClient.LOGGER.info("🛑 Baritone Anti-AFK stopped");
+    }
+    
+    // v3.0.0: retryStep5() REMOVED - no longer using external Anti-AFK keybind
+    // v3.0.0: toggleAntiAfk() REMOVED - now using Baritone #goto commands
     
     /**
      * Send a chat command
@@ -840,8 +824,9 @@ public class EggHatcher {
     }
     
     /**
-     * Start continuous safety monitoring of anti-AFK state
-     * Checks every 3 seconds to ensure anti-AFK is in the expected state
+     * v3.0.0: Safety monitor - simplified for Baritone-based Anti-AFK
+     * Main safety checks are now handled by CoordinateMonitor and PlayerMonitor
+     * This monitor just checks realm state consistency
      */
     private void startSafetyMonitor() {
         // Cancel any existing monitor
@@ -849,137 +834,46 @@ public class EggHatcher {
             safetyMonitorTask.cancel(false);
         }
         
+        PokeAlertConfig config = ConfigManager.getConfig();
+        int checkInterval = isAtSpawn() ? config.realmCheckIntervalSpawn : config.realmCheckIntervalOverworld;
+        
         safetyMonitorTask = scheduler.scheduleAtFixedRate(() -> {
             try {
-                // Only monitor while in AUTO mode (not just during active automation)
                 if (mode != AutomationMode.AUTO) {
                     return;
                 }
                 
-                // Skip checks during resource pack loading (high CPU usage can cause false positives)
+                // Skip checks during resource pack loading
                 if (isResourcePackLoading) {
-                    PokeAlertClient.LOGGER.warn("Safety monitor: Skipping check during resource pack loading");
                     return;
                 }
                 
-                // Determine expected anti-AFK state based on location
-                boolean expectedState;
-                String location;
-                if (isAtSpawn()) {
-                    // At spawn: Anti-AFK should be OFF (false)
-                    expectedState = false;
-                    location = "spawn";
-                } else {
-                    // At overworld: Anti-AFK should be ON (true)
-                    expectedState = true;
-                    location = "overworld";
-                }
+                String location = isAtSpawn() ? "spawn" : "overworld";
                 
-                // Check current state
-                Boolean actualState = AntiAfkManager.getAntiAfkState();
-                
-                // Log every safety check for debugging (use INFO level temporarily for troubleshooting)
-                PokeAlertClient.LOGGER.info("🛡️ Safety check: location=" + location + 
-                    ", expected Anti-AFK=" + (expectedState ? "ON" : "OFF") + 
-                    ", actual=" + (actualState == null ? "unknown" : (actualState ? "ON" : "OFF")));
-                
-                // If we can't determine state, skip this check (might be initializing)
-                if (actualState == null) {
-                    PokeAlertClient.LOGGER.warn("Safety monitor: Cannot determine anti-AFK state, skipping check");
-                    return;
-                }
-                
-                // Check for mismatch
-                if (actualState != expectedState) {
-                    String expected = expectedState ? "ON" : "OFF";
-                    String actual = actualState ? "ON" : "OFF";
-                    
-                    PokeAlertClient.LOGGER.error("Safety monitor detected anomaly at " + location + 
-                                                 ": Expected Anti-AFK " + expected + ", but found " + actual);
-                    
-                    // Handle based on location
-                    if (isAtSpawn()) {
-                        // At spawn with Anti-AFK ON - need to turn it OFF and restart
-                        sendNotification("Egg Hatcher", 
-                                       "Safety: Anti-AFK ON at spawn - Fixing & Restarting", 
-                                       Formatting.RED);
-                        
-                        // Stop safety monitor temporarily
-                        stopSafetyMonitor();
-                        
-                        // Turn OFF Anti-AFK immediately (critical for spawn)
-                        PokeAlertClient.LOGGER.info("🔧 Safety: Turning OFF Anti-AFK at spawn");
-                        AntiAfkManager.toggleAntiAfk(false);
-                        
-                        // Reset and restart the process
-                        isAutomationRunning = false;
-                        antiAfkDisabledOnReconnect = true; // Mark as already disabled
-                        currentState = State.IDLE;
-                        spawnDetectionTime = 0;
-                        
-                        // CRITICAL: Cancel ALL scheduled tasks
-                        cancelAllAutomationTasks();
-                        
-                        // Cancel monitoring loop
-                        if (currentTask != null) {
-                            currentTask.cancel(false);
-                            currentTask = null;
-                            PokeAlertClient.LOGGER.info("Cancelled monitoring loop during safety restart");
-                        }
-                        
-                        // Cancel delay task but preserve stuck detector
-                        if (automationDelayTask != null) {
-                            automationDelayTask.cancel(false);
-                        }
-                        
-                        // Keep/restart stuck detector
-                        if (stuckDetector == null || stuckDetector.isDone()) {
-                            stuckDetector = scheduler.schedule(() -> {
-                                if (isAtSpawn() && mode == AutomationMode.AUTO) {
-                                    currentState = State.STUCK;
-                                    handleStuckAtSpawn();
-                                }
-                            }, STUCK_TIMEOUT, TimeUnit.MILLISECONDS);
-                            PokeAlertClient.LOGGER.info("🚨 Stuck detector (re)started by safety monitor - 2 min timeout");
-                        } else {
-                            PokeAlertClient.LOGGER.info("🚨 Stuck detector still active - preserving through restart");
-                        }
-                        
-                        // Restart monitoring and safety monitor after delay
-                        scheduler.schedule(() -> {
-                            PokeAlertClient.LOGGER.info("🔄 Restarting monitoring and safety monitor after spawn fix");
-                            startMonitoring();
-                            startSafetyMonitor(); // Restart safety monitor too!
-                        }, 5, TimeUnit.SECONDS);
-                        
-                    } else {
-                        // At overworld with Anti-AFK OFF - need to turn it ON immediately
-                        sendNotification("Egg Hatcher", 
-                                       "Safety: Anti-AFK OFF at overworld - Fixing", 
-                                       Formatting.YELLOW);
-                        
-                        // Don't stop safety monitor, just fix the state
-                        PokeAlertClient.LOGGER.info("🔧 Safety: Turning ON Anti-AFK at overworld");
-                        boolean toggleSuccess = AntiAfkManager.toggleAntiAfk(true);
-                        
-                        if (toggleSuccess) {
-                            PokeAlertClient.LOGGER.info("✅ Safety: Anti-AFK successfully enabled at overworld");
-                        } else {
-                            PokeAlertClient.LOGGER.error("❌ Safety: Failed to enable Anti-AFK at overworld");
-                        }
-                        
-                        // No need to restart anything - we fixed it in place
-                        // Safety monitor will continue running and verify the fix on next check
-                        PokeAlertClient.LOGGER.info("✅ Safety: Anti-AFK correction attempted at overworld, continuing monitoring");
+                // v3.0.0: Check if Anti-AFK should be running at overworld
+                if (!isAtSpawn() && antiAfkActive) {
+                    // We're at overworld with Anti-AFK active - verify Baritone is pathing
+                    if (!BaritoneController.isPathing() && !SafetyManager.isSafetyTriggered()) {
+                        PokeAlertClient.LOGGER.warn("⚠️ Safety: Baritone not pathing at overworld, restarting navigation");
+                        navigateToNextLocation();
                     }
                 }
+                
+                // v3.0.0: If at spawn but Anti-AFK thinks it's active, stop it
+                if (isAtSpawn() && antiAfkActive) {
+                    PokeAlertClient.LOGGER.warn("⚠️ Safety: Anti-AFK active at spawn - stopping");
+                    stopBaritoneAntiAfk();
+                }
+                
+                PokeAlertClient.LOGGER.debug("🛡️ Safety check: location={}, antiAfkActive={}", 
+                    location, antiAfkActive);
                 
             } catch (Exception e) {
                 PokeAlertClient.LOGGER.error("Error in safety monitor", e);
             }
-        }, 5, 3, TimeUnit.SECONDS); // Initial delay 5s, then check every 3s
+        }, 5000, checkInterval, TimeUnit.MILLISECONDS);
         
-        PokeAlertClient.LOGGER.info("Safety monitor started - first check in 5s, then every 3s");
+        PokeAlertClient.LOGGER.info("Safety monitor started (interval: {}ms)", checkInterval);
     }
     
     /**
@@ -1032,22 +926,14 @@ public class EggHatcher {
     }
     
     /**
-     * Complete the automation successfully
+     * v3.0.0: Complete the automation (Step 5)
+     * Note: Anti-AFK continues running after completion - this is just a checkpoint
      */
     private void completeAutomation() {
         currentState = State.COMPLETED;
-        isAutomationRunning = false;
+        // v3.0.0: DON'T set isAutomationRunning = false - Anti-AFK continues!
         
-        // Stop Anti-AFK state monitoring
-        AntiAfkManager.stopStateMonitoring();
-        
-        // Stop safety monitor
-        stopSafetyMonitor();
-        
-        // Cancel all automation tasks (cleanup)
-        cancelAllAutomationTasks();
-        
-        // Cancel stuck detector
+        // Cancel stuck detector (we're successfully in overworld now)
         if (stuckDetector != null) {
             stuckDetector.cancel(false);
             stuckDetector = null;
@@ -1056,34 +942,19 @@ public class EggHatcher {
         // Reset flags
         antiAfkDisabledOnReconnect = false;
         
-        // Step 6: Completion - Automation complete
+        // Step 5: Completion (was Step 6 in v2.0.0)
+        // v3.0.0: This is a checkpoint, Anti-AFK continues!
         String location = AntiAfkManager.getPlayerLocationInfo();
-        sendNotification("Egg Hatcher [6/6]", "Completion: Realm change complete ✓", Formatting.YELLOW);
-        PokeAlertClient.LOGGER.info("🎯 Step 6/6: Completion - Automation finished successfully at " + location);
+        sendNotification("Egg Hatcher [5/5]", "Completion: Anti-AFK active ✓", Formatting.GREEN);
+        PokeAlertClient.LOGGER.info("🎯 Step 5/5: Completion - {} locations visited, Anti-AFK continues at " + location, 
+            locationQueue.getVisitedCount());
         
         // Send Telegram notification
         long duration = (System.currentTimeMillis() - automationStartTime) / 1000;
         sendTelegramNotification(true, duration);
         
-        // Restart safety monitor to continue checking Anti-AFK state
-        if (safetyMonitorTask == null || safetyMonitorTask.isDone()) {
-            PokeAlertClient.LOGGER.info("🛡️ Restarting safety monitor after automation completion");
-            startSafetyMonitor();
-        }
-        
-        // Restart stuck detector if still at spawn (edge case: automation completed but still at spawn)
-        if (isAtSpawn() && (stuckDetector == null || stuckDetector.isDone())) {
-            stuckDetector = scheduler.schedule(() -> {
-                if (isAtSpawn() && mode == AutomationMode.AUTO) {
-                    currentState = State.STUCK;
-                    handleStuckAtSpawn();
-                }
-            }, STUCK_TIMEOUT, TimeUnit.MILLISECONDS);
-            PokeAlertClient.LOGGER.info("🚨 Stuck detector restarted after automation completion (still at spawn)");
-        }
-        
-        // Continue monitoring
-        startMonitoring();
+        // v3.0.0: Anti-AFK keeps running - navigateToNextLocation will be called by arrival callback
+        PokeAlertClient.LOGGER.info("✅ Automation checkpoint reached - Anti-AFK continues perpetually");
     }
     
     /**
@@ -1124,24 +995,28 @@ public class EggHatcher {
     
     /**
      * Stop all automation tasks
+     * v3.0.0: Also stops Baritone Anti-AFK
      */
     public void stopAutomation() {
         // Check if automation was actually running
-        boolean wasRunning = isAutomationRunning || currentState != State.IDLE || spawnDetectionTime > 0;
+        boolean wasRunning = isAutomationRunning || antiAfkActive || currentState != State.IDLE || spawnDetectionTime > 0;
         
         isAutomationRunning = false;
         currentState = State.CANCELLED;
-        spawnDetectionTime = 0;  // Reset spawn detection
-        step5RetryCount = 0;  // Reset retry counter
-        manuallyCancelled = true;  // Mark as manually cancelled
+        spawnDetectionTime = 0;
+        step5RetryCount = 0;
+        manuallyCancelled = true;
         
-        // Stop Anti-AFK state monitoring
+        // v3.0.0: Stop Baritone Anti-AFK
+        stopBaritoneAntiAfk();
+        
+        // Stop Anti-AFK state monitoring (legacy, kept for compatibility)
         AntiAfkManager.stopStateMonitoring();
         
         // Stop safety monitor
         stopSafetyMonitor();
         
-        // Cancel ALL automation tasks (critical!)
+        // Cancel ALL automation tasks
         cancelAllAutomationTasks();
         
         if (currentTask != null) {
@@ -1164,7 +1039,7 @@ public class EggHatcher {
         
         // Send notification if we actually cancelled something
         if (wasRunning) {
-            sendNotification("Egg Hatcher", "Automation cancelled", Formatting.YELLOW);
+            sendNotification("Egg Hatcher", "Automation stopped", Formatting.YELLOW);
         }
     }
     
@@ -1220,6 +1095,7 @@ public class EggHatcher {
     
     /**
      * Get current automation status
+     * v3.0.0: Includes Baritone Anti-AFK status
      */
     public String getStatus() {
         if (mode == AutomationMode.DISABLED) {
@@ -1228,11 +1104,16 @@ public class EggHatcher {
         
         String modeStr = "Mode: " + mode.name();
         
+        // v3.0.0: Show Anti-AFK status if active
+        if (antiAfkActive) {
+            return modeStr + " | Anti-AFK: " + locationQueue.getStatus();
+        }
+        
         if (isAutomationRunning) {
             return modeStr + " | Running: " + currentState.name();
         }
         
-        // Check for active countdown (simplified to single path)
+        // Check for active countdown
         long currentTime = System.currentTimeMillis();
         if (mode == AutomationMode.AUTO && spawnDetectionTime > 0) {
             long remaining = (REALM_SWITCH_BUFFER - (currentTime - spawnDetectionTime)) / 1000;
@@ -1242,6 +1123,13 @@ public class EggHatcher {
         }
         
         return modeStr + " | Monitoring";
+    }
+    
+    /**
+     * v3.0.0: Check if Baritone Anti-AFK is currently active
+     */
+    public boolean isAntiAfkActive() {
+        return antiAfkActive;
     }
     
     /**
