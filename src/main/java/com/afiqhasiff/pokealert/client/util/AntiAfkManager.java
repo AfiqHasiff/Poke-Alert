@@ -267,6 +267,22 @@ public class AntiAfkManager {
     }
     
     /**
+     * Force immediate state detection and update currentAntiAfkState
+     * This is useful when state is unknown and we need to initialize it quickly
+     * @return the detected state, or null if detection failed
+     */
+    public static Boolean forceStateDetection() {
+        Boolean detectedState = detectAntiAfkState();
+        if (detectedState != null && !detectedState.equals(currentAntiAfkState)) {
+            PokeAlertClient.LOGGER.info("📊 Forced state detection: Anti-AFK " + 
+                (currentAntiAfkState == null ? "initialized" : "changed") + " → " + 
+                (detectedState ? "ON" : "OFF"));
+        }
+        currentAntiAfkState = detectedState;
+        return detectedState;
+    }
+    
+    /**
      * Detect Anti-AFK state via movement detection
      * This is called by the background monitor
      * 

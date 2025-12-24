@@ -53,6 +53,9 @@ public class EggHatcher {
     private boolean isResourcePackLoading = false;
     private boolean isConnected = false;
     
+    // Step 5 retry tracking for logging purposes
+    private int step5RetryCount = 0;
+    
     // State machine for tracking automation progress
     private enum State {
         IDLE,
@@ -383,8 +386,9 @@ public class EggHatcher {
         automationStartTime = System.currentTimeMillis();
         currentState = State.DETECTED_AT_SPAWN;
         
-        // Reset spawn detection time
+        // Reset spawn detection time and retry counter
         spawnDetectionTime = 0;
+        step5RetryCount = 0;
         
         // Auto mode - execute directly without additional confirmation
         executeAutomationSteps(antiAfkAlreadyDisabled);
@@ -622,6 +626,7 @@ public class EggHatcher {
                         
                         if (toggleSuccess) {
                             // Complete automation (this will do final cleanup)
+                            step5RetryCount = 0; // Reset counter on success
                             step5Task = scheduler.schedule(() -> {
                                 completeAutomation();
                             }, ANTIAFK_TOGGLE_DELAY, TimeUnit.MILLISECONDS);
@@ -635,7 +640,8 @@ public class EggHatcher {
                             // Wait 3 seconds then check location and restart accordingly
                             scheduler.schedule(() -> {
                                 if (isInOverworld()) {
-                                    // Still at overworld - retry Step 5
+                                    // Still at overworld - keep retrying Step 5 indefinitely
+                                    // Going back to spawn would require manual intervention, so we keep trying here
                                     PokeAlertClient.LOGGER.info("🔄 Step 5 failed at overworld - retrying Step 5");
                                     sendNotification("", "Step 5 failed - retrying at overworld", Formatting.YELLOW);
                                     
@@ -643,6 +649,8 @@ public class EggHatcher {
                                     retryStep5();
                                 } else if (isAtSpawn()) {
                                     // Back at spawn - restart from Step 1
+                                    // At spawn we can restart the whole process automatically
+                                    step5RetryCount = 0; // Reset counter when restarting from spawn
                                     PokeAlertClient.LOGGER.info("🔄 Step 5 failed, back at spawn - restarting from Step 1");
                                     sendNotification("", "Step 5 failed - restarting from spawn", Formatting.RED);
                                     
@@ -655,9 +663,10 @@ public class EggHatcher {
                                     // Restart monitoring (which will detect spawn and restart the process)
                                     startMonitoring();
                                 } else {
-                                    // Unknown location - just restart monitoring
-                                    PokeAlertClient.LOGGER.warn("⚠️ Step 5 failed at unknown location - restarting monitoring");
-                                    sendNotification("", "Step 5 failed - restarting monitoring", Formatting.RED);
+                                    // Unknown location - restart from step 1
+                                    step5RetryCount = 0; // Reset counter when restarting
+                                    PokeAlertClient.LOGGER.warn("⚠️ Step 5 failed at unknown location - restarting from step 1");
+                                    sendNotification("", "Step 5 failed - restarting", Formatting.RED);
                                     
                                     stopAutomation();
                                     manuallyCancelled = false;
@@ -681,20 +690,28 @@ public class EggHatcher {
     private void retryStep5() {
         if (!isInOverworld()) {
             PokeAlertClient.LOGGER.warn("⚠️ Cannot retry Step 5 - not in overworld");
+            step5RetryCount = 0; // Reset counter if not in overworld
             return;
         }
         
+        step5RetryCount++;
         String overworldLocation = AntiAfkManager.getPlayerLocationInfo();
         currentState = State.ENABLING_ANTIAFK;
-        sendNotification("Egg Hatcher [5/6]", "Anti-AFK Enable: Retrying", Formatting.YELLOW);
-        PokeAlertClient.LOGGER.info("🔄 Retrying Step 5/6: Anti-AFK Enable at " + overworldLocation);
+        sendNotification("Egg Hatcher [5/6]", "Anti-AFK Enable: Retrying (attempt " + step5RetryCount + ")", Formatting.YELLOW);
+        PokeAlertClient.LOGGER.info("🔄 Retrying Step 5/6: Anti-AFK Enable at " + overworldLocation + " (attempt " + step5RetryCount + ")");
         
-        // Wait for state to be known before retrying (up to 2 seconds)
-        // This ensures we don't retry when state is still unknown
-        PokeAlertClient.LOGGER.info("⏳ Waiting for Anti-AFK state to be known before retry...");
-        int maxWaitAttempts = 4; // 4 attempts * 500ms = 2 seconds max
-        int attempt = 0;
+        // Force immediate state detection if state is unknown
         Boolean currentState = AntiAfkManager.getAntiAfkState();
+        if (currentState == null) {
+            PokeAlertClient.LOGGER.info("⏳ State unknown - forcing immediate state detection...");
+            currentState = AntiAfkManager.forceStateDetection();
+        }
+        
+        // Wait for state to be known before retrying (up to 5 seconds)
+        // Increased wait time to allow monitor to run and detect state
+        PokeAlertClient.LOGGER.info("⏳ Waiting for Anti-AFK state to be known before retry...");
+        int maxWaitAttempts = 10; // 10 attempts * 500ms = 5 seconds max
+        int attempt = 0;
         
         while (currentState == null && attempt < maxWaitAttempts) {
             attempt++;
@@ -705,18 +722,26 @@ public class EggHatcher {
                 PokeAlertClient.LOGGER.error("❌ Interrupted while waiting for state");
                 return;
             }
-            currentState = AntiAfkManager.getAntiAfkState();
+            // Force detection every 2 attempts to ensure state is updated
+            if (attempt % 2 == 0) {
+                currentState = AntiAfkManager.forceStateDetection();
+            } else {
+                currentState = AntiAfkManager.getAntiAfkState();
+            }
         }
         
         if (currentState == null) {
-            PokeAlertClient.LOGGER.warn("⚠️ State still unknown after " + (maxWaitAttempts * 500) + "ms - retrying anyway");
+            PokeAlertClient.LOGGER.warn("⚠️ State still unknown after " + (maxWaitAttempts * 500) + "ms - will attempt toggle anyway");
         } else {
             PokeAlertClient.LOGGER.info("✅ State known: " + (currentState ? "ON" : "OFF") + " - proceeding with retry");
         }
         
         // Additional delay to ensure timing is right (especially after world changes)
+        // Longer delay for later retries to allow more time for state detection
+        int delayMs = 2000 + (step5RetryCount * 1000); // 2s base + 1s per retry attempt
         try {
-            Thread.sleep(2000); // 2 second delay to ensure state has stabilized
+            PokeAlertClient.LOGGER.info("⏳ Waiting " + delayMs + "ms for state to stabilize before toggle...");
+            Thread.sleep(delayMs);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             PokeAlertClient.LOGGER.error("❌ Interrupted during retry delay");
@@ -730,12 +755,13 @@ public class EggHatcher {
         
         if (toggleSuccess) {
             // Complete automation (this will do final cleanup)
+            step5RetryCount = 0; // Reset counter on success
             step5Task = scheduler.schedule(() -> {
                 completeAutomation();
             }, ANTIAFK_TOGGLE_DELAY, TimeUnit.MILLISECONDS);
         } else {
             // Toggle failed again - check location and restart accordingly
-            PokeAlertClient.LOGGER.error("❌ Step 5/6 FAILED again: Anti-AFK toggle aborted");
+            PokeAlertClient.LOGGER.error("❌ Step 5/6 FAILED again: Anti-AFK toggle aborted (retry " + step5RetryCount + ")");
             
             // Cancel all pending tasks
             cancelAllAutomationTasks();
@@ -743,7 +769,8 @@ public class EggHatcher {
             // Wait 3 seconds then check location and restart accordingly
             scheduler.schedule(() -> {
                 if (isInOverworld()) {
-                    // Still at overworld - retry Step 5 one more time (with longer delay)
+                    // Still at overworld - keep retrying Step 5 indefinitely
+                    // Going back to spawn would require manual intervention, so we keep trying here
                     PokeAlertClient.LOGGER.info("🔄 Step 5 failed again at overworld - retrying Step 5 with longer delay");
                     sendNotification("", "Step 5 failed again - retrying with delay", Formatting.YELLOW);
                     
@@ -753,6 +780,8 @@ public class EggHatcher {
                     }, 5, TimeUnit.SECONDS);
                 } else if (isAtSpawn()) {
                     // Back at spawn - restart from Step 1
+                    // At spawn we can restart the whole process automatically
+                    step5RetryCount = 0; // Reset counter when restarting from spawn
                     PokeAlertClient.LOGGER.info("🔄 Step 5 failed again, back at spawn - restarting from Step 1");
                     sendNotification("", "Step 5 failed - restarting from spawn", Formatting.RED);
                     
@@ -765,9 +794,10 @@ public class EggHatcher {
                     // Restart monitoring (which will detect spawn and restart the process)
                     startMonitoring();
                 } else {
-                    // Unknown location - just restart monitoring
-                    PokeAlertClient.LOGGER.warn("⚠️ Step 5 failed again at unknown location - restarting monitoring");
-                    sendNotification("", "Step 5 failed - restarting monitoring", Formatting.RED);
+                    // Unknown location - restart from step 1
+                    step5RetryCount = 0; // Reset counter when restarting
+                    PokeAlertClient.LOGGER.warn("⚠️ Step 5 failed again at unknown location - restarting from step 1");
+                    sendNotification("", "Step 5 failed - restarting", Formatting.RED);
                     
                     stopAutomation();
                     manuallyCancelled = false;
@@ -1102,6 +1132,7 @@ public class EggHatcher {
         isAutomationRunning = false;
         currentState = State.CANCELLED;
         spawnDetectionTime = 0;  // Reset spawn detection
+        step5RetryCount = 0;  // Reset retry counter
         manuallyCancelled = true;  // Mark as manually cancelled
         
         // Stop Anti-AFK state monitoring
