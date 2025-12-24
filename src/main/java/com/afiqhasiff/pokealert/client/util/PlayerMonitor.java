@@ -44,9 +44,15 @@ public class PlayerMonitor {
     // State
     private static volatile boolean isMonitoring = false;
     
+    // Player list tracking (for spam prevention and change detection)
+    private static final java.util.Set<String> lastKnownOnlinePlayers = new java.util.HashSet<>();
+    private static final long PLAYER_LIST_CHECK_INTERVAL_MS = 300000; // 5 minutes
+    private static long lastPlayerListCheckTime = 0;
+    
     // Callbacks
     private static Consumer<String> onPlayerDetectedCallback;
     private static BiConsumer<String, String> onPlayerDetectedWithTypeCallback;
+    private static BiConsumer<java.util.List<String>, java.util.List<String>> onPlayerListChangedCallback; // (joined, left)
     
     /**
      * Start continuous player monitoring
@@ -88,9 +94,11 @@ public class PlayerMonitor {
         }
         
         isMonitoring = true;
+        lastKnownOnlinePlayers.clear(); // Reset tracking on start
+        lastPlayerListCheckTime = 0; // Force immediate check on first run
         scheduleMonitorTask();
         
-        PokeAlertClient.LOGGER.info("PlayerMonitor: Started monitoring for {} players (list={}, nearby={}, radius={})",
+        PokeAlertClient.LOGGER.info("PlayerMonitor: Started monitoring for {} players (list={}, nearby={}, radius={}, listCheckInterval=5min)",
             playersToAvoid.size(), enablePlayerList, enableNearbyDetection, nearbyDetectionRadius);
     }
     
@@ -131,13 +139,24 @@ public class PlayerMonitor {
     }
     
     /**
-     * Check for nearby avoided players within detection radius
-     * @return List of detected player names (original case, empty if none)
+     * Check for nearby avoided players within detection radius.
+     * Also detects vanished players (in world but not in player list).
+     * @return List of detected player names with detection info (original case, empty if none)
      */
     public static List<String> checkNearbyPlayers() {
         List<String> detected = new ArrayList<>();
         
         if (client.world == null || client.player == null) return detected;
+        
+        // Get player list for vanish detection
+        List<String> playerListNames = new ArrayList<>();
+        if (client.getNetworkHandler() != null) {
+            playerListNames = client.getNetworkHandler().getPlayerList().stream()
+                .map(entry -> entry.getProfile() != null ? entry.getProfile().getName() : null)
+                .filter(name -> name != null)
+                .map(String::toLowerCase)
+                .collect(Collectors.toList());
+        }
         
         for (PlayerEntity player : client.world.getPlayers()) {
             // Skip self
@@ -147,9 +166,16 @@ public class PlayerMonitor {
             if (playerName != null && playersToAvoid.contains(playerName.toLowerCase())) {
                 double distance = player.distanceTo(client.player);
                 if (distance <= nearbyDetectionRadius) {
+                    // Check if player is vanished (in world but not in player list)
+                    boolean isVanished = !playerListNames.contains(playerName.toLowerCase());
+                    if (isVanished) {
+                        PokeAlertClient.LOGGER.warn("PlayerMonitor: {} detected nearby and VANISHED at {:.1f} blocks (likely admin!)",
+                            playerName, distance);
+                    } else {
+                        PokeAlertClient.LOGGER.warn("PlayerMonitor: {} detected nearby at {:.1f} blocks",
+                            playerName, distance);
+                    }
                     detected.add(playerName);
-                    PokeAlertClient.LOGGER.warn("PlayerMonitor: {} detected nearby at {:.1f} blocks",
-                        playerName, distance);
                 }
             }
         }
@@ -172,6 +198,14 @@ public class PlayerMonitor {
      */
     public static void onPlayerDetectedWithType(BiConsumer<String, String> callback) {
         onPlayerDetectedWithTypeCallback = callback;
+    }
+    
+    /**
+     * Register callback for player list changes (joined/left)
+     * @param callback BiConsumer receiving (List<String> joined, List<String> left)
+     */
+    public static void onPlayerListChanged(BiConsumer<List<String>, List<String>> callback) {
+        onPlayerListChangedCallback = callback;
     }
     
     /**
@@ -211,26 +245,25 @@ public class PlayerMonitor {
             if (!isMonitoring) return;
             
             try {
-                boolean detected = false;
+                long currentTime = System.currentTimeMillis();
+                boolean shouldCheckPlayerList = (currentTime - lastPlayerListCheckTime) >= PLAYER_LIST_CHECK_INTERVAL_MS;
                 
-                // Check player list
-                if (enablePlayerList) {
-                    List<String> listDetected = checkPlayerList();
-                    for (String player : listDetected) {
-                        PokeAlertClient.LOGGER.warn("PlayerMonitor: {} detected in server player list!", player);
-                        triggerCallback(player, "playerlist");
-                        detected = true;
-                        break; // One detection is enough to trigger safety
-                    }
+                // Check player list every 5 minutes (for notifications, no safety stop)
+                if (enablePlayerList && shouldCheckPlayerList) {
+                    checkPlayerListWithTracking();
+                    lastPlayerListCheckTime = currentTime;
                 }
                 
-                // Check nearby players (only if not already detected)
-                if (!detected && enableNearbyDetection) {
+                // Check nearby players continuously (triggers safety stop immediately)
+                if (enableNearbyDetection) {
                     List<String> nearbyDetected = checkNearbyPlayers();
                     for (String player : nearbyDetected) {
-                        PokeAlertClient.LOGGER.warn("PlayerMonitor: {} detected nearby!", player);
-                        triggerCallback(player, "nearby");
-                        break; // One detection is enough
+                        // Check if this player is also vanished
+                        boolean isVanished = isPlayerVanished(player);
+                        String detectionType = isVanished ? "nearby_vanished" : "nearby";
+                        PokeAlertClient.LOGGER.warn("PlayerMonitor: {} detected nearby (type: {})", player, detectionType);
+                        triggerCallback(player, detectionType);
+                        break; // One nearby detection triggers safety stop
                     }
                 }
                 
@@ -238,6 +271,82 @@ public class PlayerMonitor {
                 PokeAlertClient.LOGGER.error("PlayerMonitor: Error in monitor task", e);
             }
         }, 0, checkIntervalMs, TimeUnit.MILLISECONDS);
+    }
+    
+    /**
+     * Check player list and track changes (joined/left)
+     * Sends combined notification if changes detected
+     */
+    private static void checkPlayerListWithTracking() {
+        if (client.getNetworkHandler() == null) return;
+        
+        // Get current online players (from avoid list)
+        java.util.Set<String> currentOnline = new java.util.HashSet<>();
+        Collection<PlayerListEntry> playerList = client.getNetworkHandler().getPlayerList();
+        for (PlayerListEntry entry : playerList) {
+            if (entry.getProfile() == null) continue;
+            String playerName = entry.getProfile().getName();
+            if (playerName != null && playersToAvoid.contains(playerName.toLowerCase())) {
+                currentOnline.add(playerName); // Use original case
+            }
+        }
+        
+        // Detect changes
+        List<String> joined = new ArrayList<>();
+        List<String> left = new ArrayList<>();
+        
+        for (String player : currentOnline) {
+            if (!lastKnownOnlinePlayers.contains(player)) {
+                joined.add(player);
+            }
+        }
+        
+        for (String player : lastKnownOnlinePlayers) {
+            if (!currentOnline.contains(player)) {
+                left.add(player);
+            }
+        }
+        
+        // Update tracking
+        lastKnownOnlinePlayers.clear();
+        lastKnownOnlinePlayers.addAll(currentOnline);
+        
+        // Notify if there are changes
+        if (!joined.isEmpty() || !left.isEmpty()) {
+            if (onPlayerListChangedCallback != null) {
+                MinecraftClient.getInstance().execute(() -> {
+                    onPlayerListChangedCallback.accept(joined, left);
+                });
+            }
+        }
+    }
+    
+    /**
+     * Check if a player is vanished (exists in world but not in player list)
+     * @param playerName Player name to check
+     * @return true if player appears to be vanished
+     */
+    private static boolean isPlayerVanished(String playerName) {
+        if (client.world == null || client.getNetworkHandler() == null) return false;
+        
+        // Check if player exists in world
+        boolean inWorld = false;
+        for (PlayerEntity player : client.world.getPlayers()) {
+            if (player.getName().getString().equalsIgnoreCase(playerName)) {
+                inWorld = true;
+                break;
+            }
+        }
+        
+        if (!inWorld) return false; // Not in world, can't be vanished
+        
+        // Check if player is in player list
+        boolean inPlayerList = client.getNetworkHandler().getPlayerList().stream()
+            .anyMatch(entry -> entry.getProfile() != null && 
+                     entry.getProfile().getName().equalsIgnoreCase(playerName));
+        
+        // Vanished = in world but NOT in player list
+        return !inPlayerList;
     }
     
     /**
@@ -271,6 +380,26 @@ public class PlayerMonitor {
             }
         }
         PokeAlertClient.LOGGER.info("PlayerMonitor: Shutdown complete");
+    }
+    
+    /**
+     * Get current list of avoided players online on the server
+     * @return List of player names (original case, empty if none)
+     */
+    public static List<String> getCurrentOnlineAvoidedPlayers() {
+        List<String> online = new ArrayList<>();
+        if (client.getNetworkHandler() == null) return online;
+        
+        Collection<PlayerListEntry> playerList = client.getNetworkHandler().getPlayerList();
+        for (PlayerListEntry entry : playerList) {
+            if (entry.getProfile() == null) continue;
+            String playerName = entry.getProfile().getName();
+            if (playerName != null && playersToAvoid.contains(playerName.toLowerCase())) {
+                online.add(playerName); // Use original case
+            }
+        }
+        
+        return online;
     }
     
     /**

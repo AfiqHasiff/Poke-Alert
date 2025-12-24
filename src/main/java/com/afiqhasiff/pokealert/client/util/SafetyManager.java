@@ -172,10 +172,10 @@ public class SafetyManager {
                 String timeStr = new SimpleDateFormat("HH:mm:ss").format(new Date());
                 
                 StringBuilder message = new StringBuilder();
-                message.append("🚨 <b>PokéAlert Safety Stop</b>\n\n");
+                message.append("🚨 <b>PokéAlert Safety Stop</b>\n");
                 message.append("• <b>Reason:</b> <i>").append(escapeHtml(reason)).append("</i>\n");
                 message.append("• <b>Time:</b> <code>").append(timeStr).append("</code>\n");
-                message.append("• <b>Action:</b> Anti-AFK stopped\n\n");
+                message.append("• <b>Action:</b> Anti-AFK stopped\n");
                 message.append("⚠️ <i>Manual restart required</i>");
                 
                 telegram.sendEggTimerNotification(message.toString());

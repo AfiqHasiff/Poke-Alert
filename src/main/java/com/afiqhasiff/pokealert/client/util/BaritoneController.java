@@ -48,12 +48,12 @@ public class BaritoneController {
         isPathing = true;
         lastCommandTime = System.currentTimeMillis();
         
-        // Send the goto command (Baritone uses # prefix)
-        String command = "goto " + x + " " + z;
+        // Send the goto command (Baritone uses # prefix in CHAT, not as a command)
+        String chatMessage = "#goto " + x + " " + z;
         client.execute(() -> {
             if (client.player != null && client.player.networkHandler != null) {
-                client.player.networkHandler.sendChatCommand(command);
-                PokeAlertClient.LOGGER.info("BaritoneController: Sent #goto {} {}", x, z);
+                client.player.networkHandler.sendChatMessage(chatMessage);
+                PokeAlertClient.LOGGER.info("BaritoneController: Sent {}", chatMessage);
             }
         });
     }
@@ -72,7 +72,7 @@ public class BaritoneController {
         
         client.execute(() -> {
             if (client.player != null && client.player.networkHandler != null) {
-                client.player.networkHandler.sendChatCommand("stop");
+                client.player.networkHandler.sendChatMessage("#stop");
                 PokeAlertClient.LOGGER.info("BaritoneController: Sent #stop");
             }
         });

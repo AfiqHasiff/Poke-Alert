@@ -15,6 +15,7 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -295,10 +296,22 @@ public class EggHatcher {
             if (isAtSpawn() && !isAutomationRunning) {
                 startAutomationSequence(false, false);
             } else if (!isAtSpawn()) {
-                // Provide feedback when enabling at overworld
-                // Safety monitor will verify and correct Anti-AFK state after 5s
-                sendNotification("Egg Hatcher", "Enabled - safety monitor active", Formatting.GRAY);
-                PokeAlertClient.LOGGER.info("Enabled at overworld - safety monitor will verify Anti-AFK state");
+                // Enabled at overworld - start Step 4 (Anti-AFK) directly
+                if (!antiAfkActive && !isAutomationRunning) {
+                    PokeAlertClient.LOGGER.info("Enabled at overworld - Starting Step 4 (Anti-AFK) directly");
+                    sendNotification("Egg Hatcher [4/5]", "Anti-AFK Start: Initializing Baritone", Formatting.YELLOW);
+                    
+                    // Small delay to ensure world is stable
+                    scheduler.schedule(() -> {
+                        if (mode == AutomationMode.AUTO && !isAtSpawn() && !antiAfkActive) {
+                            startBaritoneAntiAfk();
+                        }
+                    }, 1, TimeUnit.SECONDS);
+                } else {
+                    // Already active or running - just notify
+                    sendNotification("Egg Hatcher", "Enabled - safety monitor active", Formatting.GRAY);
+                    PokeAlertClient.LOGGER.info("Enabled at overworld - Anti-AFK already active or automation running");
+                }
             }
         } else {
             // AUTO -> DISABLED (simplified: removed MANUAL mode)
@@ -509,7 +522,7 @@ public class EggHatcher {
             if (timeSinceLastTeleport < TELEPORT_COOLDOWN) {
                 long remainingCooldown = (TELEPORT_COOLDOWN - timeSinceLastTeleport) / 1000;
                 PokeAlertClient.LOGGER.warn("Teleport on cooldown, skipping command ({}s remaining)", remainingCooldown);
-                sendNotification("", "Teleport cooldown active - waiting", Formatting.DARK_GRAY);
+                sendNotification("Egg Hatcher", "Teleport cooldown active - Waiting", Formatting.DARK_GRAY);
                 
                 // Retry after cooldown expires
                 scheduler.schedule(() -> continueAutomationFromStep2(), remainingCooldown + 1, TimeUnit.SECONDS);
@@ -545,7 +558,7 @@ public class EggHatcher {
                         String currentWorld = client.world != null ? 
                                             client.world.getRegistryKey().getValue().toString() : "unknown";
                         PokeAlertClient.LOGGER.error("❌ Step 4/5 FAILED: Not in overworld after 17s (current: " + currentWorld + ")");
-                        sendNotification("", "World verification failed - restarting", Formatting.RED);
+                        sendNotification("Egg Hatcher", "World verification failed - Restarting", Formatting.RED);
                         
                         cancelAllAutomationTasks();
                         scheduler.schedule(() -> {
@@ -682,13 +695,71 @@ public class EggHatcher {
             }
         });
         
-        // Player detection callback
+        // Player list change callback (every 5 minutes, in-game notification only)
+        // Telegram notification will be included in Step 5 completion message
+        PlayerMonitor.onPlayerListChanged((joined, left) -> {
+            if (joined.isEmpty() && left.isEmpty()) return;
+            
+            StringBuilder inGameMessage = new StringBuilder();
+            inGameMessage.append("Avoided Players: ");
+            
+            if (!joined.isEmpty()) {
+                inGameMessage.append("Joined: ").append(String.join(", ", joined));
+            }
+            
+            if (!left.isEmpty()) {
+                if (!joined.isEmpty()) {
+                    inGameMessage.append(" | Left: ").append(String.join(", ", left));
+                } else {
+                    inGameMessage.append("Left: ").append(String.join(", ", left));
+                }
+            }
+            
+            // Send in-game notification only (no Telegram spam)
+            sendNotification("Egg Hatcher", inGameMessage.toString(), Formatting.YELLOW);
+            PokeAlertClient.LOGGER.info("EggHatcher: Avoided players list updated (in-game notification only)");
+        });
+        
+        // Nearby player detection callback (immediate safety stop)
         PlayerMonitor.onPlayerDetectedWithType((playerName, type) -> {
-            String reason = type.equals("nearby") ? 
-                SafetyManager.REASON_PLAYER_NEARBY : SafetyManager.REASON_PLAYER_LIST;
-            PokeAlertClient.LOGGER.warn("⚠️ Avoided player detected: " + playerName + " (" + type + ")");
-            SafetyManager.triggerSafetyStop(reason + ": " + playerName, true);
-            stopBaritoneAntiAfk();
+            if (type.equals("nearby") || type.equals("nearby_vanished")) {
+                // Player nearby - Safety stop required
+                String reason = type.equals("nearby_vanished") ? 
+                    SafetyManager.REASON_PLAYER_NEARBY + " (VANISHED - likely admin!)" :
+                    SafetyManager.REASON_PLAYER_NEARBY;
+                PokeAlertClient.LOGGER.error("🚨 Avoided player nearby: " + playerName + 
+                    (type.equals("nearby_vanished") ? " (VANISHED!)" : ""));
+                
+                // Send separate "Avoided Players Warning" Telegram notification
+                PokeAlertConfig config = ConfigManager.getConfig();
+                if (config.telegramEnabled && config.isTelegramValid()) {
+                    CompletableFuture.runAsync(() -> {
+                        try {
+                            TelegramNotification telegram = new TelegramNotification();
+                            telegram.initialize();
+                            
+                            StringBuilder message = new StringBuilder();
+                            message.append("⚠️ <b>Avoided Players Warning</b>\n");
+                            message.append("• <b>Player:</b> <code>").append(playerName).append("</code>\n");
+                            if (type.equals("nearby_vanished")) {
+                                message.append("• <b>Status:</b> <i>VANISHED (likely admin!)</i>\n");
+                            } else {
+                                message.append("• <b>Status:</b> Nearby\n");
+                            }
+                            message.append("• <b>Action:</b> Anti-AFK stopped immediately\n");
+                            message.append("🚨 <i>Manual restart required</i>");
+                            
+                            telegram.sendEggTimerNotification(message.toString());
+                            PokeAlertClient.LOGGER.info("EggHatcher: Sent Avoided Players Warning notification");
+                        } catch (Exception e) {
+                            PokeAlertClient.LOGGER.error("EggHatcher: Failed to send Avoided Players Warning", e);
+                        }
+                    });
+                }
+                
+                SafetyManager.triggerSafetyStop(reason + ": " + playerName, true);
+                stopBaritoneAntiAfk();
+            }
         });
         
         // Safety manager callback
@@ -709,7 +780,7 @@ public class EggHatcher {
             // If we're at spawn in AUTO mode, restart monitoring to trigger re-automation
             if (mode == AutomationMode.AUTO && isAtSpawn()) {
                 PokeAlertClient.LOGGER.info("🔄 Safety stop at spawn - restarting automation in 5s");
-                sendNotification("Egg Hatcher", "Teleported to spawn - restarting", Formatting.YELLOW);
+                sendNotification("Egg Hatcher", "Teleported to spawn - Restarting", Formatting.YELLOW);
                 
                 // Wait 5 seconds then restart monitoring (fresh start)
                 scheduler.schedule(() -> {
@@ -765,7 +836,7 @@ public class EggHatcher {
         if (!antiAfkActive) return;
         
         PokeAlertClient.LOGGER.warn("⏱️ Location timeout - skipping to next");
-        sendNotification("Egg Hatcher", "Location timeout - skipping", Formatting.YELLOW);
+        sendNotification("Egg Hatcher", "Location timeout - Skipping", Formatting.YELLOW);
         
         // Mark timeout and check if we should stop
         boolean shouldContinue = locationQueue.markTimeoutAndAdvance();
@@ -1046,15 +1117,39 @@ public class EggHatcher {
     /**
      * Send in-game notification with standardized [PokeAlert] prefix
      */
+    /**
+     * Format notification message: capitalize after "- ", clean up multiple dots/colons
+     */
+    private String formatNotificationMessage(String message) {
+        if (message == null || message.isEmpty()) return message;
+        
+        // Split by " - " and capitalize first letter after dash
+        String[] parts = message.split(" - ", 2);
+        if (parts.length == 2) {
+            String afterDash = parts[1].trim();
+            if (!afterDash.isEmpty()) {
+                afterDash = Character.toUpperCase(afterDash.charAt(0)) + afterDash.substring(1);
+            }
+            message = parts[0] + " - " + afterDash;
+        }
+        
+        // Clean up multiple dots/colons (replace "..." with ".", "::" with ":")
+        message = message.replaceAll("\\.{2,}", ".");
+        message = message.replaceAll(":{2,}", ":");
+        
+        return message;
+    }
+    
     private void sendNotification(String title, String message, Formatting color) {
         if (client.player != null) {
             PokeAlertConfig config = PokeAlertClient.getInstance().config;
             if (config.inGameTextEnabled) {
+                String formattedMessage = formatNotificationMessage(message);
                 Text notification = Text.literal("[").formatted(Formatting.GRAY)
                     .append(Text.literal("PokeAlert").formatted(Formatting.RED))
                     .append(Text.literal("] ").formatted(Formatting.GRAY))
                     .append(Text.literal(title + ": ").formatted(Formatting.WHITE))
-                    .append(Text.literal(message).formatted(color));
+                    .append(Text.literal(formattedMessage).formatted(color));
                 
                 client.player.sendMessage(notification, false);
             }
@@ -1082,11 +1177,16 @@ public class EggHatcher {
                     message.append("• <b>Status:</b> <i>Unsuccessful</i> 🚨\n");
                 }
                 
-                // Mode line (always Auto since Manual mode was removed)
-                message.append("• <b>Mode:</b> <code>Auto</code>\n");
-                
                 // Journey line
                 message.append("• <b>Journey:</b> Spawn → Overworld\n");
+                
+                // Include avoided players info on successful completion
+                if (success) {
+                    List<String> onlineAvoided = PlayerMonitor.getCurrentOnlineAvoidedPlayers();
+                    if (!onlineAvoided.isEmpty()) {
+                        message.append("• <b>Avoided Players Online:</b> <code>").append(String.join(", ", onlineAvoided)).append("</code>\n");
+                    }
+                }
                 
                 telegram.sendEggTimerNotification(message.toString());
             });
