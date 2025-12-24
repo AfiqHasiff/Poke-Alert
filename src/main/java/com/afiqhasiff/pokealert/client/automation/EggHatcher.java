@@ -12,6 +12,8 @@ import com.afiqhasiff.pokealert.client.util.LocationQueue;
 import com.afiqhasiff.pokealert.client.util.PlayerMonitor;
 import com.afiqhasiff.pokealert.client.util.SafetyManager;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.option.GameOptions;
+import net.minecraft.client.option.KeyBinding;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
@@ -75,6 +77,14 @@ public class EggHatcher {
     private AntiAfkRegion antiAfkRegion;
     private boolean antiAfkActive = false;
     private ScheduledFuture<?> locationTimeoutTask;
+    
+    // Human-like behavior state
+    private volatile boolean isInBreakState = false; // Flag to prevent false anti-AFK detection during breaks
+    private volatile boolean isJumpKeyHeld = false; // Track if jump key is currently held
+    private ScheduledFuture<?> breakStateTask;
+    private ScheduledFuture<?> jumpTask;
+    private ScheduledFuture<?> cameraRotationTask;
+    private final java.util.Random behaviorRandom = new java.util.Random();
     
     // State machine for tracking automation progress
     private enum State {
@@ -647,6 +657,9 @@ public class EggHatcher {
         CoordinateMonitor.onArrival(() -> {
             if (!antiAfkActive) return;
             
+            // Stop jumping when arriving
+            stopJumping();
+            
             // Cancel timeout timer
             if (locationTimeoutTask != null) {
                 locationTimeoutTask.cancel(false);
@@ -662,10 +675,67 @@ public class EggHatcher {
                 completeAutomation();
             }
             
-            // Continue to next location (perpetual)
-            if (antiAfkActive && !SafetyManager.isSafetyTriggered()) {
-                navigateToNextLocation();
+            // Human-like behavior: Check for breaks
+            PokeAlertConfig config = ConfigManager.getConfig();
+            if (config.enableHumanLikeBehavior) {
+                double random = behaviorRandom.nextDouble();
+                
+                // Check for long pause (5% chance)
+                if (random < config.longPauseChance) {
+                    int pauseMs = config.minLongPauseMs + behaviorRandom.nextInt(config.maxLongPauseMs - config.minLongPauseMs);
+                    PokeAlertClient.LOGGER.info("Human behavior: Taking {}ms pause", pauseMs);
+                    sendNotification("Egg Hatcher", "Taking a short break - Looking around", Formatting.GRAY);
+                    
+                    // Cancel timeout timer (we're intentionally not moving)
+                    if (locationTimeoutTask != null) {
+                        locationTimeoutTask.cancel(false);
+                        locationTimeoutTask = null;
+                    }
+                    
+                    setBreakState(true);
+                    simulateCameraRotation(pauseMs);
+                    
+                    scheduler.schedule(() -> {
+                        setBreakState(false);
+                        if (antiAfkActive && !SafetyManager.isSafetyTriggered()) {
+                            navigateToNextLocation();
+                        }
+                    }, pauseMs, TimeUnit.MILLISECONDS);
+                    return;
+                }
+                
+                // Check for break pause (1% chance)
+                if (random < config.longPauseChance + config.breakPauseChance) {
+                    int pauseMs = config.minBreakPauseMs + behaviorRandom.nextInt(config.maxBreakPauseMs - config.minBreakPauseMs);
+                    PokeAlertClient.LOGGER.info("Human behavior: Taking {}ms break", pauseMs);
+                    sendNotification("Egg Hatcher", "Taking a longer break - Looking around", Formatting.GRAY);
+                    
+                    // Cancel timeout timer (we're intentionally not moving)
+                    if (locationTimeoutTask != null) {
+                        locationTimeoutTask.cancel(false);
+                        locationTimeoutTask = null;
+                    }
+                    
+                    setBreakState(true);
+                    simulateCameraRotation(pauseMs);
+                    
+                    scheduler.schedule(() -> {
+                        setBreakState(false);
+                        if (antiAfkActive && !SafetyManager.isSafetyTriggered()) {
+                            navigateToNextLocation();
+                        }
+                    }, pauseMs, TimeUnit.MILLISECONDS);
+                    return;
+                }
             }
+            
+            // Normal pause before next movement (0.5-3s)
+            int normalPause = 500 + behaviorRandom.nextInt(2500);
+            scheduler.schedule(() -> {
+                if (antiAfkActive && !SafetyManager.isSafetyTriggered()) {
+                    navigateToNextLocation();
+                }
+            }, normalPause, TimeUnit.MILLISECONDS);
         });
         
         // Teleport detection callback
@@ -799,17 +869,45 @@ public class EggHatcher {
     }
     
     /**
-     * v3.0.0: Navigate to the next location in queue
+     * v3.0.0: Navigate to the next location in queue with human-like behaviors
      */
     private void navigateToNextLocation() {
-        if (!antiAfkActive || SafetyManager.isSafetyTriggered()) {
+        if (!antiAfkActive || SafetyManager.isSafetyTriggered() || isInBreakState) {
             return;
+        }
+        
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        // Human-like behavior: Backtracking (5% chance)
+        if (config.enableHumanLikeBehavior && behaviorRandom.nextDouble() < config.backtrackChance) {
+            if (locationQueue.hasPrevious()) {
+                PokeAlertClient.LOGGER.info("Human behavior: Backtracking to previous location");
+                sendNotification("Egg Hatcher", "Backtracking to previous location", Formatting.GRAY);
+                locationQueue.goToPrevious();
+            }
         }
         
         int[] destination = locationQueue.getCurrentDestination();
         if (destination == null) {
             PokeAlertClient.LOGGER.error("❌ No destination available!");
             return;
+        }
+        
+        // Human-like behavior: Hotbar switching (10% chance)
+        if (config.enableHumanLikeBehavior && behaviorRandom.nextDouble() < config.hotbarSwitchChance) {
+            int slot = behaviorRandom.nextInt(9);
+            sendNotification("Egg Hatcher", "Switching to hotbar slot " + (slot + 1), Formatting.GRAY);
+            switchHotbarSlot(slot);
+        }
+        
+        // Human-like behavior: Walking vs running (15% chance to walk)
+        boolean shouldWalk = config.enableHumanLikeBehavior && behaviorRandom.nextDouble() < config.walkChance;
+        if (shouldWalk) {
+            PokeAlertClient.LOGGER.debug("Human behavior: Walking (no sprint)");
+            sendNotification("Egg Hatcher", "Walking to destination", Formatting.GRAY);
+            BaritoneController.setAllowSprint(false);
+        } else {
+            BaritoneController.setAllowSprint(true);
         }
         
         // Set destination in monitor
@@ -822,8 +920,15 @@ public class EggHatcher {
             locationQueue.getStatus(), 
             String.format("(%d, %d)", destination[0], destination[1]));
         
+        // Human-like behavior: Jumping while moving (25% chance)
+        if (config.enableHumanLikeBehavior && behaviorRandom.nextDouble() < config.jumpWhileMovingChance) {
+            PokeAlertClient.LOGGER.debug("Human behavior: Jumping while moving");
+            sendNotification("Egg Hatcher", "Jumping while moving", Formatting.GRAY);
+            // Hold jump key down for the entire movement (more natural)
+            holdJumpKey(true);
+        }
+        
         // Start timeout timer
-        PokeAlertConfig config = ConfigManager.getConfig();
         locationTimeoutTask = scheduler.schedule(() -> {
             handleLocationTimeout();
         }, config.locationTimeout, TimeUnit.MILLISECONDS);
@@ -865,6 +970,22 @@ public class EggHatcher {
     private void stopBaritoneAntiAfk() {
         antiAfkActive = false;
         
+        // Clear break state
+        setBreakState(false);
+        
+        // Stop jumping
+        stopJumping();
+        
+        // Cancel all behavior tasks
+        if (breakStateTask != null) {
+            breakStateTask.cancel(false);
+            breakStateTask = null;
+        }
+        if (cameraRotationTask != null) {
+            cameraRotationTask.cancel(false);
+            cameraRotationTask = null;
+        }
+        
         // Cancel timeout
         if (locationTimeoutTask != null) {
             locationTimeoutTask.cancel(false);
@@ -881,6 +1002,160 @@ public class EggHatcher {
     
     // v3.0.0: retryStep5() REMOVED - no longer using external Anti-AFK keybind
     // v3.0.0: toggleAntiAfk() REMOVED - now using Baritone #goto commands
+    
+    /**
+     * v3.0.0: Human-like behavior helper methods
+     */
+    
+    /**
+     * Set break state flag to prevent false anti-AFK detection
+     * @param inBreak true if entering break, false if exiting
+     */
+    private void setBreakState(boolean inBreak) {
+        isInBreakState = inBreak;
+        PokeAlertClient.LOGGER.debug("Break state: {}", inBreak ? "ACTIVE" : "INACTIVE");
+    }
+    
+    /**
+     * Simulate smooth camera rotation (looking around) during breaks
+     * Uses interpolation for smooth mouse-like movement
+     */
+    private void simulateCameraRotation(int durationMs) {
+        if (cameraRotationTask != null) {
+            cameraRotationTask.cancel(false);
+        }
+        
+        if (client.player == null) return;
+        
+        // Start from current position
+        final float[] startYaw = {client.player.getYaw()};
+        final float[] startPitch = {client.player.getPitch()};
+        
+        // Target rotation (random within reasonable range)
+        final float[] targetYaw = {startYaw[0] + (behaviorRandom.nextFloat() - 0.5f) * 120f}; // ±60 degrees
+        final float[] targetPitch = {Math.max(-90, Math.min(90, startPitch[0] + (behaviorRandom.nextFloat() - 0.5f) * 60f))}; // ±30 degrees
+        
+        // Current interpolation progress (0.0 to 1.0)
+        final float[] progress = {0.0f};
+        
+        // Update interval (every 50ms for smooth movement)
+        final long updateInterval = 50;
+        final int totalSteps = (int)(durationMs / updateInterval);
+        final float stepSize = 1.0f / totalSteps;
+        
+        // Smooth interpolation using ease-in-out curve
+        cameraRotationTask = scheduler.scheduleAtFixedRate(() -> {
+            if (client.player == null || !isInBreakState) {
+                if (cameraRotationTask != null) {
+                    cameraRotationTask.cancel(false);
+                }
+                return;
+            }
+            
+            progress[0] += stepSize;
+            if (progress[0] > 1.0f) progress[0] = 1.0f;
+            
+            // Ease-in-out curve for smooth acceleration/deceleration
+            float eased = progress[0] < 0.5f 
+                ? 2 * progress[0] * progress[0] 
+                : 1 - (float)Math.pow(-2 * progress[0] + 2, 2) / 2;
+            
+            // Interpolate between start and target
+            float currentYaw = startYaw[0] + (targetYaw[0] - startYaw[0]) * eased;
+            float currentPitch = startPitch[0] + (targetPitch[0] - startPitch[0]) * eased;
+            
+            // Normalize yaw to -180 to 180 range
+            while (currentYaw > 180) currentYaw -= 360;
+            while (currentYaw < -180) currentYaw += 360;
+            
+            // Store in final variables for lambda
+            final float finalYaw = currentYaw;
+            final float finalPitch = currentPitch;
+            
+            client.execute(() -> {
+                if (client.player != null) {
+                    client.player.setYaw(finalYaw);
+                    client.player.setPitch(finalPitch);
+                }
+            });
+            
+            // If we've reached the target, pick a new target
+            if (progress[0] >= 1.0f) {
+                startYaw[0] = currentYaw;
+                startPitch[0] = currentPitch;
+                targetYaw[0] = startYaw[0] + (behaviorRandom.nextFloat() - 0.5f) * 120f;
+                targetPitch[0] = Math.max(-90, Math.min(90, startPitch[0] + (behaviorRandom.nextFloat() - 0.5f) * 60f));
+                progress[0] = 0.0f;
+            }
+        }, 0, updateInterval, TimeUnit.MILLISECONDS);
+        
+        // Stop after duration
+        scheduler.schedule(() -> {
+            if (cameraRotationTask != null) {
+                cameraRotationTask.cancel(false);
+                cameraRotationTask = null;
+            }
+        }, durationMs, TimeUnit.MILLISECONDS);
+    }
+    
+    /**
+     * Switch to a random hotbar slot (1-9)
+     */
+    private void switchHotbarSlot() {
+        if (client.player == null) return;
+        
+        int slot = behaviorRandom.nextInt(9); // 0-8 (slots 1-9)
+        client.execute(() -> {
+            if (client.player != null) {
+                client.player.getInventory().selectedSlot = slot;
+                PokeAlertClient.LOGGER.debug("Switched to hotbar slot {}", slot + 1);
+            }
+        });
+    }
+    
+    /**
+     * Switch to a specific hotbar slot (for notification display)
+     */
+    private void switchHotbarSlot(int slot) {
+        if (client.player == null) return;
+        
+        client.execute(() -> {
+            if (client.player != null) {
+                client.player.getInventory().selectedSlot = slot;
+                PokeAlertClient.LOGGER.debug("Switched to hotbar slot {}", slot + 1);
+            }
+        });
+    }
+    
+    /**
+     * Hold or release the jump key (for natural sprint+jump behavior)
+     * @param hold true to hold the key down, false to release
+     */
+    private void holdJumpKey(boolean hold) {
+        if (client.player == null) return;
+        
+        isJumpKeyHeld = hold;
+        GameOptions options = client.options;
+        KeyBinding jumpKey = options.jumpKey;
+        
+        client.execute(() -> {
+            if (jumpKey != null) {
+                jumpKey.setPressed(hold);
+                PokeAlertClient.LOGGER.debug("Jump key {}", hold ? "held" : "released");
+            }
+        });
+    }
+    
+    /**
+     * Stop jumping (release jump key)
+     */
+    private void stopJumping() {
+        if (jumpTask != null) {
+            jumpTask.cancel(false);
+            jumpTask = null;
+        }
+        holdJumpKey(false);
+    }
     
     /**
      * Send a chat command
@@ -922,8 +1197,9 @@ public class EggHatcher {
                 String location = isAtSpawn() ? "spawn" : "overworld";
                 
                 // v3.0.0: Check if Anti-AFK should be running at overworld
-                if (!isAtSpawn() && antiAfkActive) {
+                if (!isAtSpawn() && antiAfkActive && !isInBreakState) {
                     // We're at overworld with Anti-AFK active - verify Baritone is pathing
+                    // Skip check if in break state (intentional pause)
                     if (!BaritoneController.isPathing() && !SafetyManager.isSafetyTriggered()) {
                         PokeAlertClient.LOGGER.warn("⚠️ Safety: Baritone not pathing at overworld, restarting navigation");
                         navigateToNextLocation();

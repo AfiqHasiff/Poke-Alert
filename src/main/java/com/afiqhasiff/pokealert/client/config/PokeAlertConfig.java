@@ -81,6 +81,19 @@ public class PokeAlertConfig {
     public int replenishCount = 3;             // Locations to add when queue runs low (1-5)
     public int locationsForStep6 = 3;          // Successful visits before Step 5/completion (1-10) - kept as Step6 for migration
     public int maxConsecutiveTimeouts = 3;     // Timeouts before safety stop (1-10)
+    
+    // Human-like Behavior Settings
+    public boolean enableHumanLikeBehavior = true;
+    public double longPauseChance = 0.05;      // 5% chance of 5-15s pause
+    public int minLongPauseMs = 5000;          // 5s
+    public int maxLongPauseMs = 15000;         // 15s
+    public double breakPauseChance = 0.01;     // 1% chance of 30-60s break
+    public int minBreakPauseMs = 30000;        // 30s
+    public int maxBreakPauseMs = 60000;         // 60s
+    public double backtrackChance = 0.05;      // 5% chance to backtrack
+    public double walkChance = 0.15;            // 15% chance to walk instead of run
+    public double hotbarSwitchChance = 0.10;   // 10% chance to switch hotbar slot
+    public double jumpWhileMovingChance = 0.25; // 25% chance to jump while moving
 
     public String[] getCombinedWhitelist(){
         List<String> combinedList = new ArrayList<String>();

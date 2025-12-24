@@ -139,6 +139,25 @@ public class LocationQueue {
     }
     
     /**
+     * Check if there's a previous location to backtrack to.
+     * @return true if currentIndex > 0
+     */
+    public boolean hasPrevious() {
+        return currentIndex > 0;
+    }
+    
+    /**
+     * Go back to the previous location (backtracking behavior).
+     * Decrements currentIndex to revisit the last visited location.
+     */
+    public void goToPrevious() {
+        if (currentIndex > 0) {
+            currentIndex--;
+            PokeAlertClient.LOGGER.info("LocationQueue: Backtracking to previous location at index {}", currentIndex);
+        }
+    }
+    
+    /**
      * Check if Step 5 should trigger (enough visits, not already completed).
      */
     public boolean shouldTriggerStep5() {

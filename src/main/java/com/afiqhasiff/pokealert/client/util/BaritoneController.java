@@ -79,6 +79,25 @@ public class BaritoneController {
     }
     
     /**
+     * Set Baritone sprinting behavior
+     * @param allowSprint true to allow sprinting, false to force walking
+     */
+    public static void setAllowSprint(boolean allowSprint) {
+        if (client.player == null) {
+            PokeAlertClient.LOGGER.debug("BaritoneController: Cannot set allowsprint - no player");
+            return;
+        }
+        
+        client.execute(() -> {
+            if (client.player != null && client.player.networkHandler != null) {
+                String command = "#set allowsprint " + (allowSprint ? "true" : "false");
+                client.player.networkHandler.sendChatMessage(command);
+                PokeAlertClient.LOGGER.debug("BaritoneController: Sent {}", command);
+            }
+        });
+    }
+    
+    /**
      * Check if Baritone is currently pathing (based on our tracking).
      * Note: This is our internal tracking, not actual Baritone state.
      * 

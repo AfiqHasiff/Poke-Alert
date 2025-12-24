@@ -1006,7 +1006,7 @@ public class PokeAlertConfigScreen extends Screen {
         // v3.0.0: Anti-AFK Region header
         context.drawTextWithShadow(
             this.textRenderer,
-            Text.literal("Anti-AFK Region (v3.0.0)").formatted(Formatting.AQUA),
+            Text.literal("Anti-AFK Region").formatted(Formatting.AQUA),
             SIDE_MARGIN,
             currentY - 15,
             0xFFFFFF
