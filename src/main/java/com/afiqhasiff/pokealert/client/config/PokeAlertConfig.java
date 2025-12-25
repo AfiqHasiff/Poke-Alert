@@ -84,16 +84,18 @@ public class PokeAlertConfig {
     
     // Human-like Behavior Settings
     public boolean enableHumanLikeBehavior = true;
-    public double longPauseChance = 0.05;      // 5% chance of 5-15s pause
-    public int minLongPauseMs = 5000;          // 5s
-    public int maxLongPauseMs = 15000;         // 15s
-    public double breakPauseChance = 0.01;     // 1% chance of 30-60s break
-    public int minBreakPauseMs = 30000;        // 30s
-    public int maxBreakPauseMs = 60000;         // 60s
-    public double backtrackChance = 0.05;      // 5% chance to backtrack
-    public double walkChance = 0.15;            // 15% chance to walk instead of run
-    public double hotbarSwitchChance = 0.10;   // 10% chance to switch hotbar slot
-    public double jumpWhileMovingChance = 0.25; // 25% chance to jump while moving
+   
+    public int minLongPauseMs = 5000;             // 5s
+    public int maxLongPauseMs = 15000;            // 15s
+    public int minBreakPauseMs = 30000;           // 30s
+    public int maxBreakPauseMs = 60000;           // 60s
+    public double longPauseChance = 0.05;         // 5% chance of 5-15s pause
+    public double breakPauseChance = 0.01;        // 1% chance of 30-60s break
+    public double backtrackChance = 0.04;         // 4% chance to backtrack
+    public double walkChance = 0.15;              // 15% chance to walk instead of run
+    public double hotbarSwitchChance = 0.05;      // 5% chance to switch hotbar slot
+    public double jumpWhileMovingChance = 0.0005; // 0.05% chance to jump while moving
+    public double lookAroundChance = 0.03;        // 3% chance to look around after arrival (with anti-afk skip)
 
     public String[] getCombinedWhitelist(){
         List<String> combinedList = new ArrayList<String>();

@@ -150,7 +150,12 @@ public class CoordinateMonitor {
     /**
      * Check for teleport or manual movement exceeding threshold
      * Compares current position to last checked position
-     * @return true if position delta > teleportDetectionOffset
+     * 
+     * When Baritone is pathing, normal sprint+jump movement can exceed the threshold.
+     * In this case, we verify that the movement is towards the destination.
+     * If movement is away from destination or too large, it's likely a teleport.
+     * 
+     * @return true if position delta > teleportDetectionOffset AND movement is suspicious
      */
     public static boolean checkForTeleport() {
         if (client.player == null) return false;
@@ -158,11 +163,68 @@ public class CoordinateMonitor {
         int currentX = (int) client.player.getX();
         int currentZ = (int) client.player.getZ();
         
-        int deltaX = Math.abs(currentX - lastX);
-        int deltaZ = Math.abs(currentZ - lastZ);
-        int maxDelta = Math.max(deltaX, deltaZ);
+        int deltaX = currentX - lastX;
+        int deltaZ = currentZ - lastZ;
+        int absDeltaX = Math.abs(deltaX);
+        int absDeltaZ = Math.abs(deltaZ);
+        int maxDelta = Math.max(absDeltaX, absDeltaZ);
         
-        return maxDelta > teleportDetectionOffset;
+        // If movement is within threshold, no teleport
+        if (maxDelta <= teleportDetectionOffset) {
+            return false;
+        }
+        
+        // Movement exceeds threshold - check if it's suspicious
+        // If Baritone is pathing, verify movement is towards destination (with tolerance for pathfinding)
+        if (BaritoneController.isPathing() && hasDestination) {
+            // Calculate direction vectors
+            // Vector from last position to destination
+            int toDestX = destinationX - lastX;
+            int toDestZ = destinationZ - lastZ;
+            
+            // Calculate actual distance traveled
+            double distanceTraveled = Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
+            
+            // If movement is too large even for sprint+jump (e.g., >30 blocks in 500ms), it's suspicious
+            // Normal sprint+jump can do ~15-20 blocks in 500ms, but >30 is likely a teleport
+            if (distanceTraveled > 30.0) {
+                PokeAlertClient.LOGGER.debug("CoordinateMonitor: Movement too large even for sprint+jump: {} blocks", distanceTraveled);
+                return true;
+            }
+            
+            // Calculate distance to destination from last position (for angle calculation)
+            double distanceToDest = Math.sqrt(toDestX * toDestX + toDestZ * toDestZ);
+            
+            // Calculate angle between movement vector and destination vector
+            // Dot product = |movement| * |destination| * cos(angle)
+            // We allow up to 135° deviation (cos(135°) = -0.707) to account for pathfinding around obstacles
+            long dotProduct = (long) deltaX * toDestX + (long) deltaZ * toDestZ;
+            double movementMagnitude = distanceTraveled;
+            double destMagnitude = distanceToDest;
+            
+            // Avoid division by zero
+            if (movementMagnitude < 0.1 || destMagnitude < 0.1) {
+                return false; // Too small to determine direction
+            }
+            
+            // Calculate cosine of angle: cos(θ) = dotProduct / (|a| * |b|)
+            double cosAngle = dotProduct / (movementMagnitude * destMagnitude);
+            
+            // Allow movement if angle <= 135° (cos(135°) ≈ -0.707)
+            // This allows Baritone to pathfind around obstacles while still moving generally toward destination
+            if (cosAngle < -0.707) {
+                // Angle > 135° - movement is significantly away from destination (suspicious)
+                PokeAlertClient.LOGGER.debug("CoordinateMonitor: Movement significantly away from destination (angle > 135°)");
+                return true;
+            }
+            
+            // Movement is within acceptable angle (toward destination or reasonable pathfinding deviation)
+            PokeAlertClient.LOGGER.debug("CoordinateMonitor: Movement within acceptable pathfinding deviation");
+            return false;
+        }
+        
+        // Baritone is not pathing - any large movement is suspicious
+        return true;
     }
     
     /**
@@ -266,6 +328,10 @@ public class CoordinateMonitor {
                     // Update last position
                     lastX = (int) client.player.getX();
                     lastZ = (int) client.player.getZ();
+                    
+                    // CRITICAL: Clear destination immediately to prevent repeated arrival callbacks
+                    // This prevents the monitor from detecting arrival multiple times for the same destination
+                    hasDestination = false;
                     
                     if (onArrivalCallback != null) {
                         client.execute(() -> onArrivalCallback.run());

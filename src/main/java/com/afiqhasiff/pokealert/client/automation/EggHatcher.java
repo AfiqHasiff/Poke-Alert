@@ -80,11 +80,42 @@ public class EggHatcher {
     
     // Human-like behavior state
     private volatile boolean isInBreakState = false; // Flag to prevent false anti-AFK detection during breaks
+    private volatile boolean isCameraRotating = false; // Flag to prevent false anti-AFK detection during camera rotation
     private volatile boolean isJumpKeyHeld = false; // Track if jump key is currently held
     private ScheduledFuture<?> breakStateTask;
     private ScheduledFuture<?> jumpTask;
+    private ScheduledFuture<?> jumpRepeatTask; // For periodic jump execution while moving
     private ScheduledFuture<?> cameraRotationTask;
     private final java.util.Random behaviorRandom = new java.util.Random();
+    
+    // Store selected action for current navigation to prevent re-rolling on timeout
+    private String currentNavigationAction = null;
+    
+    // Track recent movement positions for jump detection (movement-based approach)
+    private static class PositionSnapshot {
+        final double x, z;
+        final long timestamp;
+        PositionSnapshot(double x, double z, long timestamp) {
+            this.x = x;
+            this.z = z;
+            this.timestamp = timestamp;
+        }
+    }
+    private final java.util.Queue<PositionSnapshot> recentPositions = new java.util.ArrayDeque<>();
+    
+    // Atomic flag to prevent arrival callback race condition
+    private final java.util.concurrent.atomic.AtomicBoolean arrivalProcessed = new java.util.concurrent.atomic.AtomicBoolean(false);
+    
+    // Track if automation started from spawn (for Telegram notification)
+    private boolean startedFromSpawn = false;
+    
+    // Journey tracking for Telegram notification
+    private boolean hadDisconnect = false;  // Disconnect -> Reconnect during automation
+    private boolean hadOverworldCrash = false;  // Started in overworld, forced to spawn, then back to overworld
+    private boolean startedInOverworld = false;  // Track if automation started in overworld
+
+    // Track if we've already sent the "taking a break" notification
+    private boolean breakNotificationSent = false;
     
     // State machine for tracking automation progress
     private enum State {
@@ -192,6 +223,12 @@ public class EggHatcher {
     public void markDisconnected() {
         lastConnectionTime = 0;
         antiAfkDisabledOnReconnect = false;
+        
+        // Track disconnect during automation for journey detection
+        if (isAutomationRunning || antiAfkActive) {
+            hadDisconnect = true;
+            PokeAlertClient.LOGGER.info("Disconnect detected during automation - will mark as Disconnect → Reconnect journey");
+        }
         
         // Reset Anti-AFK movement tracking to prevent false positives on reconnect
         AntiAfkManager.resetTracking();
@@ -304,13 +341,23 @@ public class EggHatcher {
             
             // Check current location and trigger if at spawn
             if (isAtSpawn() && !isAutomationRunning) {
+                startedFromSpawn = true; // Track that automation started from spawn
+                startedInOverworld = false;
+                hadDisconnect = false;
+                hadOverworldCrash = false;
                 startAutomationSequence(false, false);
             } else if (!isAtSpawn()) {
-                // Enabled at overworld - start Step 4 (Anti-AFK) directly
+                // Enabled at overworld - start Step 4 (Anti-AFK) directly (NO Telegram notification)
                 if (!antiAfkActive && !isAutomationRunning) {
                     PokeAlertClient.LOGGER.info("Enabled at overworld - Starting Step 4 (Anti-AFK) directly");
                     sendNotification("Egg Hatcher [4/5]", "Anti-AFK Start: Initializing Baritone", Formatting.YELLOW);
                     
+                    // Track that automation started in overworld
+                    startedFromSpawn = false;
+                    startedInOverworld = true;
+                    hadDisconnect = false;
+                    hadOverworldCrash = false;
+
                     // Small delay to ensure world is stable
                     scheduler.schedule(() -> {
                         if (mode == AutomationMode.AUTO && !isAtSpawn() && !antiAfkActive) {
@@ -319,7 +366,7 @@ public class EggHatcher {
                     }, 1, TimeUnit.SECONDS);
                 } else {
                     // Already active or running - just notify
-                    sendNotification("Egg Hatcher", "Enabled - safety monitor active", Formatting.GRAY);
+                sendNotification("Egg Hatcher", "Enabled - safety monitor active", Formatting.GRAY);
                     PokeAlertClient.LOGGER.info("Enabled at overworld - Anti-AFK already active or automation running");
                 }
             }
@@ -428,6 +475,9 @@ public class EggHatcher {
         automationStartTime = System.currentTimeMillis();
         currentState = State.DETECTED_AT_SPAWN;
         
+        // Don't reset journey tracking flags here - they should persist until Telegram notification is sent
+        // Flags are only reset in stopAutomation() after notification is sent
+        
         // Reset spawn detection time and retry counter
         spawnDetectionTime = 0;
         step5RetryCount = 0;
@@ -459,7 +509,7 @@ public class EggHatcher {
         }
         
         // v3.0.0: No external Anti-AFK to disable, proceed directly to Step 2 (Server Buffer)
-        continueAutomationFromStep2();
+            continueAutomationFromStep2();
     }
     
     // Overload for backward compatibility
@@ -643,7 +693,7 @@ public class EggHatcher {
         antiAfkActive = true;
         
         // Navigate to first location
-        navigateToNextLocation();
+        navigateToNextLocation(null);
         
         PokeAlertClient.LOGGER.info("✅ Baritone Anti-AFK started with {} initial locations", 
             locationQueue.getQueueSize());
@@ -657,15 +707,35 @@ public class EggHatcher {
         CoordinateMonitor.onArrival(() -> {
             if (!antiAfkActive) return;
             
+            // Guard: Prevent multiple arrival callbacks from firing simultaneously using atomic flag
+            // This is thread-safe and prevents race conditions
+            if (!arrivalProcessed.compareAndSet(false, true)) {
+                // Already processed by another arrival callback - skip
+                PokeAlertClient.LOGGER.debug("Arrival callback: Already processed, skipping");
+            return;
+        }
+        
+            // Mark path complete to prevent duplicate processing
+            BaritoneController.markPathComplete();
+            
+            // CRITICAL: Clear destination in CoordinateMonitor to prevent repeated arrival callbacks
+            // This must be done BEFORE resetting the arrival processed flag
+            CoordinateMonitor.clearDestination();
+            
+            // Reset arrival processed flag for next navigation
+            arrivalProcessed.set(false);
+            
             // Stop jumping when arriving
             stopJumping();
             
             // Cancel timeout timer
             if (locationTimeoutTask != null) {
                 locationTimeoutTask.cancel(false);
+                locationTimeoutTask = null;
             }
             
-            BaritoneController.markPathComplete();
+            // Clear stored navigation action (arrival successful, action was applied)
+            currentNavigationAction = null;
             
             // Check if Step 5 should trigger (3 successful visits)
             locationQueue.markVisitedAndAdvance();
@@ -675,72 +745,149 @@ public class EggHatcher {
                 completeAutomation();
             }
             
-            // Human-like behavior: Check for breaks
+            // Human-like behavior: Roll for ALL actions (navigation + pause/look around), select LOWEST chance if multiple land
+            // NOTE: This roll happens ONCE per #goto action (when arriving at a destination)
+            // Each action has its own chance (0% = disabled), and if multiple actions land, the one with the lowest chance is selected
             PokeAlertConfig config = ConfigManager.getConfig();
             if (config.enableHumanLikeBehavior) {
-                double random = behaviorRandom.nextDouble();
+                // Roll separate random value for each action
+                double backtrackRandom = behaviorRandom.nextDouble();
+                double walkRandom = behaviorRandom.nextDouble();
+                double hotbarRandom = behaviorRandom.nextDouble();
+                double jumpRandom = behaviorRandom.nextDouble();
+                double longPauseRandom = behaviorRandom.nextDouble();
+                double breakPauseRandom = behaviorRandom.nextDouble();
+                double lookAroundRandom = behaviorRandom.nextDouble();
                 
-                // Check for long pause (5% chance)
-                if (random < config.longPauseChance) {
-                    int pauseMs = config.minLongPauseMs + behaviorRandom.nextInt(config.maxLongPauseMs - config.minLongPauseMs);
-                    PokeAlertClient.LOGGER.info("Human behavior: Taking {}ms pause", pauseMs);
-                    sendNotification("Egg Hatcher", "Taking a short break - Looking around", Formatting.GRAY);
-                    
-                    // Cancel timeout timer (we're intentionally not moving)
-                    if (locationTimeoutTask != null) {
-                        locationTimeoutTask.cancel(false);
-                        locationTimeoutTask = null;
+                // Track which actions "landed" (random < chance) and their chance values
+                // IMPORTANT: We need to find the LOWEST chance among ALL successful rolls
+                // Strategy: First collect all successful actions with their chances, then select the one with lowest chance
+                double lowestChance = Double.MAX_VALUE;
+                String selectedAction = null;
+                
+                // Collect all successful actions with their chance values
+                // Navigation actions
+                if (config.backtrackChance > 0 && backtrackRandom < config.backtrackChance) {
+                    if (config.backtrackChance < lowestChance) {
+                        lowestChance = config.backtrackChance;
+                        selectedAction = "backtrack";
                     }
-                    
-                    setBreakState(true);
-                    simulateCameraRotation(pauseMs);
-                    
-                    scheduler.schedule(() -> {
-                        setBreakState(false);
-                        if (antiAfkActive && !SafetyManager.isSafetyTriggered()) {
-                            navigateToNextLocation();
-                        }
-                    }, pauseMs, TimeUnit.MILLISECONDS);
-                    return;
+                }
+
+                if (config.walkChance > 0 && walkRandom < config.walkChance) {
+                    if (config.walkChance < lowestChance) {
+                        lowestChance = config.walkChance;
+                        selectedAction = "walk";
+                    }
+                }
+
+                if (config.hotbarSwitchChance > 0 && hotbarRandom < config.hotbarSwitchChance) {
+                    if (config.hotbarSwitchChance < lowestChance) {
+                        lowestChance = config.hotbarSwitchChance;
+                        selectedAction = "hotbar";
+                    }
+                }
+
+                if (config.jumpWhileMovingChance > 0 && jumpRandom < config.jumpWhileMovingChance) {
+                    if (config.jumpWhileMovingChance < lowestChance) {
+                        lowestChance = config.jumpWhileMovingChance;
+                        selectedAction = "jump";
+                    }
+                }
+
+                // Pause/look around actions
+                if (config.longPauseChance > 0 && longPauseRandom < config.longPauseChance) {
+                    if (config.longPauseChance < lowestChance) {
+                        lowestChance = config.longPauseChance;
+                        selectedAction = "longPause";
+                    }
+                }
+
+                if (config.breakPauseChance > 0 && breakPauseRandom < config.breakPauseChance) {
+                    if (config.breakPauseChance < lowestChance) {
+                        lowestChance = config.breakPauseChance;
+                        selectedAction = "breakPause";
+                    }
+                }
+
+                if (config.lookAroundChance > 0 && lookAroundRandom < config.lookAroundChance) {
+                    if (config.lookAroundChance < lowestChance) {
+                        lowestChance = config.lookAroundChance;
+                        selectedAction = "lookAround";
+                    }
                 }
                 
-                // Check for break pause (1% chance)
-                if (random < config.longPauseChance + config.breakPauseChance) {
-                    int pauseMs = config.minBreakPauseMs + behaviorRandom.nextInt(config.maxBreakPauseMs - config.minBreakPauseMs);
-                    PokeAlertClient.LOGGER.info("Human behavior: Taking {}ms break", pauseMs);
-                    sendNotification("Egg Hatcher", "Taking a longer break - Looking around", Formatting.GRAY);
-                    
-                    // Cancel timeout timer (we're intentionally not moving)
-                    if (locationTimeoutTask != null) {
-                        locationTimeoutTask.cancel(false);
-                        locationTimeoutTask = null;
-                    }
-                    
-                    setBreakState(true);
-                    simulateCameraRotation(pauseMs);
-                    
-                    scheduler.schedule(() -> {
-                        setBreakState(false);
-                        if (antiAfkActive && !SafetyManager.isSafetyTriggered()) {
-                            navigateToNextLocation();
+                // Log which action was selected for debugging
+                if (selectedAction != null) {
+                    PokeAlertClient.LOGGER.debug("Human behavior: Selected action '{}' with chance {} (lowest among successful rolls)", 
+                        selectedAction, lowestChance);
+                }
+
+                // Execute only the selected action (lowest chance if multiple landed, or the single one that landed)
+                if (selectedAction != null) {
+                    // Handle pause/look around actions (blocking - happens immediately)
+                    if (selectedAction.equals("longPause") || selectedAction.equals("breakPause") || selectedAction.equals("lookAround")) {
+                        int pauseMs;
+                        String notificationMessage;
+                        
+                        switch (selectedAction) {
+                            case "longPause":
+                                pauseMs = config.minLongPauseMs + behaviorRandom.nextInt(config.maxLongPauseMs - config.minLongPauseMs);
+                                notificationMessage = "Taking a short break - Looking around";
+                                PokeAlertClient.LOGGER.info("Human behavior: Taking {}ms pause", pauseMs);
+                                break;
+                            case "breakPause":
+                                pauseMs = config.minBreakPauseMs + behaviorRandom.nextInt(config.maxBreakPauseMs - config.minBreakPauseMs);
+                                notificationMessage = "Taking a longer break - Looking around";
+                                PokeAlertClient.LOGGER.info("Human behavior: Taking {}ms break", pauseMs);
+                                break;
+                            case "lookAround":
+                                pauseMs = 2000 + behaviorRandom.nextInt(3000); // 2-5 seconds for looking around
+                                notificationMessage = "Looking around";
+                                PokeAlertClient.LOGGER.info("Human behavior: Taking {}ms to look around", pauseMs);
+                                break;
+                            default:
+                                pauseMs = 0;
+                                notificationMessage = null;
                         }
-                    }, pauseMs, TimeUnit.MILLISECONDS);
-                    return;
+                        
+                        if (pauseMs > 0) {
+                            // Only send notification once
+                            if (!breakNotificationSent) {
+                                sendNotification("Egg Hatcher", notificationMessage, Formatting.GRAY);
+                                breakNotificationSent = true;
+                            }
+
+                            // Timeout was already cancelled at the start of arrival callback
+                            // No need to cancel again - we're intentionally pausing, not navigating
+
+                            setBreakState(true); // Skip anti-AFK checking during break
+                            simulateCameraRotation(pauseMs);
+
+                            scheduler.schedule(() -> {
+                                setBreakState(false);
+                                breakNotificationSent = false; // Reset notification flag
+                                if (antiAfkActive && !SafetyManager.isSafetyTriggered()) {
+                                    navigateToNextLocation(null);
+                                }
+                            }, pauseMs, TimeUnit.MILLISECONDS);
+                return;
+            }
+            } else {
+                        // Handle navigation actions (non-blocking - applied to next navigation)
+                        navigateToNextLocation(selectedAction);
+                        return;
+                    }
                 }
             }
             
-            // Normal pause before next movement (0.5-3s)
-            int normalPause = 500 + behaviorRandom.nextInt(2500);
-            scheduler.schedule(() -> {
-                if (antiAfkActive && !SafetyManager.isSafetyTriggered()) {
-                    navigateToNextLocation();
-                }
-            }, normalPause, TimeUnit.MILLISECONDS);
+            // Continue to next location immediately (no blocking pause, no special action)
+            navigateToNextLocation(null);
         });
         
         // Teleport detection callback
         CoordinateMonitor.onTeleportDetected(() -> {
-            PokeAlertClient.LOGGER.warn("⚠️ Teleport/manual movement detected!");
+            PokeAlertClient.LOGGER.warn("⚠️ Teleport/Manual movement detected!");
             SafetyManager.triggerSafetyStop(SafetyManager.REASON_TELEPORT, true);
             stopBaritoneAntiAfk();
         });
@@ -756,9 +903,16 @@ public class EggHatcher {
             // In this case, we want to auto-restart, not permanent stop
             if (isAtSpawn()) {
                 PokeAlertClient.LOGGER.info("📍 Teleported to spawn - will auto-restart automation");
+                
+                // Track overworld crash: if we started in overworld and got forced to spawn
+                if (startedInOverworld && (isAutomationRunning || antiAfkActive)) {
+                    hadOverworldCrash = true;
+                    PokeAlertClient.LOGGER.info("Overworld crash detected - will mark as Overworld crash → Spawn → Overworld journey");
+                }
+                
                 // Trigger safety stop with notification but allow restart
                 SafetyManager.triggerSafetyStop(SafetyManager.REASON_WORLD_CHANGE + " (to spawn)", false); // No telegram for spawn return
-            } else {
+        } else {
                 // Went to unexpected world (not spawn, not overworld where we started)
                 PokeAlertClient.LOGGER.warn("📍 Teleported to unknown world - stopping");
                 SafetyManager.triggerSafetyStop(SafetyManager.REASON_WORLD_CHANGE, true);
@@ -812,8 +966,8 @@ public class EggHatcher {
                             message.append("⚠️ <b>Avoided Players Warning</b>\n");
                             message.append("• <b>Player:</b> <code>").append(playerName).append("</code>\n");
                             if (type.equals("nearby_vanished")) {
-                                message.append("• <b>Status:</b> <i>VANISHED (likely admin!)</i>\n");
-                            } else {
+                                message.append("• <b>Status:</b> <i> Vanished nearby</i>\n");
+        } else {
                                 message.append("• <b>Status:</b> Nearby\n");
                             }
                             message.append("• <b>Action:</b> Anti-AFK stopped immediately\n");
@@ -841,7 +995,7 @@ public class EggHatcher {
             // Instead, reset state to allow auto-restart if at spawn
             isAutomationRunning = false;
             currentState = State.IDLE;
-            spawnDetectionTime = 0;
+                    spawnDetectionTime = 0;
             antiAfkDisabledOnReconnect = false;
             
             // Cancel automation tasks but NOT monitoring
@@ -858,8 +1012,8 @@ public class EggHatcher {
                         SafetyManager.reset(); // Clear safety lock for new cycle
                         manuallyCancelled = false; // Allow monitoring to trigger
                         PokeAlertClient.LOGGER.info("🔄 Restarting monitoring after safety stop");
-                        startMonitoring();
-                    }
+                    startMonitoring();
+                }
                 }, 5, TimeUnit.SECONDS);
             } else {
                 // Not at spawn - just log
@@ -870,43 +1024,177 @@ public class EggHatcher {
     
     /**
      * v3.0.0: Navigate to the next location in queue with human-like behaviors
+     * @param preselectedAction Optional action to apply (from arrival callback selection), or null to roll for actions here
      */
-    private void navigateToNextLocation() {
+    private void navigateToNextLocation(String preselectedAction) {
         if (!antiAfkActive || SafetyManager.isSafetyTriggered() || isInBreakState) {
             return;
         }
         
-        PokeAlertConfig config = ConfigManager.getConfig();
-        
-        // Human-like behavior: Backtracking (5% chance)
-        if (config.enableHumanLikeBehavior && behaviorRandom.nextDouble() < config.backtrackChance) {
-            if (locationQueue.hasPrevious()) {
-                PokeAlertClient.LOGGER.info("Human behavior: Backtracking to previous location");
-                sendNotification("Egg Hatcher", "Backtracking to previous location", Formatting.GRAY);
-                locationQueue.goToPrevious();
-            }
+        // Guard: Don't start new navigation if Baritone is already pathing
+        // This prevents duplicate #goto commands from multiple callbacks (arrival, timeout, safety monitor)
+        if (BaritoneController.isPathing()) {
+            PokeAlertClient.LOGGER.debug("Baritone already pathing, skipping duplicate navigation");
+            return;
         }
+        
+        // Guard: Don't start navigation if camera is rotating (look around action in progress)
+        // Queue navigation to execute after camera rotation completes instead of skipping
+        if (isCameraRotating) {
+            PokeAlertClient.LOGGER.debug("Camera rotating (look around in progress), queuing navigation");
+            // Schedule navigation to execute after a short delay (camera rotation should complete soon)
+            scheduler.schedule(() -> {
+                if (!isCameraRotating && antiAfkActive && !SafetyManager.isSafetyTriggered() && !BaritoneController.isPathing()) {
+                    navigateToNextLocation(preselectedAction);
+                }
+            }, 100, TimeUnit.MILLISECONDS);
+            return;
+        }
+        
+        // Cancel any pending timeout task before starting new navigation
+        if (locationTimeoutTask != null) {
+            locationTimeoutTask.cancel(false);
+            locationTimeoutTask = null;
+        }
+        
+        // Don't navigate if we're in an actual break (long/break pause)
+        // But allow navigation during normal camera rotation (which happens while moving)
+        
+        // Stop jumping from previous action (if any) before starting new navigation
+        stopJumping();
+        
+        // Stop camera rotation when starting navigation - Baritone will handle camera with #freelook
+        if (cameraRotationTask != null) {
+            cameraRotationTask.cancel(false);
+            cameraRotationTask = null;
+            isCameraRotating = false;
+            PokeAlertClient.LOGGER.debug("Stopped camera rotation for Baritone navigation");
+        }
+        
+        PokeAlertConfig config = ConfigManager.getConfig();
         
         int[] destination = locationQueue.getCurrentDestination();
         if (destination == null) {
             PokeAlertClient.LOGGER.error("❌ No destination available!");
             return;
         }
+
+        // Apply preselected action (from arrival callback) or use stored action (from timeout)
+        // IMPORTANT: Store action to prevent re-rolling on timeout
+        boolean shouldWalk = false;
+        boolean shouldJump = false;
+        String selectedAction = preselectedAction != null ? preselectedAction : currentNavigationAction;
         
-        // Human-like behavior: Hotbar switching (10% chance)
-        if (config.enableHumanLikeBehavior && behaviorRandom.nextDouble() < config.hotbarSwitchChance) {
-            int slot = behaviorRandom.nextInt(9);
-            sendNotification("Egg Hatcher", "Switching to hotbar slot " + (slot + 1), Formatting.GRAY);
-            switchHotbarSlot(slot);
+        // Clear stored action when starting new navigation (will be set if action is selected)
+        currentNavigationAction = null;
+        
+        if (config.enableHumanLikeBehavior && selectedAction == null) {
+            // No preselected action - roll for navigation actions only (pause actions handled in arrival callback)
+            double backtrackRandom = behaviorRandom.nextDouble();
+            double walkRandom = behaviorRandom.nextDouble();
+            double hotbarRandom = behaviorRandom.nextDouble();
+            double jumpRandom = behaviorRandom.nextDouble();
+            
+            // Track which actions "landed" (random < chance) and their chance values
+            double lowestChance = Double.MAX_VALUE;
+
+            // Check backtrack action (skip if chance is 0% - disabled)
+            if (config.backtrackChance > 0 && backtrackRandom < config.backtrackChance) {
+                if (config.backtrackChance < lowestChance) {
+                    lowestChance = config.backtrackChance;
+                    selectedAction = "backtrack";
+                }
+            }
+
+            // Check walk action (skip if chance is 0% - disabled)
+            if (config.walkChance > 0 && walkRandom < config.walkChance) {
+                if (config.walkChance < lowestChance) {
+                    lowestChance = config.walkChance;
+                    selectedAction = "walk";
+                }
+            }
+
+            // Check hotbar switch action (skip if chance is 0% - disabled)
+            if (config.hotbarSwitchChance > 0 && hotbarRandom < config.hotbarSwitchChance) {
+                if (config.hotbarSwitchChance < lowestChance) {
+                    lowestChance = config.hotbarSwitchChance;
+                    selectedAction = "hotbar";
+                }
+            }
+
+            // Check jump while moving action (skip if chance is 0% - disabled)
+            if (config.jumpWhileMovingChance > 0 && jumpRandom < config.jumpWhileMovingChance) {
+                if (config.jumpWhileMovingChance < lowestChance) {
+                    lowestChance = config.jumpWhileMovingChance;
+                    selectedAction = "jump";
+                }
+            }
         }
         
-        // Human-like behavior: Walking vs running (15% chance to walk)
-        boolean shouldWalk = config.enableHumanLikeBehavior && behaviorRandom.nextDouble() < config.walkChance;
-        if (shouldWalk) {
-            PokeAlertClient.LOGGER.debug("Human behavior: Walking (no sprint)");
-            sendNotification("Egg Hatcher", "Walking to destination", Formatting.GRAY);
-            BaritoneController.setAllowSprint(false);
-        } else {
+        // Store selected action for this navigation (to reuse on timeout)
+        if (selectedAction != null) {
+            currentNavigationAction = selectedAction;
+        }
+        
+        // Execute the selected navigation action
+        if (selectedAction != null && config.enableHumanLikeBehavior) {
+            switch (selectedAction) {
+                case "backtrack":
+                    if (locationQueue.hasPrevious()) {
+                        // Get the previous destination before backtracking
+                        int[] previousDestination = locationQueue.getPreviousDestination();
+                        if (previousDestination != null) {
+                            // Check if we're already at the previous location (prevent immediate arrival callback)
+                            int currentX = (int) client.player.getX();
+                            int currentZ = (int) client.player.getZ();
+                            double distanceToPrevious = Math.sqrt(
+                                Math.pow(currentX - previousDestination[0], 2) + 
+                                Math.pow(currentZ - previousDestination[1], 2)
+                            );
+                            
+                            // If we're already at the previous location, skip backtracking to prevent immediate arrival
+                            if (distanceToPrevious <= 3.0) {
+                                PokeAlertClient.LOGGER.debug("Human behavior: Skipping backtrack - already at previous location");
+                                // Skip backtracking, continue with normal navigation
+                                selectedAction = null;
+                                currentNavigationAction = null;
+                                break;
+                            }
+                        }
+                        
+                        PokeAlertClient.LOGGER.info("Human behavior: Backtracking to previous location");
+                        sendNotification("Egg Hatcher", "Backtracking to previous location", Formatting.GRAY);
+                        locationQueue.goToPrevious();
+                        // Get new destination after backtracking
+                        destination = locationQueue.getCurrentDestination();
+                        if (destination == null) {
+                            PokeAlertClient.LOGGER.error("❌ No destination available after backtrack!");
+                            return;
+                        }
+                    }
+                    break;
+                case "walk":
+                    shouldWalk = true;
+                    PokeAlertClient.LOGGER.debug("Human behavior: Walking (no sprint)");
+                    sendNotification("Egg Hatcher", "Walking to destination", Formatting.GRAY);
+                    BaritoneController.setAllowSprint(false);
+                    break;
+                case "hotbar":
+                    int slot = behaviorRandom.nextInt(9);
+                    sendNotification("Egg Hatcher", "Switching to hotbar slot " + (slot + 1), Formatting.GRAY);
+                    switchHotbarSlot(slot);
+                    break;
+                case "jump":
+                    // Jump is only valid when sprinting (not walking)
+                    // If jump is selected, we'll enable it after navigation starts
+                    shouldJump = true;
+                    PokeAlertClient.LOGGER.debug("Human behavior: Will jump while moving");
+                    break;
+            }
+        }
+        
+        // Default to sprinting (if walking action was not selected)
+        if (!shouldWalk) {
             BaritoneController.setAllowSprint(true);
         }
         
@@ -920,12 +1208,17 @@ public class EggHatcher {
             locationQueue.getStatus(), 
             String.format("(%d, %d)", destination[0], destination[1]));
         
-        // Human-like behavior: Jumping while moving (25% chance)
-        if (config.enableHumanLikeBehavior && behaviorRandom.nextDouble() < config.jumpWhileMovingChance) {
+        // Human-like behavior: Jumping while moving - ONLY when sprinting, not walking
+        // IMPORTANT: Only execute jump if it was explicitly selected as the action
+        // This ensures only ONE action executes per navigation (backtrack OR walk OR hotbar OR jump, not multiple)
+        if (config.enableHumanLikeBehavior && "jump".equals(selectedAction) && !shouldWalk) {
             PokeAlertClient.LOGGER.debug("Human behavior: Jumping while moving");
             sendNotification("Egg Hatcher", "Jumping while moving", Formatting.GRAY);
-            // Hold jump key down for the entire movement (more natural)
-            holdJumpKey(true);
+            // Start periodic jump execution (every 100ms) for natural sprint+jump behavior
+            startJumpingWhileMoving();
+        } else if (selectedAction == null) {
+            // Default pathing - no human-like action selected
+            sendNotification("Egg Hatcher", "Default pathing executed", Formatting.GRAY);
         }
         
         // Start timeout timer
@@ -956,10 +1249,16 @@ public class EggHatcher {
         // Stop current path and try next location
         BaritoneController.stop();
         
-        // Small delay before next navigation
+        // Small delay before next navigation (check if Baritone is already pathing to prevent duplicate calls)
+        // IMPORTANT: Use stored action instead of null to prevent re-rolling on timeout
+        // If no stored action, it means this was a fresh navigation (not from timeout), so roll is OK
+        final String storedAction = currentNavigationAction;
         scheduler.schedule(() -> {
-            if (antiAfkActive && !SafetyManager.isSafetyTriggered()) {
-                navigateToNextLocation();
+            if (antiAfkActive && !SafetyManager.isSafetyTriggered() && !BaritoneController.isPathing()) {
+                // Use stored action if available, otherwise roll for new action
+                navigateToNextLocation(storedAction);
+            } else {
+                PokeAlertClient.LOGGER.debug("Skipping timeout navigation - already pathing");
             }
         }, 500, TimeUnit.MILLISECONDS);
     }
@@ -975,6 +1274,13 @@ public class EggHatcher {
         
         // Stop jumping
         stopJumping();
+        
+        // Stop camera rotation if active
+        if (cameraRotationTask != null) {
+            cameraRotationTask.cancel(false);
+            cameraRotationTask = null;
+        }
+        isCameraRotating = false;
         
         // Cancel all behavior tasks
         if (breakStateTask != null) {
@@ -1043,15 +1349,20 @@ public class EggHatcher {
         final int totalSteps = (int)(durationMs / updateInterval);
         final float stepSize = 1.0f / totalSteps;
         
+        // Mark camera rotation as active
+        isCameraRotating = true;
+        
         // Smooth interpolation using ease-in-out curve
         cameraRotationTask = scheduler.scheduleAtFixedRate(() -> {
-            if (client.player == null || !isInBreakState) {
+            if (client.player == null) {
                 if (cameraRotationTask != null) {
                     cameraRotationTask.cancel(false);
+                    cameraRotationTask = null;
                 }
-                return;
-            }
-            
+                isCameraRotating = false;
+                    return;
+                }
+                
             progress[0] += stepSize;
             if (progress[0] > 1.0f) progress[0] = 1.0f;
             
@@ -1095,6 +1406,7 @@ public class EggHatcher {
                 cameraRotationTask.cancel(false);
                 cameraRotationTask = null;
             }
+            isCameraRotating = false;
         }, durationMs, TimeUnit.MILLISECONDS);
     }
     
@@ -1128,33 +1440,107 @@ public class EggHatcher {
     }
     
     /**
-     * Hold or release the jump key (for natural sprint+jump behavior)
-     * @param hold true to hold the key down, false to release
+     * Enable jumping while Baritone is pathing using direct key press injection
+     * 
+     * Strategy:
+     * 1. Use periodic key press injection (every 100ms) to trigger jumps
+     * 2. Press and release jump key rapidly to simulate sprint-jumping
+     * 3. This works even when Baritone controls movement by injecting at game engine level
+     * 4. Stop jumping when pathing stops (arrival callback handles this)
+     * 
+     * Note: Baritone's `#set allowjump` command does NOT exist, so we use direct input injection
      */
-    private void holdJumpKey(boolean hold) {
+    private void startJumpingWhileMoving() {
+        // Stop any existing jump task (cleanup)
+        if (jumpRepeatTask != null) {
+            jumpRepeatTask.cancel(false);
+            jumpRepeatTask = null;
+        }
+        
         if (client.player == null) return;
         
-        isJumpKeyHeld = hold;
+        isJumpKeyHeld = true;
         GameOptions options = client.options;
         KeyBinding jumpKey = options.jumpKey;
         
-        client.execute(() -> {
-            if (jumpKey != null) {
-                jumpKey.setPressed(hold);
-                PokeAlertClient.LOGGER.debug("Jump key {}", hold ? "held" : "released");
+        // Start periodic jump execution - press and release jump key every 100ms
+        // This simulates continuous sprint-jumping behavior
+        jumpRepeatTask = scheduler.scheduleAtFixedRate(() -> {
+            // Check exit conditions
+            if (!antiAfkActive || !isJumpKeyHeld || client.player == null || !BaritoneController.isPathing()) {
+                // Release jump key before stopping
+                if (jumpKey != null) {
+                    client.execute(() -> {
+                        if (jumpKey != null) {
+                            jumpKey.setPressed(false);
+                        }
+                    });
+                }
+                
+                if (jumpRepeatTask != null) {
+                    jumpRepeatTask.cancel(false);
+                    jumpRepeatTask = null;
+                }
+                isJumpKeyHeld = false;
+                PokeAlertClient.LOGGER.debug("Jump task: Stopping (pathing stopped or conditions failed)");
+                return;
             }
-        });
+            
+            // Press and release jump key to trigger jump
+            // This works even when Baritone controls movement by injecting at the game engine level
+            client.execute(() -> {
+                if (jumpKey != null && isJumpKeyHeld && BaritoneController.isPathing() && client.player != null) {
+                    // Press jump key
+                    jumpKey.setPressed(true);
+                    // Immediately release to trigger jump action
+                    // The game will process the jump on the next tick
+                }
+            });
+            
+            // Release jump key after a short delay (allows jump to register)
+                        scheduler.schedule(() -> {
+                if (jumpKey != null && isJumpKeyHeld) {
+                    client.execute(() -> {
+                        if (jumpKey != null) {
+                            jumpKey.setPressed(false);
+                        }
+                    });
+                }
+            }, 50, TimeUnit.MILLISECONDS);
+        }, 0, 100, TimeUnit.MILLISECONDS);
+        
+        PokeAlertClient.LOGGER.debug("Jump while moving: Enabled via direct key press injection");
     }
     
     /**
-     * Stop jumping (release jump key)
+     * Stop jumping (release jump key and stop task)
      */
     private void stopJumping() {
+        isJumpKeyHeld = false;
+        recentPositions.clear(); // Clear movement tracking
+        
+        if (jumpRepeatTask != null) {
+            jumpRepeatTask.cancel(false);
+            jumpRepeatTask = null;
+        }
+        
         if (jumpTask != null) {
             jumpTask.cancel(false);
             jumpTask = null;
         }
-        holdJumpKey(false);
+        
+        // Release jump key
+        if (client.player != null) {
+            GameOptions options = client.options;
+            KeyBinding jumpKey = options.jumpKey;
+            client.execute(() -> {
+                if (jumpKey != null) {
+                    jumpKey.setPressed(false);
+                }
+            });
+        }
+        
+        PokeAlertClient.LOGGER.debug("Jump while moving: Disabled");
     }
     
     /**
@@ -1197,12 +1583,12 @@ public class EggHatcher {
                 String location = isAtSpawn() ? "spawn" : "overworld";
                 
                 // v3.0.0: Check if Anti-AFK should be running at overworld
-                if (!isAtSpawn() && antiAfkActive && !isInBreakState) {
+                if (!isAtSpawn() && antiAfkActive && !isInBreakState && !isCameraRotating) {
                     // We're at overworld with Anti-AFK active - verify Baritone is pathing
-                    // Skip check if in break state (intentional pause)
+                    // Skip check if in break state (intentional pause) or camera rotating (normal behavior)
                     if (!BaritoneController.isPathing() && !SafetyManager.isSafetyTriggered()) {
                         PokeAlertClient.LOGGER.warn("⚠️ Safety: Baritone not pathing at overworld, restarting navigation");
-                        navigateToNextLocation();
+                        navigateToNextLocation(null);
                     }
                 }
                 
@@ -1296,7 +1682,8 @@ public class EggHatcher {
         PokeAlertClient.LOGGER.info("🎯 Step 5/5: Completion - {} locations visited, Anti-AFK continues at " + location, 
             locationQueue.getVisitedCount());
         
-        // Send Telegram notification
+        // Send Telegram notification for ALL successful completions
+        // Include journey type in message (already handled in sendTelegramNotification)
         long duration = (System.currentTimeMillis() - automationStartTime) / 1000;
         sendTelegramNotification(true, duration);
         
@@ -1309,6 +1696,9 @@ public class EggHatcher {
      */
     private void handleStuckAtSpawn() {
         isAutomationRunning = false;
+        
+        // Don't reset journey tracking flags here - they should persist until Telegram notification is sent
+        // Flags are reset in sendTelegramNotification() after sending, or in stopAutomation() if no notification
         
         // Stop Anti-AFK state monitoring
         AntiAfkManager.stopStateMonitoring();
@@ -1353,6 +1743,18 @@ public class EggHatcher {
         spawnDetectionTime = 0;
         step5RetryCount = 0;
         manuallyCancelled = true;
+        
+        // Reset journey tracking flags (backup - in case notification wasn't sent)
+        // Primary reset is in sendTelegramNotification(), but this ensures flags are cleared
+        hadDisconnect = false;
+        hadOverworldCrash = false;
+        startedInOverworld = false;
+        
+        // Clear stored navigation action
+        currentNavigationAction = null;
+        
+        // Reset arrival processed flag
+        arrivalProcessed.set(false);
         
         // v3.0.0: Stop Baritone Anti-AFK
         stopBaritoneAntiAfk();
@@ -1434,12 +1836,36 @@ public class EggHatcher {
     
     /**
      * Send Telegram notification
+     * 
+     * Notification Rules:
+     * - If automation started from spawn/step 1 (startedFromSpawn == true) → send notification on successful completion
+     * - If automation started from overworld/step 4 (startedInOverworld == true) → skip notification on successful completion
+     * - Any other notification (stuck at spawn, failures, etc.) → send regardless of start location
      */
     private void sendTelegramNotification(boolean success, long durationSeconds) {
         PokeAlertConfig config = PokeAlertClient.getInstance().config;
         
-        if (config.telegramEnabled) {
+        // Check both telegramEnabled and isTelegramValid
+        if (!config.telegramEnabled || !config.isTelegramValid()) {
+            PokeAlertClient.LOGGER.debug("Telegram notification skipped - not enabled or not configured");
+            return;
+        }
+        
+        // Skip notification if automation started from overworld/step 4 AND it's a successful completion
+        // This prevents notifications when user manually starts Anti-AFK in overworld
+        if (success && startedInOverworld) {
+            PokeAlertClient.LOGGER.debug("Telegram notification skipped - automation started from overworld/step 4 (successful completion)");
+            // Still reset flags even if we skip notification
+            hadDisconnect = false;
+            hadOverworldCrash = false;
+            startedInOverworld = false;
+            startedFromSpawn = false;
+            return;
+        }
+        
+        // All other cases: send notification (spawn starts, failures, stuck at spawn, etc.)
             CompletableFuture.runAsync(() -> {
+            try {
                 TelegramNotification telegram = new TelegramNotification();
                 telegram.initialize();
                 
@@ -1453,20 +1879,40 @@ public class EggHatcher {
                     message.append("• <b>Status:</b> <i>Unsuccessful</i> 🚨\n");
                 }
                 
-                // Journey line
-                message.append("• <b>Journey:</b> Spawn → Overworld\n");
+                // Journey line - detect journey type
+                String journey;
+                if (hadDisconnect) {
+                    journey = "Disconnect → Reconnect";
+                } else if (hadOverworldCrash) {
+                    journey = "Overworld crash → Spawn → Overworld";
+                } else if (startedFromSpawn) {
+                    journey = "Spawn → Overworld";
+                } else {
+                    journey = "Overworld (direct)";
+                }
+                message.append("• <b>Journey:</b> ").append(journey).append("\n");
                 
                 // Include avoided players info on successful completion
                 if (success) {
                     List<String> onlineAvoided = PlayerMonitor.getCurrentOnlineAvoidedPlayers();
                     if (!onlineAvoided.isEmpty()) {
-                        message.append("• <b>Avoided Players Online:</b> <code>").append(String.join(", ", onlineAvoided)).append("</code>\n");
+                        message.append("• <b>OPs Online:</b> <code>").append(String.join(",", onlineAvoided)).append("</code>\n");
                     }
                 }
                 
                 telegram.sendEggTimerNotification(message.toString());
-            });
-        }
+                PokeAlertClient.LOGGER.info("EggHatcher: Telegram notification sent (success={}, duration={}s)", success, durationSeconds);
+            } catch (Exception e) {
+                PokeAlertClient.LOGGER.error("EggHatcher: Failed to send Telegram notification", e);
+            } finally {
+                // Reset journey tracking flags AFTER notification attempt (success or failure)
+                // This ensures flags are always reset, even if notification fails
+                hadDisconnect = false;
+                hadOverworldCrash = false;
+                startedInOverworld = false;
+                startedFromSpawn = false;
+            }
+        });
     }
     
     /**

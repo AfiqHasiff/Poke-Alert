@@ -147,6 +147,17 @@ public class LocationQueue {
     }
     
     /**
+     * Get the previous location (before backtracking).
+     * @return int[] with [x, z] of previous location, or null if no previous location
+     */
+    public int[] getPreviousDestination() {
+        if (currentIndex > 0) {
+            return locations.get(currentIndex - 1);
+        }
+        return null;
+    }
+    
+    /**
      * Go back to the previous location (backtracking behavior).
      * Decrements currentIndex to revisit the last visited location.
      */

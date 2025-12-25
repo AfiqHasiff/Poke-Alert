@@ -37,7 +37,7 @@ public class SafetyManager {
     private static Consumer<String> onSafetyStopCallback;
     
     // Safety reason constants
-    public static final String REASON_TELEPORT = "Teleport/manual movement detected";
+    public static final String REASON_TELEPORT = "Teleport detected";
     public static final String REASON_PLAYER_LIST = "Avoided player detected in server";
     public static final String REASON_PLAYER_NEARBY = "Avoided player detected nearby";
     public static final String REASON_WORLD_CHANGE = "Unexpected world change";
@@ -172,10 +172,8 @@ public class SafetyManager {
                 String timeStr = new SimpleDateFormat("HH:mm:ss").format(new Date());
                 
                 StringBuilder message = new StringBuilder();
-                message.append("🚨 <b>PokéAlert Safety Stop</b>\n");
+                message.append("🚨 <b>Egg Hatcher Safety Stop</b>\n");
                 message.append("• <b>Reason:</b> <i>").append(escapeHtml(reason)).append("</i>\n");
-                message.append("• <b>Time:</b> <code>").append(timeStr).append("</code>\n");
-                message.append("• <b>Action:</b> Anti-AFK stopped\n");
                 message.append("⚠️ <i>Manual restart required</i>");
                 
                 telegram.sendEggTimerNotification(message.toString());

@@ -74,6 +74,20 @@ public class PokeAlertConfigScreen extends Screen {
     private TextFieldWidget regionZ2Field;
     private TextFieldWidget playersToAvoidField;
     
+    // Human-like behavior settings
+    private ButtonWidget enableHumanLikeBehaviorButton;
+    private ChanceSliderWidget longPauseChanceSlider;
+    private ChanceSliderWidget breakPauseChanceSlider;
+    private ChanceSliderWidget backtrackChanceSlider;
+    private ChanceSliderWidget walkChanceSlider;
+    private ChanceSliderWidget hotbarSwitchChanceSlider;
+    private ChanceSliderWidget jumpWhileMovingChanceSlider;
+    private ChanceSliderWidget lookAroundChanceSlider;
+    private TextFieldWidget minLongPauseField;
+    private TextFieldWidget maxLongPauseField;
+    private TextFieldWidget minBreakPauseField;
+    private TextFieldWidget maxBreakPauseField;
+    
     // Text fields
     private TextFieldWidget whitelistField;
     private TextFieldWidget blacklistField;
@@ -172,6 +186,20 @@ public class PokeAlertConfigScreen extends Screen {
         copy.replenishCount = original.replenishCount;
         copy.locationsForStep6 = original.locationsForStep6;
         copy.maxConsecutiveTimeouts = original.maxConsecutiveTimeouts;
+        
+        // Human-like behavior settings
+        copy.enableHumanLikeBehavior = original.enableHumanLikeBehavior;
+        copy.minLongPauseMs = original.minLongPauseMs;
+        copy.maxLongPauseMs = original.maxLongPauseMs;
+        copy.minBreakPauseMs = original.minBreakPauseMs;
+        copy.maxBreakPauseMs = original.maxBreakPauseMs;
+        copy.longPauseChance = original.longPauseChance;
+        copy.breakPauseChance = original.breakPauseChance;
+        copy.backtrackChance = original.backtrackChance;
+        copy.walkChance = original.walkChance;
+        copy.hotbarSwitchChance = original.hotbarSwitchChance;
+        copy.jumpWhileMovingChance = original.jumpWhileMovingChance;
+        copy.lookAroundChance = original.lookAroundChance;
         
         return copy;
     }
@@ -519,6 +547,143 @@ public class PokeAlertConfigScreen extends Screen {
         addSelectableChild(playersToAvoidField);
         addDrawableChild(playersToAvoidField);
         currentY += 30 + SECTION_SPACING;
+        
+        // ========== Human-like Behavior Section ==========
+        // Enable toggle
+        enableHumanLikeBehaviorButton = addNotificationRow(currentY,
+            "Human-like Behavior",
+            "Enable random human-like actions during Anti-AFK",
+            config.enableHumanLikeBehavior,
+            button -> {
+                config.enableHumanLikeBehavior = !config.enableHumanLikeBehavior;
+                updateToggleButton(enableHumanLikeBehaviorButton, config.enableHumanLikeBehavior);
+                // Enable/disable all sliders based on toggle
+                updateHumanLikeBehaviorWidgetsEnabled(config.enableHumanLikeBehavior);
+            });
+        currentY += ROW_HEIGHT;
+        
+        // Pause duration fields
+        int pauseFieldWidth = 80;
+        int pauseLabelWidth = this.textRenderer.getWidth("Long Pause Duration (ms):");
+        int pauseFieldX = SIDE_MARGIN + pauseLabelWidth + 10;
+        
+        minLongPauseField = new TextFieldWidget(
+            this.textRenderer,
+            pauseFieldX,
+            currentY - (int)scrollOffset,
+            pauseFieldWidth,
+            BUTTON_HEIGHT,
+            Text.literal("Min")
+        );
+        minLongPauseField.setMaxLength(6);
+        minLongPauseField.setText(String.valueOf(config.minLongPauseMs));
+        minLongPauseField.active = config.enableHumanLikeBehavior;
+        addSelectableChild(minLongPauseField);
+        addDrawableChild(minLongPauseField);
+        
+        maxLongPauseField = new TextFieldWidget(
+            this.textRenderer,
+            pauseFieldX + pauseFieldWidth + 10,
+            currentY - (int)scrollOffset,
+            pauseFieldWidth,
+            BUTTON_HEIGHT,
+            Text.literal("Max")
+        );
+        maxLongPauseField.setMaxLength(6);
+        maxLongPauseField.setText(String.valueOf(config.maxLongPauseMs));
+        maxLongPauseField.active = config.enableHumanLikeBehavior;
+        addSelectableChild(maxLongPauseField);
+        addDrawableChild(maxLongPauseField);
+        currentY += 30;
+        
+        minBreakPauseField = new TextFieldWidget(
+            this.textRenderer,
+            pauseFieldX,
+            currentY - (int)scrollOffset,
+            pauseFieldWidth,
+            BUTTON_HEIGHT,
+            Text.literal("Min")
+        );
+        minBreakPauseField.setMaxLength(6);
+        minBreakPauseField.setText(String.valueOf(config.minBreakPauseMs));
+        minBreakPauseField.active = config.enableHumanLikeBehavior;
+        addSelectableChild(minBreakPauseField);
+        addDrawableChild(minBreakPauseField);
+        
+        maxBreakPauseField = new TextFieldWidget(
+            this.textRenderer,
+            pauseFieldX + pauseFieldWidth + 10,
+            currentY - (int)scrollOffset,
+            pauseFieldWidth,
+            BUTTON_HEIGHT,
+            Text.literal("Max")
+        );
+        maxBreakPauseField.setMaxLength(6);
+        maxBreakPauseField.setText(String.valueOf(config.maxBreakPauseMs));
+        maxBreakPauseField.active = config.enableHumanLikeBehavior;
+        addSelectableChild(maxBreakPauseField);
+        addDrawableChild(maxBreakPauseField);
+        currentY += 30;
+        
+        // Chance sliders
+        int chanceSliderX = this.width - SIDE_MARGIN - 200;
+        int chanceSliderWidth = 200;
+        
+        longPauseChanceSlider = new ChanceSliderWidget(
+            chanceSliderX, currentY - (int)scrollOffset, chanceSliderWidth, 20,
+            Text.literal("Long Pause Chance: "), config.longPauseChance, "longPauseChance"
+        );
+        longPauseChanceSlider.active = config.enableHumanLikeBehavior;
+        addDrawableChild(longPauseChanceSlider);
+        currentY += ROW_HEIGHT;
+        
+        breakPauseChanceSlider = new ChanceSliderWidget(
+            chanceSliderX, currentY - (int)scrollOffset, chanceSliderWidth, 20,
+            Text.literal("Break Pause Chance: "), config.breakPauseChance, "breakPauseChance"
+        );
+        breakPauseChanceSlider.active = config.enableHumanLikeBehavior;
+        addDrawableChild(breakPauseChanceSlider);
+        currentY += ROW_HEIGHT;
+        
+        backtrackChanceSlider = new ChanceSliderWidget(
+            chanceSliderX, currentY - (int)scrollOffset, chanceSliderWidth, 20,
+            Text.literal("Backtrack Chance: "), config.backtrackChance, "backtrackChance"
+        );
+        backtrackChanceSlider.active = config.enableHumanLikeBehavior;
+        addDrawableChild(backtrackChanceSlider);
+        currentY += ROW_HEIGHT;
+        
+        walkChanceSlider = new ChanceSliderWidget(
+            chanceSliderX, currentY - (int)scrollOffset, chanceSliderWidth, 20,
+            Text.literal("Walk Chance: "), config.walkChance, "walkChance"
+        );
+        walkChanceSlider.active = config.enableHumanLikeBehavior;
+        addDrawableChild(walkChanceSlider);
+        currentY += ROW_HEIGHT;
+        
+        hotbarSwitchChanceSlider = new ChanceSliderWidget(
+            chanceSliderX, currentY - (int)scrollOffset, chanceSliderWidth, 20,
+            Text.literal("Hotbar Switch Chance: "), config.hotbarSwitchChance, "hotbarSwitchChance"
+        );
+        hotbarSwitchChanceSlider.active = config.enableHumanLikeBehavior;
+        addDrawableChild(hotbarSwitchChanceSlider);
+        currentY += ROW_HEIGHT;
+        
+        jumpWhileMovingChanceSlider = new ChanceSliderWidget(
+            chanceSliderX, currentY - (int)scrollOffset, chanceSliderWidth, 20,
+            Text.literal("Jump While Moving Chance: "), config.jumpWhileMovingChance, "jumpWhileMovingChance"
+        );
+        jumpWhileMovingChanceSlider.active = config.enableHumanLikeBehavior;
+        addDrawableChild(jumpWhileMovingChanceSlider);
+        currentY += ROW_HEIGHT;
+        
+        lookAroundChanceSlider = new ChanceSliderWidget(
+            chanceSliderX, currentY - (int)scrollOffset, chanceSliderWidth, 20,
+            Text.literal("Look Around Chance: "), config.lookAroundChance, "lookAroundChance"
+        );
+        lookAroundChanceSlider.active = config.enableHumanLikeBehavior;
+        addDrawableChild(lookAroundChanceSlider);
+        currentY += ROW_HEIGHT + SECTION_SPACING;
 
         // ========== Custom Lists Section ==========
         // Calculate proper label width based on actual text rendering
@@ -788,6 +953,18 @@ public class PokeAlertConfigScreen extends Screen {
         String playersText = playersToAvoidField.getText().trim();
         config.playersToAvoid = parseList(playersText);
         
+        // Parse human-like behavior settings
+        try {
+            config.minLongPauseMs = Integer.parseInt(minLongPauseField.getText().trim());
+            config.maxLongPauseMs = Integer.parseInt(maxLongPauseField.getText().trim());
+            config.minBreakPauseMs = Integer.parseInt(minBreakPauseField.getText().trim());
+            config.maxBreakPauseMs = Integer.parseInt(maxBreakPauseField.getText().trim());
+        } catch (NumberFormatException e) {
+            PokeAlertClient.LOGGER.warn("Invalid pause duration values, keeping existing values");
+        }
+        
+        // Note: Chance values are already updated by ChanceSliderWidget.applyValue() when sliders are moved
+        
         // Validate timing config
         config.validateTimingConfig();
         
@@ -1041,6 +1218,57 @@ public class PokeAlertConfigScreen extends Screen {
             0xFFFFFF
         );
         currentY += 30 + SECTION_SPACING;
+        
+        // Draw separator line
+        drawHorizontalSeparator(context, currentY - 10);
+        
+        // Human-like Behavior header
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("Human-like Behavior").formatted(Formatting.AQUA),
+            SIDE_MARGIN,
+            currentY - 15,
+            0xFFFFFF
+        );
+        
+        drawCategoryWithDescription(context, "Human-like Behavior", "Enable random human-like actions during Anti-AFK", currentY);
+        currentY += ROW_HEIGHT;
+        
+        // Long pause duration label
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("Long Pause Duration (ms):"),
+            SIDE_MARGIN,
+            currentY + 2,
+            0xFFFFFF
+        );
+        currentY += 30;
+        
+        // Break pause duration label
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("Break Pause Duration (ms):"),
+            SIDE_MARGIN,
+            currentY + 2,
+            0xFFFFFF
+        );
+        currentY += 30;
+        
+        // Chance slider labels
+        drawCategoryWithDescription(context, "Long Pause Chance", "5-15s pause with camera rotation", currentY);
+        currentY += ROW_HEIGHT;
+        drawCategoryWithDescription(context, "Break Pause Chance", "30-60s break with camera rotation", currentY);
+        currentY += ROW_HEIGHT;
+        drawCategoryWithDescription(context, "Backtrack Chance", "Revisit previous location", currentY);
+        currentY += ROW_HEIGHT;
+        drawCategoryWithDescription(context, "Walk Chance", "Walk instead of sprint", currentY);
+        currentY += ROW_HEIGHT;
+        drawCategoryWithDescription(context, "Hotbar Switch Chance", "Switch to random hotbar slot", currentY);
+        currentY += ROW_HEIGHT;
+        drawCategoryWithDescription(context, "Jump While Moving Chance", "Jump while sprinting", currentY);
+        currentY += ROW_HEIGHT;
+        drawCategoryWithDescription(context, "Look Around Chance", "Look around after arrival", currentY);
+        currentY += ROW_HEIGHT + SECTION_SPACING;
         
         // Draw separator line
         drawHorizontalSeparator(context, currentY - 10);
@@ -1314,6 +1542,20 @@ public class PokeAlertConfigScreen extends Screen {
     
     // v3.0.0: getAntiAfkKeybindText() REMOVED - no longer using external Anti-AFK keybind
     
+    private void updateHumanLikeBehaviorWidgetsEnabled(boolean enabled) {
+        if (longPauseChanceSlider != null) longPauseChanceSlider.active = enabled;
+        if (breakPauseChanceSlider != null) breakPauseChanceSlider.active = enabled;
+        if (backtrackChanceSlider != null) backtrackChanceSlider.active = enabled;
+        if (walkChanceSlider != null) walkChanceSlider.active = enabled;
+        if (hotbarSwitchChanceSlider != null) hotbarSwitchChanceSlider.active = enabled;
+        if (jumpWhileMovingChanceSlider != null) jumpWhileMovingChanceSlider.active = enabled;
+        if (lookAroundChanceSlider != null) lookAroundChanceSlider.active = enabled;
+        if (minLongPauseField != null) minLongPauseField.active = enabled;
+        if (maxLongPauseField != null) maxLongPauseField.active = enabled;
+        if (minBreakPauseField != null) minBreakPauseField.active = enabled;
+        if (maxBreakPauseField != null) maxBreakPauseField.active = enabled;
+    }
+    
     /**
      * Custom slider widget for volume control
      */
@@ -1333,6 +1575,53 @@ public class PokeAlertConfigScreen extends Screen {
         @Override
         protected void applyValue() {
             config.inGameSoundVolume = (float) this.value;
+        }
+    }
+    
+    /**
+     * Custom slider widget for chance values (0.0 to 1.0, displayed as percentage)
+     */
+    private class ChanceSliderWidget extends SliderWidget {
+        private final Text prefix;
+        private final String configField; // Field name to update in config
+        
+        public ChanceSliderWidget(int x, int y, int width, int height, Text prefix, double value, String configField) {
+            super(x, y, width, height, prefix.copy().append(Text.literal(String.format("%.1f%%", value * 100))), value);
+            this.prefix = prefix;
+            this.configField = configField;
+        }
+        
+        @Override
+        protected void updateMessage() {
+            this.setMessage(prefix.copy().append(Text.literal(String.format("%.1f%%", this.value * 100))));
+        }
+        
+        @Override
+        protected void applyValue() {
+            // Update config field based on which slider this is
+            switch (configField) {
+                case "longPauseChance":
+                    config.longPauseChance = this.value;
+                    break;
+                case "breakPauseChance":
+                    config.breakPauseChance = this.value;
+                    break;
+                case "backtrackChance":
+                    config.backtrackChance = this.value;
+                    break;
+                case "walkChance":
+                    config.walkChance = this.value;
+                    break;
+                case "hotbarSwitchChance":
+                    config.hotbarSwitchChance = this.value;
+                    break;
+                case "jumpWhileMovingChance":
+                    config.jumpWhileMovingChance = this.value;
+                    break;
+                case "lookAroundChance":
+                    config.lookAroundChance = this.value;
+                    break;
+            }
         }
     }
 }
