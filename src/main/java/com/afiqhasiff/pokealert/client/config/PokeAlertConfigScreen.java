@@ -37,7 +37,13 @@ public class PokeAlertConfigScreen extends Screen {
     private static final int SCROLL_SPEED = 10;
     private static final int TOP_MARGIN = 35; // Space for title
     private static final int BOTTOM_MARGIN = 50; // Space for buttons
-    private static final int SEPARATOR_COLOR = 0x40FFFFFF; // Semi-transparent white
+    private static final int SEPARATOR_COLOR = 0x40FFFFFF; // Semi-transparent white (ARGB)
+    // Color constants using ARGB format (0xAARRGGBB)
+    private static final int COLOR_WHITE = 0xFFFFFFFF;
+    private static final int COLOR_GRAY = 0xFF808080;
+    private static final int COLOR_YELLOW = 0xFFFFFF00;
+    private static final int COLOR_AQUA = 0xFF00FFFF;
+    private static final int COLOR_GOLD = 0xFFFFD700;
     private boolean isDraggingScrollbar = false;
     private double dragStartY = 0;
     
@@ -1024,11 +1030,16 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("PokéAlert v3.0.0").formatted(Formatting.GOLD),
             this.width / 2,
             15,
-            0xFFFFFF
+            COLOR_WHITE
         );
         
         // Apply scroll offset to all content
         int currentY = 50 - (int)scrollOffset;
+        
+        // Enable scissor clipping for scrollable content area
+        int scrollAreaTop = TOP_MARGIN;
+        int scrollAreaBottom = this.height - BOTTOM_MARGIN;
+        context.enableScissor(SIDE_MARGIN, scrollAreaTop, this.width - SIDE_MARGIN, scrollAreaBottom);
         
         // Master toggle section
         currentY += 10;
@@ -1037,7 +1048,7 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("Master Toggle").formatted(Formatting.YELLOW),
             SIDE_MARGIN,
             currentY + 5,
-            0xFFFFFF
+            COLOR_WHITE
         );
         currentY += ROW_HEIGHT;
         
@@ -1047,14 +1058,14 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("Toggle Keybind"),
             SIDE_MARGIN,
             currentY + 2,
-            0xFFFFFF
+            COLOR_WHITE
         );
         context.drawTextWithShadow(
             this.textRenderer,
             Text.literal("Quick toggle mod on/off").formatted(Formatting.GRAY),
             SIDE_MARGIN,
             currentY + 12,
-            0x808080
+            COLOR_GRAY
         );
         currentY += ROW_HEIGHT + SECTION_SPACING;
         
@@ -1067,7 +1078,7 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("Detection Categories").formatted(Formatting.AQUA),
             SIDE_MARGIN,
             currentY - 15,
-            0xFFFFFF
+            COLOR_WHITE
         );
         
         // Category labels and descriptions
@@ -1095,7 +1106,7 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("Notification Settings").formatted(Formatting.AQUA),
             SIDE_MARGIN,
             currentY - 15,
-            0xFFFFFF
+            COLOR_WHITE
         );
         
         drawCategoryWithDescription(context, "In-Game Text", "Show chat notifications", currentY);
@@ -1110,14 +1121,14 @@ public class PokeAlertConfigScreen extends Screen {
                 Text.literal("Sound Volume"),
                 SIDE_MARGIN,
                 currentY + 2,
-                0xFFFFFF
+                COLOR_WHITE
             );
             context.drawTextWithShadow(
                 this.textRenderer,
                 Text.literal("Adjust notification sound volume").formatted(Formatting.GRAY),
                 SIDE_MARGIN,
                 currentY + 12,
-                0x808080
+                COLOR_GRAY
             );
         }
         currentY += ROW_HEIGHT;
@@ -1134,7 +1145,7 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("Egg Timer").formatted(Formatting.AQUA),
             SIDE_MARGIN,
             currentY - 15,
-            0xFFFFFF
+            COLOR_WHITE
         );
         
         // Egg timer duration label
@@ -1154,7 +1165,7 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("Egg Hatcher").formatted(Formatting.AQUA),
             SIDE_MARGIN,
             currentY - 15,
-            0xFFFFFF
+            COLOR_WHITE
         );
         
         // Egg hatcher toggle label
@@ -1173,7 +1184,7 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("Return Command:"),
             SIDE_MARGIN,
             currentY + 2,
-            0xFFFFFF
+            COLOR_WHITE
         );
         currentY += 30 + SECTION_SPACING;
         
@@ -1186,7 +1197,7 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("Anti-AFK Region").formatted(Formatting.AQUA),
             SIDE_MARGIN,
             currentY - 15,
-            0xFFFFFF
+            COLOR_WHITE
         );
         
         // Region Corner 1 label
@@ -1195,7 +1206,7 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("Region Corner 1 (X, Z):"),
             SIDE_MARGIN,
             currentY + 2,
-            0xFFFFFF
+            COLOR_WHITE
         );
         currentY += 30;
         
@@ -1205,7 +1216,7 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("Region Corner 2 (X, Z):"),
             SIDE_MARGIN,
             currentY + 2,
-            0xFFFFFF
+            COLOR_WHITE
         );
         currentY += 30;
         
@@ -1215,7 +1226,7 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("Players to Avoid:"),
             SIDE_MARGIN,
             currentY + 2,
-            0xFFFFFF
+            COLOR_WHITE
         );
         currentY += 30 + SECTION_SPACING;
         
@@ -1228,7 +1239,7 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("Human-like Behavior").formatted(Formatting.AQUA),
             SIDE_MARGIN,
             currentY - 15,
-            0xFFFFFF
+            COLOR_WHITE
         );
         
         drawCategoryWithDescription(context, "Human-like Behavior", "Enable random human-like actions during Anti-AFK", currentY);
@@ -1240,7 +1251,7 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("Long Pause Duration (ms):"),
             SIDE_MARGIN,
             currentY + 2,
-            0xFFFFFF
+            COLOR_WHITE
         );
         currentY += 30;
         
@@ -1250,7 +1261,7 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("Break Pause Duration (ms):"),
             SIDE_MARGIN,
             currentY + 2,
-            0xFFFFFF
+            COLOR_WHITE
         );
         currentY += 30;
         
@@ -1279,7 +1290,7 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("Custom Lists").formatted(Formatting.AQUA),
             SIDE_MARGIN,
             currentY - 15,
-            0xFFFFFF
+            COLOR_WHITE
         );
         
         currentY += 5;
@@ -1290,7 +1301,7 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("Whitelist:"),
             SIDE_MARGIN,
             currentY + 2,  // Vertically center with text field
-            0xFFFFFF
+            COLOR_WHITE
         );
         currentY += 30;
         
@@ -1299,7 +1310,7 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("Blacklist:"),
             SIDE_MARGIN,
             currentY + 2,  // Vertically center with text field
-            0xFFFFFF
+            COLOR_WHITE
         );
         currentY += 30;
         
@@ -1308,7 +1319,7 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("Name Filter:"),
             SIDE_MARGIN,
             currentY + 2,  // Vertically center with text field
-            0xFFFFFF
+            COLOR_WHITE
         );
         currentY += 30;  // Move to next row
         
@@ -1317,11 +1328,17 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("Excluded:"),
             SIDE_MARGIN,
             currentY + 2,  // Vertically center with text field
-            0xFFFFFF
+            COLOR_WHITE
         );
+        
+        // Disable scissor clipping before rendering widgets
+        context.disableScissor();
         
         // Render widgets
         super.render(context, mouseX, mouseY, delta);
+        
+        // Re-enable scissor for scrollbar rendering
+        context.enableScissor(SIDE_MARGIN, scrollAreaTop, this.width - SIDE_MARGIN, scrollAreaBottom);
         
         // Draw scroll indicator if content is scrollable
         if (maxScroll > 0) {
@@ -1337,6 +1354,9 @@ public class PokeAlertConfigScreen extends Screen {
             // Draw scrollbar thumb
             context.fill(scrollbarX, thumbY, scrollbarX + 5, thumbY + thumbHeight, 0x80FFFFFF);
         }
+        
+        // Disable scissor clipping after all rendering is complete
+        context.disableScissor();
     }
 
     private void drawCategoryWithDescription(DrawContext context, String label, String description, int y) {
@@ -1345,14 +1365,14 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal(label),
             SIDE_MARGIN,
             y + 2,
-            0xFFFFFF
+            COLOR_WHITE
         );
         context.drawTextWithShadow(
             this.textRenderer,
             Text.literal(description).formatted(Formatting.GRAY),
             SIDE_MARGIN,
             y + 12,
-            0x808080
+            COLOR_GRAY
         );
     }
     
@@ -1410,9 +1430,9 @@ public class PokeAlertConfigScreen extends Screen {
             double oldScroll = scrollOffset;
             scrollOffset = scrollPercent * maxScroll;
             
-            // Reinitialize if scroll changed significantly
-            if (Math.abs(oldScroll - scrollOffset) > 1) {
-                init();
+            // Update widget positions when scroll changes significantly
+            if (Math.abs(oldScroll - scrollOffset) > 1.0) {
+                updateWidgetPositions();
             }
             return true;
         }
@@ -1439,11 +1459,53 @@ public class PokeAlertConfigScreen extends Screen {
         scrollOffset = scrollOffset - verticalAmount * SCROLL_SPEED;
         scrollOffset = Math.max(0, Math.min(maxScroll, scrollOffset));
         
-        // Reinitialize widgets if scroll changed
-        if (oldScroll != scrollOffset) {
-            init();
+        // Update widget positions when scroll changes significantly
+        // This ensures widgets stay aligned with text labels
+        if (Math.abs(oldScroll - scrollOffset) > 1.0) {
+            updateWidgetPositions();
         }
         return true;
+    }
+    
+    /**
+     * Update widget positions based on current scroll offset.
+     * We need to recreate widgets with new positions to keep them aligned with text.
+     */
+    private void updateWidgetPositions() {
+        // Preserve text field content before recreating
+        String whitelistText = whitelistField != null ? whitelistField.getText() : "";
+        String blacklistText = blacklistField != null ? blacklistField.getText() : "";
+        String blacklistCharText = blacklistCharField != null ? blacklistCharField.getText() : "";
+        String excludedWorldsText = excludedWorldsField != null ? excludedWorldsField.getText() : "";
+        String realmReturnCommandText = realmReturnCommandField != null ? realmReturnCommandField.getText() : "";
+        String regionX1Text = regionX1Field != null ? regionX1Field.getText() : "";
+        String regionZ1Text = regionZ1Field != null ? regionZ1Field.getText() : "";
+        String regionX2Text = regionX2Field != null ? regionX2Field.getText() : "";
+        String regionZ2Text = regionZ2Field != null ? regionZ2Field.getText() : "";
+        String playersToAvoidText = playersToAvoidField != null ? playersToAvoidField.getText() : "";
+        String minLongPauseText = minLongPauseField != null ? minLongPauseField.getText() : "";
+        String maxLongPauseText = maxLongPauseField != null ? maxLongPauseField.getText() : "";
+        String minBreakPauseText = minBreakPauseField != null ? minBreakPauseField.getText() : "";
+        String maxBreakPauseText = maxBreakPauseField != null ? maxBreakPauseField.getText() : "";
+        
+        // Recreate widgets with updated positions
+        init();
+        
+        // Restore text field content after recreation
+        if (whitelistField != null && !whitelistText.isEmpty()) whitelistField.setText(whitelistText);
+        if (blacklistField != null && !blacklistText.isEmpty()) blacklistField.setText(blacklistText);
+        if (blacklistCharField != null && !blacklistCharText.isEmpty()) blacklistCharField.setText(blacklistCharText);
+        if (excludedWorldsField != null && !excludedWorldsText.isEmpty()) excludedWorldsField.setText(excludedWorldsText);
+        if (realmReturnCommandField != null && !realmReturnCommandText.isEmpty()) realmReturnCommandField.setText(realmReturnCommandText);
+        if (regionX1Field != null && !regionX1Text.isEmpty()) regionX1Field.setText(regionX1Text);
+        if (regionZ1Field != null && !regionZ1Text.isEmpty()) regionZ1Field.setText(regionZ1Text);
+        if (regionX2Field != null && !regionX2Text.isEmpty()) regionX2Field.setText(regionX2Text);
+        if (regionZ2Field != null && !regionZ2Text.isEmpty()) regionZ2Field.setText(regionZ2Text);
+        if (playersToAvoidField != null && !playersToAvoidText.isEmpty()) playersToAvoidField.setText(playersToAvoidText);
+        if (minLongPauseField != null && !minLongPauseText.isEmpty()) minLongPauseField.setText(minLongPauseText);
+        if (maxLongPauseField != null && !maxLongPauseText.isEmpty()) maxLongPauseField.setText(maxLongPauseText);
+        if (minBreakPauseField != null && !minBreakPauseText.isEmpty()) minBreakPauseField.setText(minBreakPauseText);
+        if (maxBreakPauseField != null && !maxBreakPauseText.isEmpty()) maxBreakPauseField.setText(maxBreakPauseText);
     }
 
     @Override
