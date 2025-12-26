@@ -47,8 +47,8 @@ public class PokeAlertConfigScreen extends Screen {
     private boolean isDraggingScrollbar = false;
     private double dragStartY = 0;
     private boolean isHoveringScrollbar = false;
-    private static final int SCROLLBAR_WIDTH = 8;
-    private static final int SCROLLBAR_X_OFFSET = 6; // Distance from right edge
+    private static final int SCROLLBAR_WIDTH = 12; // Increased width for better visibility
+    private static final int SCROLLBAR_X_OFFSET = 10; // Distance from right edge - ensure it's within visible area
     
     // Category toggles
     private ButtonWidget legendariesButton;
@@ -90,17 +90,17 @@ public class PokeAlertConfigScreen extends Screen {
     
     // Human-like behavior settings
     private ButtonWidget enableHumanLikeBehaviorButton;
-    private ChanceSliderWidget longPauseChanceSlider;
-    private ChanceSliderWidget breakPauseChanceSlider;
-    private ChanceSliderWidget backtrackChanceSlider;
-    private ChanceSliderWidget walkChanceSlider;
-    private ChanceSliderWidget hotbarSwitchChanceSlider;
-    private ChanceSliderWidget jumpWhileMovingChanceSlider;
-    private ChanceSliderWidget lookAroundChanceSlider;
     private TextFieldWidget minLongPauseField;
     private TextFieldWidget maxLongPauseField;
     private TextFieldWidget minBreakPauseField;
     private TextFieldWidget maxBreakPauseField;
+    private TextFieldWidget longPauseChanceField;
+    private TextFieldWidget breakPauseChanceField;
+    private TextFieldWidget backtrackChanceField;
+    private TextFieldWidget walkChanceField;
+    private TextFieldWidget hotbarSwitchChanceField;
+    private TextFieldWidget jumpWhileMovingChanceField;
+    private TextFieldWidget lookAroundChanceField;
     
     // Text fields
     private TextFieldWidget whitelistField;
@@ -198,7 +198,7 @@ public class PokeAlertConfigScreen extends Screen {
         copy.nearbyPlayerDetectionRadius = original.nearbyPlayerDetectionRadius;
         copy.initialQueueSize = original.initialQueueSize;
         copy.replenishCount = original.replenishCount;
-        copy.locationsForStep6 = original.locationsForStep6;
+        copy.locationsForStep5 = original.locationsForStep5;
         copy.maxConsecutiveTimeouts = original.maxConsecutiveTimeouts;
         
         // Human-like behavior settings
@@ -420,8 +420,7 @@ public class PokeAlertConfigScreen extends Screen {
             button -> {
                 config.eggHatcherEnabled = !config.eggHatcherEnabled;
                 button.setMessage(Text.literal(config.eggHatcherEnabled ? "Enabled" : "Disabled"));
-                // Enable/disable DM detection widgets based on Egg Hatcher toggle
-                updateDmNotificationWidgetsEnabled(config.eggHatcherEnabled && config.dmDetectionEnabled);
+                // DM notification widgets remain enabled - users can configure them even if parent features are off
                 // Config will be saved when user clicks "Save & Apply"
             });
         currentY += ROW_HEIGHT;
@@ -467,8 +466,7 @@ public class PokeAlertConfigScreen extends Screen {
             button -> {
                 config.dmDetectionEnabled = !config.dmDetectionEnabled;
                 button.setMessage(Text.literal(config.dmDetectionEnabled ? "Enabled" : "Disabled"));
-                // Enable/disable DM notification toggles based on DM detection toggle
-                updateDmNotificationWidgetsEnabled(config.dmDetectionEnabled && config.eggHatcherEnabled);
+                // DM notification widgets remain enabled - users can configure them even if parent features are off
             });
         currentY += ROW_HEIGHT;
         
@@ -495,14 +493,24 @@ public class PokeAlertConfigScreen extends Screen {
         currentY += ROW_HEIGHT + SECTION_SPACING;
         
         // Initialize DM notification widgets enabled state
-        updateDmNotificationWidgetsEnabled(config.dmDetectionEnabled && config.eggHatcherEnabled);
+        // Always allow configuration - settings just won't take effect until Egg Hatcher and DM Detection are enabled
+        updateDmNotificationWidgetsEnabled(true);
         
         // ========== v3.0.0: Anti-AFK Region Section ==========
-        int regionFieldWidth = 60;
-        int regionLabelWidth = this.textRenderer.getWidth("Region Corner 1 (X, Z):");
+        // Corner 1 (X1, Z1) - full width inputs
+        int regionLabelWidth = Math.max(
+            this.textRenderer.getWidth("Region Corner 1 X:"),
+            Math.max(
+                this.textRenderer.getWidth("Region Corner 1 Z:"),
+                Math.max(
+                    this.textRenderer.getWidth("Region Corner 2 X:"),
+                    this.textRenderer.getWidth("Region Corner 2 Z:")
+                )
+            )
+        );
+        int regionFieldWidth = this.width - (SIDE_MARGIN * 2) - regionLabelWidth - 15;
         int regionFieldX = SIDE_MARGIN + regionLabelWidth + 10;
         
-        // Corner 1 (X1, Z1)
         regionX1Field = new TextFieldWidget(
             this.textRenderer,
             regionFieldX,
@@ -513,12 +521,14 @@ public class PokeAlertConfigScreen extends Screen {
         );
         regionX1Field.setMaxLength(10);
         regionX1Field.setText(String.valueOf(config.antiAfkRegionX1));
+        regionX1Field.setPlaceholder(Text.literal("X coordinate").formatted(Formatting.GRAY));
         addSelectableChild(regionX1Field);
         addDrawableChild(regionX1Field);
+        currentY += ROW_HEIGHT;
         
         regionZ1Field = new TextFieldWidget(
             this.textRenderer,
-            regionFieldX + regionFieldWidth + 10,
+            regionFieldX,
             currentY - (int)scrollOffset,
             regionFieldWidth,
             BUTTON_HEIGHT,
@@ -526,23 +536,12 @@ public class PokeAlertConfigScreen extends Screen {
         );
         regionZ1Field.setMaxLength(10);
         regionZ1Field.setText(String.valueOf(config.antiAfkRegionZ1));
+        regionZ1Field.setPlaceholder(Text.literal("Z coordinate").formatted(Formatting.GRAY));
         addSelectableChild(regionZ1Field);
         addDrawableChild(regionZ1Field);
+        currentY += ROW_HEIGHT;
         
-        // Set Corner 1 to current position button
-        ButtonWidget setCorner1Button = ButtonWidget.builder(
-            Text.literal("Set Pos"),
-            button -> {
-                if (client != null && client.player != null) {
-                    regionX1Field.setText(String.valueOf((int) client.player.getX()));
-                    regionZ1Field.setText(String.valueOf((int) client.player.getZ()));
-                }
-            }
-        ).dimensions(regionFieldX + (regionFieldWidth * 2) + 20, currentY - (int)scrollOffset, 50, BUTTON_HEIGHT).build();
-        addDrawableChild(setCorner1Button);
-        currentY += 30;
-        
-        // Corner 2 (X2, Z2)
+        // Corner 2 (X2, Z2) - full width inputs
         regionX2Field = new TextFieldWidget(
             this.textRenderer,
             regionFieldX,
@@ -553,12 +552,14 @@ public class PokeAlertConfigScreen extends Screen {
         );
         regionX2Field.setMaxLength(10);
         regionX2Field.setText(String.valueOf(config.antiAfkRegionX2));
+        regionX2Field.setPlaceholder(Text.literal("X coordinate").formatted(Formatting.GRAY));
         addSelectableChild(regionX2Field);
         addDrawableChild(regionX2Field);
+        currentY += ROW_HEIGHT;
         
         regionZ2Field = new TextFieldWidget(
             this.textRenderer,
-            regionFieldX + regionFieldWidth + 10,
+            regionFieldX,
             currentY - (int)scrollOffset,
             regionFieldWidth,
             BUTTON_HEIGHT,
@@ -566,21 +567,10 @@ public class PokeAlertConfigScreen extends Screen {
         );
         regionZ2Field.setMaxLength(10);
         regionZ2Field.setText(String.valueOf(config.antiAfkRegionZ2));
+        regionZ2Field.setPlaceholder(Text.literal("Z coordinate").formatted(Formatting.GRAY));
         addSelectableChild(regionZ2Field);
         addDrawableChild(regionZ2Field);
-        
-        // Set Corner 2 to current position button
-        ButtonWidget setCorner2Button = ButtonWidget.builder(
-            Text.literal("Set Pos"),
-            button -> {
-                if (client != null && client.player != null) {
-                    regionX2Field.setText(String.valueOf((int) client.player.getX()));
-                    regionZ2Field.setText(String.valueOf((int) client.player.getZ()));
-                }
-            }
-        ).dimensions(regionFieldX + (regionFieldWidth * 2) + 20, currentY - (int)scrollOffset, 50, BUTTON_HEIGHT).build();
-        addDrawableChild(setCorner2Button);
-        currentY += 30;
+        currentY += ROW_HEIGHT;
         
         // Players to avoid text field
         int avoidLabelWidth = this.textRenderer.getWidth("Players to Avoid:");
@@ -616,9 +606,18 @@ public class PokeAlertConfigScreen extends Screen {
             });
         currentY += ROW_HEIGHT;
         
-        // Pause duration fields
-        int pauseFieldWidth = 80;
-        int pauseLabelWidth = this.textRenderer.getWidth("Long Pause Duration (ms):");
+        // Pause duration fields - full width inputs
+        int pauseLabelWidth = Math.max(
+            this.textRenderer.getWidth("Min Long Pause Duration (ms):"),
+            Math.max(
+                this.textRenderer.getWidth("Max Long Pause Duration (ms):"),
+                Math.max(
+                    this.textRenderer.getWidth("Min Break Pause Duration (ms):"),
+                    this.textRenderer.getWidth("Max Break Pause Duration (ms):")
+                )
+            )
+        );
+        int pauseFieldWidth = this.width - (SIDE_MARGIN * 2) - pauseLabelWidth - 15;
         int pauseFieldX = SIDE_MARGIN + pauseLabelWidth + 10;
         
         minLongPauseField = new TextFieldWidget(
@@ -627,28 +626,31 @@ public class PokeAlertConfigScreen extends Screen {
             currentY - (int)scrollOffset,
             pauseFieldWidth,
             BUTTON_HEIGHT,
-            Text.literal("Min")
+            Text.literal("Min Long Pause")
         );
         minLongPauseField.setMaxLength(6);
         minLongPauseField.setText(String.valueOf(config.minLongPauseMs));
+        minLongPauseField.setPlaceholder(Text.literal("Minimum pause duration in ms").formatted(Formatting.GRAY));
         minLongPauseField.active = config.enableHumanLikeBehavior;
         addSelectableChild(minLongPauseField);
         addDrawableChild(minLongPauseField);
+        currentY += ROW_HEIGHT;
         
         maxLongPauseField = new TextFieldWidget(
             this.textRenderer,
-            pauseFieldX + pauseFieldWidth + 10,
+            pauseFieldX,
             currentY - (int)scrollOffset,
             pauseFieldWidth,
             BUTTON_HEIGHT,
-            Text.literal("Max")
+            Text.literal("Max Long Pause")
         );
         maxLongPauseField.setMaxLength(6);
         maxLongPauseField.setText(String.valueOf(config.maxLongPauseMs));
+        maxLongPauseField.setPlaceholder(Text.literal("Maximum pause duration in ms").formatted(Formatting.GRAY));
         maxLongPauseField.active = config.enableHumanLikeBehavior;
         addSelectableChild(maxLongPauseField);
         addDrawableChild(maxLongPauseField);
-        currentY += 30;
+        currentY += ROW_HEIGHT;
         
         minBreakPauseField = new TextFieldWidget(
             this.textRenderer,
@@ -656,87 +658,165 @@ public class PokeAlertConfigScreen extends Screen {
             currentY - (int)scrollOffset,
             pauseFieldWidth,
             BUTTON_HEIGHT,
-            Text.literal("Min")
+            Text.literal("Min Break Pause")
         );
         minBreakPauseField.setMaxLength(6);
         minBreakPauseField.setText(String.valueOf(config.minBreakPauseMs));
+        minBreakPauseField.setPlaceholder(Text.literal("Minimum break pause duration in ms").formatted(Formatting.GRAY));
         minBreakPauseField.active = config.enableHumanLikeBehavior;
         addSelectableChild(minBreakPauseField);
         addDrawableChild(minBreakPauseField);
+        currentY += ROW_HEIGHT;
         
         maxBreakPauseField = new TextFieldWidget(
             this.textRenderer,
-            pauseFieldX + pauseFieldWidth + 10,
+            pauseFieldX,
             currentY - (int)scrollOffset,
             pauseFieldWidth,
             BUTTON_HEIGHT,
-            Text.literal("Max")
+            Text.literal("Max Break Pause")
         );
         maxBreakPauseField.setMaxLength(6);
         maxBreakPauseField.setText(String.valueOf(config.maxBreakPauseMs));
+        maxBreakPauseField.setPlaceholder(Text.literal("Maximum break pause duration in ms").formatted(Formatting.GRAY));
         maxBreakPauseField.active = config.enableHumanLikeBehavior;
         addSelectableChild(maxBreakPauseField);
         addDrawableChild(maxBreakPauseField);
-        currentY += 30;
-        
-        // Chance sliders
-        int chanceSliderX = this.width - SIDE_MARGIN - 200;
-        int chanceSliderWidth = 200;
-        
-        longPauseChanceSlider = new ChanceSliderWidget(
-            chanceSliderX, currentY - (int)scrollOffset, chanceSliderWidth, 20,
-            Text.literal("Long Pause Chance: "), config.longPauseChance, "longPauseChance"
-        );
-        longPauseChanceSlider.active = config.enableHumanLikeBehavior;
-        addDrawableChild(longPauseChanceSlider);
         currentY += ROW_HEIGHT;
         
-        breakPauseChanceSlider = new ChanceSliderWidget(
-            chanceSliderX, currentY - (int)scrollOffset, chanceSliderWidth, 20,
-            Text.literal("Break Pause Chance: "), config.breakPauseChance, "breakPauseChance"
+        // Chance fields - full width text inputs
+        int chanceLabelWidth = Math.max(
+            this.textRenderer.getWidth("Long Pause Chance:"),
+            Math.max(
+                this.textRenderer.getWidth("Break Pause Chance:"),
+                Math.max(
+                    this.textRenderer.getWidth("Backtrack Chance:"),
+                    Math.max(
+                        this.textRenderer.getWidth("Walk Chance:"),
+                        Math.max(
+                            this.textRenderer.getWidth("Hotbar Switch Chance:"),
+                            Math.max(
+                                this.textRenderer.getWidth("Jump While Moving Chance:"),
+                                this.textRenderer.getWidth("Look Around Chance:")
+                            )
+                        )
+                    )
+                )
+            )
         );
-        breakPauseChanceSlider.active = config.enableHumanLikeBehavior;
-        addDrawableChild(breakPauseChanceSlider);
+        int chanceFieldWidth = this.width - (SIDE_MARGIN * 2) - chanceLabelWidth - 15;
+        int chanceFieldX = SIDE_MARGIN + chanceLabelWidth + 10;
+        
+        longPauseChanceField = new TextFieldWidget(
+            this.textRenderer,
+            chanceFieldX,
+            currentY - (int)scrollOffset,
+            chanceFieldWidth,
+            BUTTON_HEIGHT,
+            Text.literal("Long Pause Chance")
+        );
+        longPauseChanceField.setMaxLength(10);
+        longPauseChanceField.setText(String.format("%.1f", config.longPauseChance * 100));
+        longPauseChanceField.setPlaceholder(Text.literal("Percentage (0.0-100.0)").formatted(Formatting.GRAY));
+        longPauseChanceField.active = config.enableHumanLikeBehavior;
+        addSelectableChild(longPauseChanceField);
+        addDrawableChild(longPauseChanceField);
         currentY += ROW_HEIGHT;
         
-        backtrackChanceSlider = new ChanceSliderWidget(
-            chanceSliderX, currentY - (int)scrollOffset, chanceSliderWidth, 20,
-            Text.literal("Backtrack Chance: "), config.backtrackChance, "backtrackChance"
+        breakPauseChanceField = new TextFieldWidget(
+            this.textRenderer,
+            chanceFieldX,
+            currentY - (int)scrollOffset,
+            chanceFieldWidth,
+            BUTTON_HEIGHT,
+            Text.literal("Break Pause Chance")
         );
-        backtrackChanceSlider.active = config.enableHumanLikeBehavior;
-        addDrawableChild(backtrackChanceSlider);
+        breakPauseChanceField.setMaxLength(10);
+        breakPauseChanceField.setText(String.format("%.1f", config.breakPauseChance * 100));
+        breakPauseChanceField.setPlaceholder(Text.literal("Percentage (0.0-100.0)").formatted(Formatting.GRAY));
+        breakPauseChanceField.active = config.enableHumanLikeBehavior;
+        addSelectableChild(breakPauseChanceField);
+        addDrawableChild(breakPauseChanceField);
         currentY += ROW_HEIGHT;
         
-        walkChanceSlider = new ChanceSliderWidget(
-            chanceSliderX, currentY - (int)scrollOffset, chanceSliderWidth, 20,
-            Text.literal("Walk Chance: "), config.walkChance, "walkChance"
+        backtrackChanceField = new TextFieldWidget(
+            this.textRenderer,
+            chanceFieldX,
+            currentY - (int)scrollOffset,
+            chanceFieldWidth,
+            BUTTON_HEIGHT,
+            Text.literal("Backtrack Chance")
         );
-        walkChanceSlider.active = config.enableHumanLikeBehavior;
-        addDrawableChild(walkChanceSlider);
+        backtrackChanceField.setMaxLength(10);
+        backtrackChanceField.setText(String.format("%.1f", config.backtrackChance * 100));
+        backtrackChanceField.setPlaceholder(Text.literal("Percentage (0.0-100.0)").formatted(Formatting.GRAY));
+        backtrackChanceField.active = config.enableHumanLikeBehavior;
+        addSelectableChild(backtrackChanceField);
+        addDrawableChild(backtrackChanceField);
         currentY += ROW_HEIGHT;
         
-        hotbarSwitchChanceSlider = new ChanceSliderWidget(
-            chanceSliderX, currentY - (int)scrollOffset, chanceSliderWidth, 20,
-            Text.literal("Hotbar Switch Chance: "), config.hotbarSwitchChance, "hotbarSwitchChance"
+        walkChanceField = new TextFieldWidget(
+            this.textRenderer,
+            chanceFieldX,
+            currentY - (int)scrollOffset,
+            chanceFieldWidth,
+            BUTTON_HEIGHT,
+            Text.literal("Walk Chance")
         );
-        hotbarSwitchChanceSlider.active = config.enableHumanLikeBehavior;
-        addDrawableChild(hotbarSwitchChanceSlider);
+        walkChanceField.setMaxLength(10);
+        walkChanceField.setText(String.format("%.1f", config.walkChance * 100));
+        walkChanceField.setPlaceholder(Text.literal("Percentage (0.0-100.0)").formatted(Formatting.GRAY));
+        walkChanceField.active = config.enableHumanLikeBehavior;
+        addSelectableChild(walkChanceField);
+        addDrawableChild(walkChanceField);
         currentY += ROW_HEIGHT;
         
-        jumpWhileMovingChanceSlider = new ChanceSliderWidget(
-            chanceSliderX, currentY - (int)scrollOffset, chanceSliderWidth, 20,
-            Text.literal("Jump While Moving Chance: "), config.jumpWhileMovingChance, "jumpWhileMovingChance"
+        hotbarSwitchChanceField = new TextFieldWidget(
+            this.textRenderer,
+            chanceFieldX,
+            currentY - (int)scrollOffset,
+            chanceFieldWidth,
+            BUTTON_HEIGHT,
+            Text.literal("Hotbar Switch Chance")
         );
-        jumpWhileMovingChanceSlider.active = config.enableHumanLikeBehavior;
-        addDrawableChild(jumpWhileMovingChanceSlider);
+        hotbarSwitchChanceField.setMaxLength(10);
+        hotbarSwitchChanceField.setText(String.format("%.1f", config.hotbarSwitchChance * 100));
+        hotbarSwitchChanceField.setPlaceholder(Text.literal("Percentage (0.0-100.0)").formatted(Formatting.GRAY));
+        hotbarSwitchChanceField.active = config.enableHumanLikeBehavior;
+        addSelectableChild(hotbarSwitchChanceField);
+        addDrawableChild(hotbarSwitchChanceField);
         currentY += ROW_HEIGHT;
         
-        lookAroundChanceSlider = new ChanceSliderWidget(
-            chanceSliderX, currentY - (int)scrollOffset, chanceSliderWidth, 20,
-            Text.literal("Look Around Chance: "), config.lookAroundChance, "lookAroundChance"
+        jumpWhileMovingChanceField = new TextFieldWidget(
+            this.textRenderer,
+            chanceFieldX,
+            currentY - (int)scrollOffset,
+            chanceFieldWidth,
+            BUTTON_HEIGHT,
+            Text.literal("Jump While Moving Chance")
         );
-        lookAroundChanceSlider.active = config.enableHumanLikeBehavior;
-        addDrawableChild(lookAroundChanceSlider);
+        jumpWhileMovingChanceField.setMaxLength(10);
+        jumpWhileMovingChanceField.setText(String.format("%.3f", config.jumpWhileMovingChance * 100));
+        jumpWhileMovingChanceField.setPlaceholder(Text.literal("Percentage (0.0-100.0)").formatted(Formatting.GRAY));
+        jumpWhileMovingChanceField.active = config.enableHumanLikeBehavior;
+        addSelectableChild(jumpWhileMovingChanceField);
+        addDrawableChild(jumpWhileMovingChanceField);
+        currentY += ROW_HEIGHT;
+        
+        lookAroundChanceField = new TextFieldWidget(
+            this.textRenderer,
+            chanceFieldX,
+            currentY - (int)scrollOffset,
+            chanceFieldWidth,
+            BUTTON_HEIGHT,
+            Text.literal("Look Around Chance")
+        );
+        lookAroundChanceField.setMaxLength(10);
+        lookAroundChanceField.setText(String.format("%.1f", config.lookAroundChance * 100));
+        lookAroundChanceField.setPlaceholder(Text.literal("Percentage (0.0-100.0)").formatted(Formatting.GRAY));
+        lookAroundChanceField.active = config.enableHumanLikeBehavior;
+        addSelectableChild(lookAroundChanceField);
+        addDrawableChild(lookAroundChanceField);
         currentY += ROW_HEIGHT + SECTION_SPACING;
 
         // ========== Custom Lists Section ==========
@@ -873,7 +953,7 @@ public class PokeAlertConfigScreen extends Screen {
     private ButtonWidget addNotificationRow(int y, String label, String description, boolean enabled, ButtonWidget.PressAction onPress) {
         // Apply scroll offset to the y position
         int scrolledY = y - (int)scrollOffset;
-        return addOptionRow(scrolledY, label, description, enabled, onPress, false);
+        return addOptionRow(scrolledY, label, description, enabled, onPress, true); // Show reset button for all notification rows
     }
     
     private ButtonWidget addEggTimerRow(int y, String label, String description, Text buttonText, ButtonWidget.PressAction onPress) {
@@ -922,32 +1002,79 @@ public class PokeAlertConfigScreen extends Screen {
     }
 
     private boolean getDefaultValue(String label) {
-        return label.contains("Legendary") || label.contains("Mythical") || label.contains("Shiny");
+        // Detection categories
+        if (label.contains("Legendary")) return true;
+        if (label.contains("Mythical")) return true;
+        if (label.contains("Shiny")) return true;
+        if (label.contains("Starter")) return false;
+        if (label.contains("Baby")) return false;
+        if (label.contains("Ultra")) return false;
+        if (label.contains("Paradox")) return false;
+        
+        // Notification settings - all default to true except DM In-Game
+        if (label.contains("In-Game Text")) return true;
+        if (label.contains("In-Game Sound")) return true;
+        if (label.contains("Telegram")) return true;
+        if (label.contains("DM Telegram")) return true;
+        if (label.contains("DM In-Game")) return false; // Default false to avoid spam
+        
+        // Human-like behavior
+        if (label.contains("Human-like Behavior")) return true;
+        
+        // Default to true for most settings
+        return true;
     }
 
     private void resetCategory(String label, boolean value) {
-                if (label.contains("Legendary")) {
+        // Detection categories
+        if (label.contains("Legendary")) {
             config.broadcastAllLegendaries = value;
             updateToggleButton(legendariesButton, value);
-                } else if (label.contains("Mythical")) {
+        } else if (label.contains("Mythical")) {
             config.broadcastAllMythics = value;
             updateToggleButton(mythicsButton, value);
-                } else if (label.contains("Starter")) {
-                    config.broadcastAllStarter = false;
-                    updateToggleButton(starterButton, false);
-                } else if (label.contains("Baby")) {
-                    config.broadcastAllBabies = false;
-                    updateToggleButton(babiesButton, false);
-                } else if (label.contains("Ultra")) {
-                    config.broadcastAllUltraBeasts = false;
-                    updateToggleButton(ultraBeastsButton, false);
-                } else if (label.contains("Shiny")) {
-                    config.broadcastAllShinies = true;
-                    updateToggleButton(shiniesButton, true);
-                } else if (label.contains("Paradox")) {
-                    config.broadcastAllParadox = false;
-                    updateToggleButton(paradoxButton, false);
-                }
+        } else if (label.contains("Starter")) {
+            config.broadcastAllStarter = false;
+            updateToggleButton(starterButton, false);
+        } else if (label.contains("Baby")) {
+            config.broadcastAllBabies = false;
+            updateToggleButton(babiesButton, false);
+        } else if (label.contains("Ultra")) {
+            config.broadcastAllUltraBeasts = false;
+            updateToggleButton(ultraBeastsButton, false);
+        } else if (label.contains("Shiny")) {
+            config.broadcastAllShinies = true;
+            updateToggleButton(shiniesButton, true);
+        } else if (label.contains("Paradox")) {
+            config.broadcastAllParadox = false;
+            updateToggleButton(paradoxButton, false);
+        }
+        // Notification settings
+        else if (label.contains("In-Game Text")) {
+            config.inGameTextEnabled = value;
+            updateToggleButton(inGameTextButton, value);
+        } else if (label.contains("In-Game Sound")) {
+            config.inGameSoundEnabled = value;
+            updateToggleButton(inGameSoundButton, value);
+            if (soundVolumeSlider != null) {
+                soundVolumeSlider.active = value;
+            }
+        } else if (label.contains("Telegram")) {
+            config.telegramEnabled = value;
+            updateToggleButton(telegramButton, value);
+        } else if (label.contains("DM Telegram")) {
+            config.dmTelegramNotification = value;
+            updateToggleButton(dmTelegramNotificationButton, value);
+        } else if (label.contains("DM In-Game")) {
+            config.dmInGameNotification = value;
+            updateToggleButton(dmInGameNotificationButton, value);
+        }
+        // Human-like behavior
+        else if (label.contains("Human-like Behavior")) {
+            config.enableHumanLikeBehavior = value;
+            updateToggleButton(enableHumanLikeBehaviorButton, value);
+            updateHumanLikeBehaviorWidgetsEnabled(value);
+        }
     }
 
     private void updateToggleButton(ButtonWidget button, boolean enabled) {
@@ -1017,7 +1144,18 @@ public class PokeAlertConfigScreen extends Screen {
             PokeAlertClient.LOGGER.warn("Invalid pause duration values, keeping existing values");
         }
         
-        // Note: Chance values are already updated by ChanceSliderWidget.applyValue() when sliders are moved
+        // Parse chance values from text fields (percentage to decimal)
+        try {
+            config.longPauseChance = Math.max(0.0, Math.min(1.0, Double.parseDouble(longPauseChanceField.getText().trim()) / 100.0));
+            config.breakPauseChance = Math.max(0.0, Math.min(1.0, Double.parseDouble(breakPauseChanceField.getText().trim()) / 100.0));
+            config.backtrackChance = Math.max(0.0, Math.min(1.0, Double.parseDouble(backtrackChanceField.getText().trim()) / 100.0));
+            config.walkChance = Math.max(0.0, Math.min(1.0, Double.parseDouble(walkChanceField.getText().trim()) / 100.0));
+            config.hotbarSwitchChance = Math.max(0.0, Math.min(1.0, Double.parseDouble(hotbarSwitchChanceField.getText().trim()) / 100.0));
+            config.jumpWhileMovingChance = Math.max(0.0, Math.min(1.0, Double.parseDouble(jumpWhileMovingChanceField.getText().trim()) / 100.0));
+            config.lookAroundChance = Math.max(0.0, Math.min(1.0, Double.parseDouble(lookAroundChanceField.getText().trim()) / 100.0));
+        } catch (NumberFormatException e) {
+            PokeAlertClient.LOGGER.warn("Invalid chance values, keeping existing values");
+        }
         
         // Validate timing config
         config.validateTimingConfig();
@@ -1074,11 +1212,8 @@ public class PokeAlertConfigScreen extends Screen {
             dmDetectionButton.setMessage(Text.literal(config.dmDetectionEnabled ? "Enabled" : "Disabled"));
         }
         
-        // Update DM notification widgets enabled state based on Egg Hatcher and DM Detection toggles
-        if (dmTelegramNotificationButton != null && dmInGameNotificationButton != null) {
-            boolean dmWidgetsEnabled = config.eggHatcherEnabled && config.dmDetectionEnabled;
-            updateDmNotificationWidgetsEnabled(dmWidgetsEnabled);
-        }
+        // DM notification widgets are always enabled for configuration
+        // They just won't take effect until both Egg Hatcher and DM Detection are enabled
         
         // Render background
         this.renderBackground(context, mouseX, mouseY, delta);
@@ -1096,9 +1231,11 @@ public class PokeAlertConfigScreen extends Screen {
         int currentY = 50 - (int)scrollOffset;
         
         // Enable scissor clipping for scrollable content area
+        // Leave space on the right for scrollbar (SCROLLBAR_WIDTH + SCROLLBAR_X_OFFSET + some padding)
         int scrollAreaTop = TOP_MARGIN;
         int scrollAreaBottom = this.height - BOTTOM_MARGIN;
-        context.enableScissor(SIDE_MARGIN, scrollAreaTop, this.width - SIDE_MARGIN, scrollAreaBottom);
+        int scrollbarArea = SCROLLBAR_WIDTH + SCROLLBAR_X_OFFSET + 5; // Reserve space for scrollbar
+        context.enableScissor(SIDE_MARGIN, scrollAreaTop, this.width - scrollbarArea, scrollAreaBottom);
         
         // Master toggle section
         currentY += 10;
@@ -1267,25 +1404,45 @@ public class PokeAlertConfigScreen extends Screen {
             COLOR_WHITE
         );
         
-        // Region Corner 1 label
+        // Region Corner 1 X label
         context.drawTextWithShadow(
             this.textRenderer,
-            Text.literal("Region Corner 1 (X, Z):"),
+            Text.literal("Region Corner 1 X:"),
             SIDE_MARGIN,
             currentY + 2,
             COLOR_WHITE
         );
-        currentY += 30;
+        currentY += ROW_HEIGHT;
         
-        // Region Corner 2 label
+        // Region Corner 1 Z label
         context.drawTextWithShadow(
             this.textRenderer,
-            Text.literal("Region Corner 2 (X, Z):"),
+            Text.literal("Region Corner 1 Z:"),
             SIDE_MARGIN,
             currentY + 2,
             COLOR_WHITE
         );
-        currentY += 30;
+        currentY += ROW_HEIGHT;
+        
+        // Region Corner 2 X label
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("Region Corner 2 X:"),
+            SIDE_MARGIN,
+            currentY + 2,
+            COLOR_WHITE
+        );
+        currentY += ROW_HEIGHT;
+        
+        // Region Corner 2 Z label
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("Region Corner 2 Z:"),
+            SIDE_MARGIN,
+            currentY + 2,
+            COLOR_WHITE
+        );
+        currentY += ROW_HEIGHT;
         
         // Players to avoid label
         context.drawTextWithShadow(
@@ -1312,40 +1469,155 @@ public class PokeAlertConfigScreen extends Screen {
         drawCategoryWithDescription(context, "Human-like Behavior", "Enable random human-like actions during Anti-AFK", currentY);
         currentY += ROW_HEIGHT;
         
-        // Long pause duration label
+        // Long pause duration labels
         context.drawTextWithShadow(
             this.textRenderer,
-            Text.literal("Long Pause Duration (ms):"),
+            Text.literal("Min Long Pause Duration (ms):"),
             SIDE_MARGIN,
             currentY + 2,
             COLOR_WHITE
         );
-        currentY += 30;
+        currentY += ROW_HEIGHT;
         
-        // Break pause duration label
         context.drawTextWithShadow(
             this.textRenderer,
-            Text.literal("Break Pause Duration (ms):"),
+            Text.literal("Max Long Pause Duration (ms):"),
             SIDE_MARGIN,
             currentY + 2,
             COLOR_WHITE
         );
-        currentY += 30;
+        currentY += ROW_HEIGHT;
         
-        // Chance slider labels
-        drawCategoryWithDescription(context, "Long Pause Chance", "5-15s pause with camera rotation", currentY);
+        // Break pause duration labels
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("Min Break Pause Duration (ms):"),
+            SIDE_MARGIN,
+            currentY + 2,
+            COLOR_WHITE
+        );
         currentY += ROW_HEIGHT;
-        drawCategoryWithDescription(context, "Break Pause Chance", "30-60s break with camera rotation", currentY);
+        
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("Max Break Pause Duration (ms):"),
+            SIDE_MARGIN,
+            currentY + 2,
+            COLOR_WHITE
+        );
         currentY += ROW_HEIGHT;
-        drawCategoryWithDescription(context, "Backtrack Chance", "Revisit previous location", currentY);
+        
+        // Chance field labels
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("Long Pause Chance:"),
+            SIDE_MARGIN,
+            currentY + 2,
+            COLOR_WHITE
+        );
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("5-15s pause with camera rotation").formatted(Formatting.GRAY),
+            SIDE_MARGIN,
+            currentY + 12,
+            COLOR_GRAY
+        );
         currentY += ROW_HEIGHT;
-        drawCategoryWithDescription(context, "Walk Chance", "Walk instead of sprint", currentY);
+        
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("Break Pause Chance:"),
+            SIDE_MARGIN,
+            currentY + 2,
+            COLOR_WHITE
+        );
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("30-60s break with camera rotation").formatted(Formatting.GRAY),
+            SIDE_MARGIN,
+            currentY + 12,
+            COLOR_GRAY
+        );
         currentY += ROW_HEIGHT;
-        drawCategoryWithDescription(context, "Hotbar Switch Chance", "Switch to random hotbar slot", currentY);
+        
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("Backtrack Chance:"),
+            SIDE_MARGIN,
+            currentY + 2,
+            COLOR_WHITE
+        );
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("Revisit previous location").formatted(Formatting.GRAY),
+            SIDE_MARGIN,
+            currentY + 12,
+            COLOR_GRAY
+        );
         currentY += ROW_HEIGHT;
-        drawCategoryWithDescription(context, "Jump While Moving Chance", "Jump while sprinting", currentY);
+        
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("Walk Chance:"),
+            SIDE_MARGIN,
+            currentY + 2,
+            COLOR_WHITE
+        );
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("Walk instead of sprint").formatted(Formatting.GRAY),
+            SIDE_MARGIN,
+            currentY + 12,
+            COLOR_GRAY
+        );
         currentY += ROW_HEIGHT;
-        drawCategoryWithDescription(context, "Look Around Chance", "Look around after arrival", currentY);
+        
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("Hotbar Switch Chance:"),
+            SIDE_MARGIN,
+            currentY + 2,
+            COLOR_WHITE
+        );
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("Switch to random hotbar slot").formatted(Formatting.GRAY),
+            SIDE_MARGIN,
+            currentY + 12,
+            COLOR_GRAY
+        );
+        currentY += ROW_HEIGHT;
+        
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("Jump While Moving Chance:"),
+            SIDE_MARGIN,
+            currentY + 2,
+            COLOR_WHITE
+        );
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("Jump while sprinting").formatted(Formatting.GRAY),
+            SIDE_MARGIN,
+            currentY + 12,
+            COLOR_GRAY
+        );
+        currentY += ROW_HEIGHT;
+        
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("Look Around Chance:"),
+            SIDE_MARGIN,
+            currentY + 2,
+            COLOR_WHITE
+        );
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("Look around after arrival").formatted(Formatting.GRAY),
+            SIDE_MARGIN,
+            currentY + 12,
+            COLOR_GRAY
+        );
         currentY += ROW_HEIGHT + SECTION_SPACING;
         
         // Draw separator line
@@ -1398,52 +1670,57 @@ public class PokeAlertConfigScreen extends Screen {
             COLOR_WHITE
         );
         
-        // Disable scissor clipping before rendering widgets
+        // Disable scissor clipping before rendering widgets (buttons need to be outside scissor)
         context.disableScissor();
         
-        // Render widgets
+        // Render widgets (buttons are rendered here, outside scissor area)
         super.render(context, mouseX, mouseY, delta);
         
-        // Re-enable scissor for scrollbar rendering
-        context.enableScissor(SIDE_MARGIN, scrollAreaTop, this.width - SIDE_MARGIN, scrollAreaBottom);
-        
-        // Draw scrollbar if content is scrollable
+        // Draw scrollbar OUTSIDE scissor area so it's always visible
+        // Ensure scrollbar is positioned within visible screen bounds
         if (maxScroll > 0) {
-            int scrollbarX = this.width - SCROLLBAR_X_OFFSET - SCROLLBAR_WIDTH;
+            // Position scrollbar within visible area, accounting for screen bounds
+            int scrollbarX = Math.max(SIDE_MARGIN, this.width - SCROLLBAR_X_OFFSET - SCROLLBAR_WIDTH);
             int scrollbarY = TOP_MARGIN;
             int scrollbarHeight = this.height - TOP_MARGIN - BOTTOM_MARGIN;
-            int thumbHeight = Math.max(30, (int)(scrollbarHeight * (scrollbarHeight / (double)(contentHeight + scrollbarHeight))));
+            
+            // Calculate thumb size and position
+            double scrollRatio = scrollbarHeight / (double) Math.max(scrollbarHeight, contentHeight);
+            int thumbHeight = Math.max(40, (int)(scrollbarHeight * scrollRatio));
             int thumbY = scrollbarY + (int)((scrollbarHeight - thumbHeight) * (scrollOffset / maxScroll));
             
-            // Check if mouse is hovering over scrollbar
-            boolean hovering = mouseX >= scrollbarX - 2 && mouseX <= scrollbarX + SCROLLBAR_WIDTH + 2 &&
+            // Ensure thumb stays within bounds
+            thumbY = Math.max(scrollbarY, Math.min(scrollbarY + scrollbarHeight - thumbHeight, thumbY));
+            
+            // Check if mouse is hovering over scrollbar (with expanded click area)
+            boolean hovering = mouseX >= scrollbarX - 3 && mouseX <= scrollbarX + SCROLLBAR_WIDTH + 3 &&
                               mouseY >= scrollbarY && mouseY <= scrollbarY + scrollbarHeight;
             isHoveringScrollbar = hovering;
             
-            // Draw scrollbar track (darker background)
-            int trackColor = hovering ? 0x60000000 : 0x40000000;
+            // Draw scrollbar track with more visible background
+            int trackColor = hovering ? 0xA0000000 : 0x80000000; // More opaque for better visibility
             context.fill(scrollbarX, scrollbarY, scrollbarX + SCROLLBAR_WIDTH, scrollbarY + scrollbarHeight, trackColor);
             
-            // Draw scrollbar track border
-            context.fill(scrollbarX, scrollbarY, scrollbarX + SCROLLBAR_WIDTH, scrollbarY + 1, 0x80FFFFFF);
-            context.fill(scrollbarX, scrollbarY + scrollbarHeight - 1, scrollbarX + SCROLLBAR_WIDTH, scrollbarY + scrollbarHeight, 0x80FFFFFF);
-            context.fill(scrollbarX, scrollbarY, scrollbarX + 1, scrollbarY + scrollbarHeight, 0x80FFFFFF);
-            context.fill(scrollbarX + SCROLLBAR_WIDTH - 1, scrollbarY, scrollbarX + SCROLLBAR_WIDTH, scrollbarY + scrollbarHeight, 0x80FFFFFF);
+            // Draw scrollbar track border (more visible white border)
+            int borderColor = 0xFFFFFFFF; // Solid white border
+            context.fill(scrollbarX, scrollbarY, scrollbarX + SCROLLBAR_WIDTH, scrollbarY + 2, borderColor);
+            context.fill(scrollbarX, scrollbarY + scrollbarHeight - 2, scrollbarX + SCROLLBAR_WIDTH, scrollbarY + scrollbarHeight, borderColor);
+            context.fill(scrollbarX, scrollbarY, scrollbarX + 2, scrollbarY + scrollbarHeight, borderColor);
+            context.fill(scrollbarX + SCROLLBAR_WIDTH - 2, scrollbarY, scrollbarX + SCROLLBAR_WIDTH, scrollbarY + scrollbarHeight, borderColor);
             
-            // Draw scrollbar thumb (brighter when hovering or dragging)
-            int thumbColor = (isDraggingScrollbar || hovering) ? 0xFF808080 : 0xFF606060;
-            context.fill(scrollbarX + 1, thumbY, scrollbarX + SCROLLBAR_WIDTH - 1, thumbY + thumbHeight, thumbColor);
+            // Draw scrollbar thumb (much brighter for visibility)
+            int thumbColor = (isDraggingScrollbar || hovering) ? 0xFFCCCCCC : 0xFF999999; // Lighter gray
+            context.fill(scrollbarX + 2, thumbY, scrollbarX + SCROLLBAR_WIDTH - 2, thumbY + thumbHeight, thumbColor);
             
             // Draw thumb border for better visibility
-            int thumbBorderColor = (isDraggingScrollbar || hovering) ? 0xFFFFFFFF : 0xFFCCCCCC;
-            context.fill(scrollbarX + 1, thumbY, scrollbarX + SCROLLBAR_WIDTH - 1, thumbY + 1, thumbBorderColor);
-            context.fill(scrollbarX + 1, thumbY + thumbHeight - 1, scrollbarX + SCROLLBAR_WIDTH - 1, thumbY + thumbHeight, thumbBorderColor);
+            int thumbBorderColor = (isDraggingScrollbar || hovering) ? 0xFFFFFFFF : 0xFFEEEEEE;
+            context.fill(scrollbarX + 2, thumbY, scrollbarX + SCROLLBAR_WIDTH - 2, thumbY + 2, thumbBorderColor);
+            context.fill(scrollbarX + 2, thumbY + thumbHeight - 2, scrollbarX + SCROLLBAR_WIDTH - 2, thumbY + thumbHeight, thumbBorderColor);
+            context.fill(scrollbarX + 2, thumbY, scrollbarX + 4, thumbY + thumbHeight, thumbBorderColor);
+            context.fill(scrollbarX + SCROLLBAR_WIDTH - 4, thumbY, scrollbarX + SCROLLBAR_WIDTH - 2, thumbY + thumbHeight, thumbBorderColor);
         } else {
             isHoveringScrollbar = false;
         }
-        
-        // Disable scissor clipping after all rendering is complete
-        context.disableScissor();
     }
 
     private void drawCategoryWithDescription(DrawContext context, String label, String description, int y) {
@@ -1470,29 +1747,23 @@ public class PokeAlertConfigScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        // v3.0.0: Anti-AFK keybind handling REMOVED
-        
-        if (whitelistField.mouseClicked(mouseX, mouseY, button)) {
-            setFocused(whitelistField);
+        // CRITICAL: Check buttons FIRST before text fields to prevent overlap issues
+        // Buttons are at fixed positions and should always be clickable
+        if (saveButton != null && saveButton.mouseClicked(mouseX, mouseY, button)) {
             return true;
         }
-        if (blacklistField.mouseClicked(mouseX, mouseY, button)) {
-            setFocused(blacklistField);
-            return true;
-        }
-        if (excludedWorldsField.mouseClicked(mouseX, mouseY, button)) {
-            setFocused(excludedWorldsField);
+        if (cancelButton != null && cancelButton.mouseClicked(mouseX, mouseY, button)) {
             return true;
         }
         
-        // Check if clicking on scrollbar
+        // Check if clicking on scrollbar (before text fields)
         if (maxScroll > 0 && button == 0) {
-            int scrollbarX = this.width - SCROLLBAR_X_OFFSET - SCROLLBAR_WIDTH;
+            int scrollbarX = Math.max(SIDE_MARGIN, this.width - SCROLLBAR_X_OFFSET - SCROLLBAR_WIDTH);
             int scrollbarY = TOP_MARGIN;
             int scrollbarHeight = this.height - TOP_MARGIN - BOTTOM_MARGIN;
             
             // Expanded click area for easier interaction
-            if (mouseX >= scrollbarX - 2 && mouseX <= scrollbarX + SCROLLBAR_WIDTH + 2 &&
+            if (mouseX >= scrollbarX - 3 && mouseX <= scrollbarX + SCROLLBAR_WIDTH + 3 &&
                 mouseY >= scrollbarY && mouseY <= scrollbarY + scrollbarHeight) {
                 isDraggingScrollbar = true;
                 dragStartY = mouseY;
@@ -1514,15 +1785,85 @@ public class PokeAlertConfigScreen extends Screen {
             }
         }
         
+        // v3.0.0: Anti-AFK keybind handling REMOVED
+        
+        // Check if click is in button area - if so, don't process text fields
+        int bottomY = this.height - 30;
+        int buttonAreaTop = bottomY - 5; // Slightly above buttons to prevent overlap
+        if (mouseY >= buttonAreaTop) {
+            // Click is in button area - let super handle it (buttons are checked first above)
+            return super.mouseClicked(mouseX, mouseY, button);
+        }
+        
+        // Check text fields AFTER buttons and scrollbar (only if not in button area)
+        if (whitelistField != null && whitelistField.mouseClicked(mouseX, mouseY, button)) {
+            setFocused(whitelistField);
+            return true;
+        }
+        if (blacklistField != null && blacklistField.mouseClicked(mouseX, mouseY, button)) {
+            setFocused(blacklistField);
+            return true;
+        }
+        if (blacklistCharField != null && blacklistCharField.mouseClicked(mouseX, mouseY, button)) {
+            setFocused(blacklistCharField);
+            return true;
+        }
+        if (excludedWorldsField != null && excludedWorldsField.mouseClicked(mouseX, mouseY, button)) {
+            setFocused(excludedWorldsField);
+            return true;
+        }
+        if (realmReturnCommandField != null && realmReturnCommandField.mouseClicked(mouseX, mouseY, button)) {
+            setFocused(realmReturnCommandField);
+            return true;
+        }
+        if (regionX1Field != null && regionX1Field.mouseClicked(mouseX, mouseY, button)) {
+            setFocused(regionX1Field);
+            return true;
+        }
+        if (regionZ1Field != null && regionZ1Field.mouseClicked(mouseX, mouseY, button)) {
+            setFocused(regionZ1Field);
+            return true;
+        }
+        if (regionX2Field != null && regionX2Field.mouseClicked(mouseX, mouseY, button)) {
+            setFocused(regionX2Field);
+            return true;
+        }
+        if (regionZ2Field != null && regionZ2Field.mouseClicked(mouseX, mouseY, button)) {
+            setFocused(regionZ2Field);
+            return true;
+        }
+        if (playersToAvoidField != null && playersToAvoidField.mouseClicked(mouseX, mouseY, button)) {
+            setFocused(playersToAvoidField);
+            return true;
+        }
+        if (minLongPauseField != null && minLongPauseField.mouseClicked(mouseX, mouseY, button)) {
+            setFocused(minLongPauseField);
+            return true;
+        }
+        if (maxLongPauseField != null && maxLongPauseField.mouseClicked(mouseX, mouseY, button)) {
+            setFocused(maxLongPauseField);
+            return true;
+        }
+        if (minBreakPauseField != null && minBreakPauseField.mouseClicked(mouseX, mouseY, button)) {
+            setFocused(minBreakPauseField);
+            return true;
+        }
+        if (maxBreakPauseField != null && maxBreakPauseField.mouseClicked(mouseX, mouseY, button)) {
+            setFocused(maxBreakPauseField);
+            return true;
+        }
+        
         return super.mouseClicked(mouseX, mouseY, button);
     }
     
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
         if (isDraggingScrollbar && maxScroll > 0) {
+            int scrollbarX = Math.max(SIDE_MARGIN, this.width - SCROLLBAR_X_OFFSET - SCROLLBAR_WIDTH);
             int scrollbarY = TOP_MARGIN;
             int scrollbarHeight = this.height - TOP_MARGIN - BOTTOM_MARGIN;
-            int thumbHeight = Math.max(30, (int)(scrollbarHeight * (scrollbarHeight / (double)(contentHeight + scrollbarHeight))));
+            double scrollRatio = scrollbarHeight / (double) Math.max(scrollbarHeight, contentHeight);
+            int thumbHeight = Math.max(40, (int)(scrollbarHeight * scrollRatio));
             
             // Calculate new scroll position based on mouse Y
             double relativeY = mouseY - scrollbarY;
@@ -1589,6 +1930,13 @@ public class PokeAlertConfigScreen extends Screen {
         String maxLongPauseText = maxLongPauseField != null ? maxLongPauseField.getText() : "";
         String minBreakPauseText = minBreakPauseField != null ? minBreakPauseField.getText() : "";
         String maxBreakPauseText = maxBreakPauseField != null ? maxBreakPauseField.getText() : "";
+        String longPauseChanceText = longPauseChanceField != null ? longPauseChanceField.getText() : "";
+        String breakPauseChanceText = breakPauseChanceField != null ? breakPauseChanceField.getText() : "";
+        String backtrackChanceText = backtrackChanceField != null ? backtrackChanceField.getText() : "";
+        String walkChanceText = walkChanceField != null ? walkChanceField.getText() : "";
+        String hotbarSwitchChanceText = hotbarSwitchChanceField != null ? hotbarSwitchChanceField.getText() : "";
+        String jumpWhileMovingChanceText = jumpWhileMovingChanceField != null ? jumpWhileMovingChanceField.getText() : "";
+        String lookAroundChanceText = lookAroundChanceField != null ? lookAroundChanceField.getText() : "";
         
         // Recreate widgets with updated positions
         init();
@@ -1608,6 +1956,13 @@ public class PokeAlertConfigScreen extends Screen {
         if (maxLongPauseField != null && !maxLongPauseText.isEmpty()) maxLongPauseField.setText(maxLongPauseText);
         if (minBreakPauseField != null && !minBreakPauseText.isEmpty()) minBreakPauseField.setText(minBreakPauseText);
         if (maxBreakPauseField != null && !maxBreakPauseText.isEmpty()) maxBreakPauseField.setText(maxBreakPauseText);
+        if (longPauseChanceField != null && !longPauseChanceText.isEmpty()) longPauseChanceField.setText(longPauseChanceText);
+        if (breakPauseChanceField != null && !breakPauseChanceText.isEmpty()) breakPauseChanceField.setText(breakPauseChanceText);
+        if (backtrackChanceField != null && !backtrackChanceText.isEmpty()) backtrackChanceField.setText(backtrackChanceText);
+        if (walkChanceField != null && !walkChanceText.isEmpty()) walkChanceField.setText(walkChanceText);
+        if (hotbarSwitchChanceField != null && !hotbarSwitchChanceText.isEmpty()) hotbarSwitchChanceField.setText(hotbarSwitchChanceText);
+        if (jumpWhileMovingChanceField != null && !jumpWhileMovingChanceText.isEmpty()) jumpWhileMovingChanceField.setText(jumpWhileMovingChanceText);
+        if (lookAroundChanceField != null && !lookAroundChanceText.isEmpty()) lookAroundChanceField.setText(lookAroundChanceText);
     }
 
     @Override
@@ -1707,17 +2062,17 @@ public class PokeAlertConfigScreen extends Screen {
     // v3.0.0: getAntiAfkKeybindText() REMOVED - no longer using external Anti-AFK keybind
     
     private void updateHumanLikeBehaviorWidgetsEnabled(boolean enabled) {
-        if (longPauseChanceSlider != null) longPauseChanceSlider.active = enabled;
-        if (breakPauseChanceSlider != null) breakPauseChanceSlider.active = enabled;
-        if (backtrackChanceSlider != null) backtrackChanceSlider.active = enabled;
-        if (walkChanceSlider != null) walkChanceSlider.active = enabled;
-        if (hotbarSwitchChanceSlider != null) hotbarSwitchChanceSlider.active = enabled;
-        if (jumpWhileMovingChanceSlider != null) jumpWhileMovingChanceSlider.active = enabled;
-        if (lookAroundChanceSlider != null) lookAroundChanceSlider.active = enabled;
         if (minLongPauseField != null) minLongPauseField.active = enabled;
         if (maxLongPauseField != null) maxLongPauseField.active = enabled;
         if (minBreakPauseField != null) minBreakPauseField.active = enabled;
         if (maxBreakPauseField != null) maxBreakPauseField.active = enabled;
+        if (longPauseChanceField != null) longPauseChanceField.active = enabled;
+        if (breakPauseChanceField != null) breakPauseChanceField.active = enabled;
+        if (backtrackChanceField != null) backtrackChanceField.active = enabled;
+        if (walkChanceField != null) walkChanceField.active = enabled;
+        if (hotbarSwitchChanceField != null) hotbarSwitchChanceField.active = enabled;
+        if (jumpWhileMovingChanceField != null) jumpWhileMovingChanceField.active = enabled;
+        if (lookAroundChanceField != null) lookAroundChanceField.active = enabled;
     }
     
     private void updateDmNotificationWidgetsEnabled(boolean enabled) {
@@ -1747,50 +2102,4 @@ public class PokeAlertConfigScreen extends Screen {
         }
     }
     
-    /**
-     * Custom slider widget for chance values (0.0 to 1.0, displayed as percentage)
-     */
-    private class ChanceSliderWidget extends SliderWidget {
-        private final Text prefix;
-        private final String configField; // Field name to update in config
-        
-        public ChanceSliderWidget(int x, int y, int width, int height, Text prefix, double value, String configField) {
-            super(x, y, width, height, prefix.copy().append(Text.literal(String.format("%.1f%%", value * 100))), value);
-            this.prefix = prefix;
-            this.configField = configField;
-        }
-        
-        @Override
-        protected void updateMessage() {
-            this.setMessage(prefix.copy().append(Text.literal(String.format("%.1f%%", this.value * 100))));
-        }
-        
-        @Override
-        protected void applyValue() {
-            // Update config field based on which slider this is
-            switch (configField) {
-                case "longPauseChance":
-                    config.longPauseChance = this.value;
-                    break;
-                case "breakPauseChance":
-                    config.breakPauseChance = this.value;
-                    break;
-                case "backtrackChance":
-                    config.backtrackChance = this.value;
-                    break;
-                case "walkChance":
-                    config.walkChance = this.value;
-                    break;
-                case "hotbarSwitchChance":
-                    config.hotbarSwitchChance = this.value;
-                    break;
-                case "jumpWhileMovingChance":
-                    config.jumpWhileMovingChance = this.value;
-                    break;
-                case "lookAroundChance":
-                    config.lookAroundChance = this.value;
-                    break;
-            }
-        }
-    }
 }

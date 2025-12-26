@@ -53,7 +53,7 @@ public class LocationQueue {
         this.region = region;
         this.initialQueueSize = config.initialQueueSize;
         this.replenishCount = config.replenishCount;
-        this.locationsForStep5 = config.locationsForStep6; // Config uses locationsForStep6 for v2 compat
+        this.locationsForStep5 = config.locationsForStep5; // Config uses locationsForStep5 for v2 compat
         this.maxConsecutiveTimeouts = config.maxConsecutiveTimeouts;
         
         // Clear and repopulate
@@ -214,7 +214,7 @@ public class LocationQueue {
             PokeAlertConfig config = new PokeAlertConfig();
             config.initialQueueSize = this.initialQueueSize;
             config.replenishCount = this.replenishCount;
-            config.locationsForStep6 = this.locationsForStep5;
+            config.locationsForStep5 = this.locationsForStep5;
             config.maxConsecutiveTimeouts = this.maxConsecutiveTimeouts;
             initialize(region, config);
         }

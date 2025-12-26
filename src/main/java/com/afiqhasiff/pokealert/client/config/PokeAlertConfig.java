@@ -84,7 +84,7 @@ public class PokeAlertConfig {
     // Anti-AFK Queue Settings
     public int initialQueueSize = 5;           // Initial locations in queue (3-10)
     public int replenishCount = 3;             // Locations to add when queue runs low (1-5)
-    public int locationsForStep6 = 3;          // Successful visits before Step 5/completion (1-10) - kept as Step6 for migration
+    public int locationsForStep5 = 3;          // Successful visits before Step 5/completion (1-10) - kept as Step6 for migration
     public int maxConsecutiveTimeouts = 3;     // Timeouts before safety stop (1-10)
     
     // Human-like Behavior Settings
@@ -250,7 +250,7 @@ public class PokeAlertConfig {
         nearbyPlayerDetectionRadius = clamp(nearbyPlayerDetectionRadius, 1.0, 128.0);
         initialQueueSize = clamp(initialQueueSize, 3, 10);
         replenishCount = clamp(replenishCount, 1, 5);
-        locationsForStep6 = clamp(locationsForStep6, 1, 10);
+        locationsForStep5 = clamp(locationsForStep5, 1, 10);
         maxConsecutiveTimeouts = clamp(maxConsecutiveTimeouts, 1, 10);
         
         // Ensure teleport detection is at least 2x arrival threshold

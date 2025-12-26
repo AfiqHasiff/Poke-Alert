@@ -70,6 +70,8 @@ public class PokeAlertClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        LOGGER.info("PokéAlert: Starting client initialization...");
+        
         // Set singleton instance
         instance = this;
         
@@ -91,13 +93,38 @@ public class PokeAlertClient implements ClientModInitializer {
         notificationManager.registerService(new TelegramNotification());
         
         // Initialize DM detector
-        DmDetector.initialize();
-        
-        // Register chat message listener for DM detection
-        ClientReceiveMessageEvents.CHAT.register((message, signedMessage, sender, params, receptionTimestamp) -> {
-            // Process message on client thread
-            DmDetector.onChatMessage(message);
-        });
+        try {
+            DmDetector.initialize();
+            
+            // Register chat message listener for DM detection
+            // Note: DMs might come through as CHAT or GAME messages depending on server implementation
+            ClientReceiveMessageEvents.CHAT.register((message, signedMessage, sender, params, receptionTimestamp) -> {
+                try {
+                    LOGGER.debug("DmDetector: CHAT event received");
+                    // Process message on client thread
+                    DmDetector.onChatMessage(message);
+                } catch (Exception e) {
+                    LOGGER.error("DmDetector: Error processing chat message", e);
+                }
+            });
+            
+            // Also listen to GAME messages (some servers send DMs as game messages)
+            try {
+                ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
+                    try {
+                        LOGGER.debug("DmDetector: GAME event received");
+                        // Process message on client thread
+                        DmDetector.onChatMessage(message);
+                    } catch (Exception e) {
+                        LOGGER.error("DmDetector: Error processing game message", e);
+                    }
+                });
+            } catch (Exception e) {
+                LOGGER.warn("DmDetector: Failed to register GAME event listener (this is OK if Fabric API version doesn't support it): {}", e.getMessage());
+            }
+        } catch (Exception e) {
+            LOGGER.error("DmDetector: Failed to initialize DM detection system", e);
+        }
         
         // Register keybindings
         toggleModKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(

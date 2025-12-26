@@ -51,16 +51,42 @@ public class DmDetector {
             String name = client.player.getName().getString();
             if (name != null && !name.isEmpty()) {
                 currentPlayerName = name;
-                PokeAlertClient.LOGGER.debug("DmDetector: Player name updated to {}", currentPlayerName);
+                PokeAlertClient.LOGGER.info("DmDetector: Player name updated to {}", currentPlayerName);
+            } else {
+                PokeAlertClient.LOGGER.warn("DmDetector: Failed to get player name (name is null or empty)");
             }
+        } else {
+            PokeAlertClient.LOGGER.warn("DmDetector: Cannot update player name (client or player is null)");
         }
     }
     
     /**
      * Process incoming chat message to detect DMs
-     * Called from ClientReceiveMessageEvents.CHAT
+     * Called from ClientReceiveMessageEvents.CHAT or GAME
      */
     public static void onChatMessage(Text message) {
+        if (message == null) {
+            return;
+        }
+        
+        // Convert Text to string - try multiple methods to get the full text
+        String messageText = message.getString();
+        
+        // If getString() doesn't capture everything, try getting the full content
+        // Some Text objects have complex structures with formatting
+        if (messageText == null || messageText.isEmpty()) {
+            // Try getting the full content including formatting codes
+            messageText = message.getContent().toString();
+        }
+        
+        // Quick check: if message contains "->", it might be a DM
+        if (messageText == null || !messageText.contains("->")) {
+            return; // Not a DM format, skip early
+        }
+        
+        // Log that we found a potential DM (this confirms handler is being called)
+        PokeAlertClient.LOGGER.info("DmDetector: Handler invoked for message with '->': '{}'", messageText);
+        
         // Get config
         PokeAlertConfig config = ConfigManager.getConfig();
         
@@ -79,24 +105,23 @@ public class DmDetector {
             return;
         }
         
-        // Update player name if not set or still "unknown"
-        if (currentPlayerName == null || "unknown".equals(currentPlayerName)) {
-            updatePlayerName();
-            if (currentPlayerName == null || "unknown".equals(currentPlayerName)) {
-                // Can't detect DMs without player name
-                return;
-            }
-        }
+        // Always try to update player name (in case it wasn't set on JOIN)
+        updatePlayerName();
         
-        // Convert Text to string for parsing
-        String messageText = message.getString();
-        if (messageText == null || messageText.isEmpty()) {
+        // Check if player name is available
+        if (currentPlayerName == null || "unknown".equals(currentPlayerName)) {
+            PokeAlertClient.LOGGER.warn("DmDetector: Cannot detect DMs - player name is not available (currentPlayerName: {})", 
+                currentPlayerName);
             return;
         }
+        
+        // Log potential DM for debugging
+        PokeAlertClient.LOGGER.info("DmDetector: Processing potential DM message: '{}'", messageText);
         
         // Try to match DM pattern
         Matcher matcher = DM_PATTERN.matcher(messageText);
         if (!matcher.find()) {
+            PokeAlertClient.LOGGER.warn("DmDetector: Message contains '->' but does not match DM pattern: '{}'", messageText);
             return; // Not a DM format
         }
         
@@ -105,8 +130,14 @@ public class DmDetector {
         String recipient = matcher.group(2).trim();
         String dmMessage = matcher.group(3).trim();
         
+        // Debug logging
+        PokeAlertClient.LOGGER.info("DmDetector: Pattern matched - sender: '{}', recipient: '{}', currentPlayerName: '{}'", 
+            sender, recipient, currentPlayerName);
+        
         // Validate recipient matches current player (case-insensitive)
         if (!recipient.equalsIgnoreCase(currentPlayerName)) {
+            PokeAlertClient.LOGGER.debug("DmDetector: Recipient '{}' does not match current player '{}'", 
+                recipient, currentPlayerName);
             return; // Not a DM to this player
         }
         
@@ -154,6 +185,7 @@ public class DmDetector {
         // Telegram notification
         if (config.dmTelegramNotification && config.telegramEnabled) {
             TelegramNotification telegram = new TelegramNotification();
+            telegram.initialize(); // Initialize httpClient before use
             telegram.sendDmNotification(sender, message, isAvoided);
         }
     }
