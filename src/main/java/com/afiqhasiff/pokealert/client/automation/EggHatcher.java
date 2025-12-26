@@ -12,7 +12,6 @@ import com.afiqhasiff.pokealert.client.util.LocationQueue;
 import com.afiqhasiff.pokealert.client.util.PlayerMonitor;
 import com.afiqhasiff.pokealert.client.util.SafetyManager;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.option.GameOptions;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
@@ -475,6 +474,18 @@ public class EggHatcher {
         automationStartTime = System.currentTimeMillis();
         currentState = State.DETECTED_AT_SPAWN;
         
+        // CRITICAL: Set journey tracking flags based on current location
+        // This ensures correct journey type in Telegram notification
+        if (isAtSpawn()) {
+            startedFromSpawn = true;
+            startedInOverworld = false;
+            PokeAlertClient.LOGGER.info("Journey tracking: Started from spawn (startedFromSpawn=true)");
+        } else {
+            startedFromSpawn = false;
+            startedInOverworld = true;
+            PokeAlertClient.LOGGER.info("Journey tracking: Started in overworld (startedInOverworld=true)");
+        }
+        
         // Don't reset journey tracking flags here - they should persist until Telegram notification is sent
         // Flags are only reset in stopAutomation() after notification is sent
         
@@ -728,10 +739,12 @@ public class EggHatcher {
             // Stop jumping when arriving
             stopJumping();
             
-            // Cancel timeout timer
+            // CRITICAL: Cancel timeout timer FIRST before any action processing
+            // This prevents timeout from firing if arrival callback takes time to process
             if (locationTimeoutTask != null) {
                 locationTimeoutTask.cancel(false);
                 locationTimeoutTask = null;
+                PokeAlertClient.LOGGER.debug("Arrival callback: Timeout cancelled");
             }
             
             // Clear stored navigation action (arrival successful, action was applied)
@@ -819,8 +832,15 @@ public class EggHatcher {
                 
                 // Log which action was selected for debugging
                 if (selectedAction != null) {
-                    PokeAlertClient.LOGGER.debug("Human behavior: Selected action '{}' with chance {} (lowest among successful rolls)", 
+                    PokeAlertClient.LOGGER.info("Human behavior: Selected action '{}' with chance {} (lowest among successful rolls)", 
                         selectedAction, lowestChance);
+                } else {
+                    // Log default behavior selection
+                    double totalChance = config.backtrackChance + config.walkChance + config.hotbarSwitchChance + 
+                                        config.jumpWhileMovingChance + config.longPauseChance + 
+                                        config.breakPauseChance + config.lookAroundChance;
+                    PokeAlertClient.LOGGER.info("Human behavior: No action selected (default behavior) - Total action chance: {:.2f}%, Default chance: {:.2f}%", 
+                        String.format("%.2f", totalChance * 100.0), String.format("%.2f", (1.0 - totalChance) * 100.0));
                 }
 
                 // Execute only the selected action (lowest chance if multiple landed, or the single one that landed)
@@ -860,6 +880,11 @@ public class EggHatcher {
 
                             // Timeout was already cancelled at the start of arrival callback
                             // No need to cancel again - we're intentionally pausing, not navigating
+                            // CRITICAL: Ensure timeout is cancelled (double-check for safety)
+                            if (locationTimeoutTask != null) {
+                                locationTimeoutTask.cancel(false);
+                                locationTimeoutTask = null;
+                            }
 
                             setBreakState(true); // Skip anti-AFK checking during break
                             simulateCameraRotation(pauseMs);
@@ -868,6 +893,8 @@ public class EggHatcher {
                                 setBreakState(false);
                                 breakNotificationSent = false; // Reset notification flag
                                 if (antiAfkActive && !SafetyManager.isSafetyTriggered()) {
+                                    // CRITICAL: Always navigate after pause completes
+                                    // This ensures navigation continues even if pause was long
                                     navigateToNextLocation(null);
                                 }
                             }, pauseMs, TimeUnit.MILLISECONDS);
@@ -1233,6 +1260,34 @@ public class EggHatcher {
     private void handleLocationTimeout() {
         if (!antiAfkActive) return;
         
+        // CRITICAL: Check if arrival was already detected (race condition protection)
+        // If arrival callback already processed, don't trigger timeout
+        if (arrivalProcessed.get()) {
+            PokeAlertClient.LOGGER.debug("Location timeout: Arrival already processed, skipping timeout");
+            return;
+        }
+        
+        // CRITICAL: Check if we're actually at the destination (arrival detection might have failed)
+        // This handles cases where arrival detection fails but we're actually at destination
+        int[] currentDest = locationQueue.getCurrentDestination();
+        if (currentDest != null && CoordinateMonitor.hasArrived()) {
+            PokeAlertClient.LOGGER.warn("Location timeout: Actually at destination but arrival callback didn't fire - treating as arrival");
+            // Mark as arrived and continue to next location
+            BaritoneController.markPathComplete();
+            CoordinateMonitor.clearDestination();
+            arrivalProcessed.set(false);
+            stopJumping();
+            currentNavigationAction = null;
+            locationQueue.markVisitedAndAdvance();
+            if (locationQueue.shouldTriggerStep5()) {
+                locationQueue.markStep5Completed();
+                completeAutomation();
+            }
+            // Continue to next location
+            navigateToNextLocation(null);
+            return;
+        }
+        
         PokeAlertClient.LOGGER.warn("⏱️ Location timeout - skipping to next");
         sendNotification("Egg Hatcher", "Location timeout - Skipping", Formatting.YELLOW);
         
@@ -1440,15 +1495,18 @@ public class EggHatcher {
     }
     
     /**
-     * Enable jumping while Baritone is pathing using direct key press injection
+     * Enable jumping while Baritone is pathing with realistic sprint-jump timing
      * 
      * Strategy:
-     * 1. Use periodic key press injection (every 100ms) to trigger jumps
-     * 2. Press and release jump key rapidly to simulate sprint-jumping
-     * 3. This works even when Baritone controls movement by injecting at game engine level
-     * 4. Stop jumping when pathing stops (arrival callback handles this)
+     * 1. Wait for Baritone to actually start moving (movement-based detection)
+     * 2. Only jump when player is on ground (realistic sprint-jump pattern)
+     * 3. Use direct `client.player.jump()` method call - bypasses Baritone's input handling
+     * 4. Check every 150ms and only jump if on ground (prevents flying detection)
+     * 5. Stop jumping when pathing stops (arrival callback handles this)
      * 
-     * Note: Baritone's `#set allowjump` command does NOT exist, so we use direct input injection
+     * Note: Baritone's `#set allowjump` command does NOT exist, and key press simulation doesn't work
+     * because Baritone overrides keyboard input. Using `client.player.jump()` bypasses this entirely.
+     * We use realistic timing (only jump when on ground) to avoid anti-cheat detection.
      */
     private void startJumpingWhileMoving() {
         // Stop any existing jump task (cleanup)
@@ -1460,11 +1518,22 @@ public class EggHatcher {
         if (client.player == null) return;
         
         isJumpKeyHeld = true;
-        GameOptions options = client.options;
-        KeyBinding jumpKey = options.jumpKey;
+        KeyBinding jumpKey = client.options.jumpKey;
         
-        // Start periodic jump execution - press and release jump key every 100ms
-        // This simulates continuous sprint-jumping behavior
+        // CRITICAL: Track initial position to detect when Baritone actually starts moving
+        // This prevents jump from starting before Baritone processes the #goto command
+        final double[] initialX = {client.player.getX()};
+        final double[] initialZ = {client.player.getZ()};
+        final long startTime = System.currentTimeMillis();
+        final boolean[] movementDetected = {false};
+        
+        // Track last position to detect if player is still moving (prevents jumping when stuck)
+        final double[] lastX = {client.player.getX()};
+        final double[] lastZ = {client.player.getZ()};
+        final long[] lastMovementTime = {System.currentTimeMillis()};
+        
+        // Start periodic jump execution - but wait for movement first
+        // Use 150ms interval for realistic sprint-jump timing (not every tick)
         jumpRepeatTask = scheduler.scheduleAtFixedRate(() -> {
             // Check exit conditions
             if (!antiAfkActive || !isJumpKeyHeld || client.player == null || !BaritoneController.isPathing()) {
@@ -1476,7 +1545,6 @@ public class EggHatcher {
                         }
                     });
                 }
-                
                 if (jumpRepeatTask != null) {
                     jumpRepeatTask.cancel(false);
                     jumpRepeatTask = null;
@@ -1486,30 +1554,81 @@ public class EggHatcher {
                 return;
             }
             
-            // Press and release jump key to trigger jump
-            // This works even when Baritone controls movement by injecting at the game engine level
+            // CRITICAL: Wait for Baritone to actually start moving before jumping
+            // Check if player has moved at least 0.5 blocks from initial position
+            if (!movementDetected[0]) {
+                double currentX = client.player.getX();
+                double currentZ = client.player.getZ();
+                double distanceMoved = Math.sqrt(
+                    Math.pow(currentX - initialX[0], 2) + 
+                    Math.pow(currentZ - initialZ[0], 2)
+                );
+                
+                // Also check timeout: if 2 seconds pass without movement, start jumping anyway (Baritone might be stuck)
+                long elapsed = System.currentTimeMillis() - startTime;
+                if (distanceMoved >= 0.5 || elapsed > 2000) {
+                    movementDetected[0] = true;
+                    lastX[0] = currentX;
+                    lastZ[0] = currentZ;
+                    lastMovementTime[0] = System.currentTimeMillis();
+                    PokeAlertClient.LOGGER.info("Jump task: Movement detected (distance={}, elapsed={}ms) - starting sprint-jump", 
+                        String.format("%.2f", distanceMoved), elapsed);
+                } else {
+                    // Not moving yet, skip this iteration
+                    return;
+                }
+            }
+            
+            // CRITICAL: Check if player is still moving (not stuck)
+            // If player hasn't moved in the last 500ms, don't jump (Baritone might be stuck)
+            double currentX = client.player.getX();
+            double currentZ = client.player.getZ();
+            double distanceSinceLastCheck = Math.sqrt(
+                Math.pow(currentX - lastX[0], 2) + 
+                Math.pow(currentZ - lastZ[0], 2)
+            );
+            
+            // Update last position and movement time
+            boolean isMoving = distanceSinceLastCheck >= 0.1; // Moved at least 0.1 blocks (10cm)
+            if (isMoving) {
+                lastX[0] = currentX;
+                lastZ[0] = currentZ;
+                lastMovementTime[0] = System.currentTimeMillis();
+            } else {
+                // Check if we've been stationary for too long (500ms)
+                long timeSinceLastMovement = System.currentTimeMillis() - lastMovementTime[0];
+                if (timeSinceLastMovement > 500) {
+                    PokeAlertClient.LOGGER.debug("Jump task: Player stationary for {}ms - skipping jump (Baritone may be stuck)", timeSinceLastMovement);
+                    return; // Don't jump if stuck
+                }
+            }
+            
+            // CRITICAL: Only jump when on ground AND moving - realistic sprint-jump pattern
+            // This prevents flying detection and prevents jumping when Baritone gets stuck
             client.execute(() -> {
-                if (jumpKey != null && isJumpKeyHeld && BaritoneController.isPathing() && client.player != null) {
-                    // Press jump key
-                    jumpKey.setPressed(true);
-                    // Immediately release to trigger jump action
-                    // The game will process the jump on the next tick
+                if (isJumpKeyHeld && BaritoneController.isPathing() && client.player != null && jumpKey != null) {
+                    // Only jump if player is on ground AND moving (not stuck)
+                    if (client.player.isOnGround() && isMoving) {
+                        // Hold jump key briefly
+                        jumpKey.setPressed(true);
+                        // Call jump() - only executes when on ground and moving
+                        client.player.jump();
+                        // Release jump key after a short delay (simulates key press, not hold)
+                        scheduler.schedule(() -> {
+                            if (jumpKey != null && isJumpKeyHeld) {
+                                client.execute(() -> {
+                                    if (jumpKey != null) {
+                                        jumpKey.setPressed(false);
+                                    }
+                                });
+                            }
+                        }, 50, TimeUnit.MILLISECONDS);
+                    }
                 }
             });
-            
-            // Release jump key after a short delay (allows jump to register)
-                        scheduler.schedule(() -> {
-                if (jumpKey != null && isJumpKeyHeld) {
-                    client.execute(() -> {
-                        if (jumpKey != null) {
-                            jumpKey.setPressed(false);
-                        }
-                    });
-                }
-            }, 50, TimeUnit.MILLISECONDS);
-        }, 0, 100, TimeUnit.MILLISECONDS);
+        }, 0, 150, TimeUnit.MILLISECONDS); // 150ms interval for realistic sprint-jump timing
         
-        PokeAlertClient.LOGGER.debug("Jump while moving: Enabled via direct key press injection");
+        PokeAlertClient.LOGGER.info("Jump while moving: Enabled - realistic sprint-jump timing (waiting for movement)");
     }
     
     /**
@@ -1531,8 +1650,7 @@ public class EggHatcher {
         
         // Release jump key
         if (client.player != null) {
-            GameOptions options = client.options;
-            KeyBinding jumpKey = options.jumpKey;
+            KeyBinding jumpKey = client.options.jumpKey;
             client.execute(() -> {
                 if (jumpKey != null) {
                     jumpKey.setPressed(false);
