@@ -46,6 +46,9 @@ public class PokeAlertConfigScreen extends Screen {
     private static final int COLOR_GOLD = 0xFFFFD700;
     private boolean isDraggingScrollbar = false;
     private double dragStartY = 0;
+    private boolean isHoveringScrollbar = false;
+    private static final int SCROLLBAR_WIDTH = 8;
+    private static final int SCROLLBAR_X_OFFSET = 6; // Distance from right edge
     
     // Category toggles
     private ButtonWidget legendariesButton;
@@ -72,6 +75,11 @@ public class PokeAlertConfigScreen extends Screen {
     private ButtonWidget realmReturnKeybindButton;
     private boolean waitingForRealmReturnKey = false;
     // v3.0.0: Anti-AFK keybind REMOVED - now using internal Baritone control
+    
+    // DM Detection settings
+    private ButtonWidget dmDetectionButton;
+    private ButtonWidget dmTelegramNotificationButton;
+    private ButtonWidget dmInGameNotificationButton;
     
     // v3.0.0: Anti-AFK Region settings
     private TextFieldWidget regionX1Field;
@@ -412,6 +420,8 @@ public class PokeAlertConfigScreen extends Screen {
             button -> {
                 config.eggHatcherEnabled = !config.eggHatcherEnabled;
                 button.setMessage(Text.literal(config.eggHatcherEnabled ? "Enabled" : "Disabled"));
+                // Enable/disable DM detection widgets based on Egg Hatcher toggle
+                updateDmNotificationWidgetsEnabled(config.eggHatcherEnabled && config.dmDetectionEnabled);
                 // Config will be saved when user clicks "Save & Apply"
             });
         currentY += ROW_HEIGHT;
@@ -447,7 +457,45 @@ public class PokeAlertConfigScreen extends Screen {
         realmReturnCommandField.setPlaceholder(Text.literal("/home new").formatted(Formatting.GRAY));
         addSelectableChild(realmReturnCommandField);
         addDrawableChild(realmReturnCommandField);
-        currentY += 30 + SECTION_SPACING;
+        currentY += ROW_HEIGHT;
+        
+        // DM Detection toggle button
+        dmDetectionButton = addEggTimerRow(currentY,
+            "DM Detection",
+            "Detect and notify about direct messages",
+            Text.literal(config.dmDetectionEnabled ? "Enabled" : "Disabled"),
+            button -> {
+                config.dmDetectionEnabled = !config.dmDetectionEnabled;
+                button.setMessage(Text.literal(config.dmDetectionEnabled ? "Enabled" : "Disabled"));
+                // Enable/disable DM notification toggles based on DM detection toggle
+                updateDmNotificationWidgetsEnabled(config.dmDetectionEnabled && config.eggHatcherEnabled);
+            });
+        currentY += ROW_HEIGHT;
+        
+        // DM Telegram notification toggle
+        dmTelegramNotificationButton = addNotificationRow(currentY,
+            "DM Telegram",
+            "Send Telegram notifications for DMs",
+            config.dmTelegramNotification,
+            button -> {
+                config.dmTelegramNotification = !config.dmTelegramNotification;
+                updateToggleButton(dmTelegramNotificationButton, config.dmTelegramNotification);
+            });
+        currentY += ROW_HEIGHT;
+        
+        // DM In-game notification toggle
+        dmInGameNotificationButton = addNotificationRow(currentY,
+            "DM In-Game",
+            "Show in-game notifications for DMs",
+            config.dmInGameNotification,
+            button -> {
+                config.dmInGameNotification = !config.dmInGameNotification;
+                updateToggleButton(dmInGameNotificationButton, config.dmInGameNotification);
+            });
+        currentY += ROW_HEIGHT + SECTION_SPACING;
+        
+        // Initialize DM notification widgets enabled state
+        updateDmNotificationWidgetsEnabled(config.dmDetectionEnabled && config.eggHatcherEnabled);
         
         // ========== v3.0.0: Anti-AFK Region Section ==========
         int regionFieldWidth = 60;
@@ -1021,6 +1069,17 @@ public class PokeAlertConfigScreen extends Screen {
             realmReturnToggleButton.setMessage(Text.literal(config.eggHatcherEnabled ? "Enabled" : "Disabled"));
         }
         
+        // Sync DM detection button state
+        if (dmDetectionButton != null) {
+            dmDetectionButton.setMessage(Text.literal(config.dmDetectionEnabled ? "Enabled" : "Disabled"));
+        }
+        
+        // Update DM notification widgets enabled state based on Egg Hatcher and DM Detection toggles
+        if (dmTelegramNotificationButton != null && dmInGameNotificationButton != null) {
+            boolean dmWidgetsEnabled = config.eggHatcherEnabled && config.dmDetectionEnabled;
+            updateDmNotificationWidgetsEnabled(dmWidgetsEnabled);
+        }
+        
         // Render background
         this.renderBackground(context, mouseX, mouseY, delta);
         
@@ -1186,7 +1245,15 @@ public class PokeAlertConfigScreen extends Screen {
             currentY + 2,
             COLOR_WHITE
         );
-        currentY += 30 + SECTION_SPACING;
+        currentY += 30;
+        
+        // DM Detection labels
+        drawCategoryWithDescription(context, "DM Detection", "Detect and notify about direct messages", currentY);
+        currentY += ROW_HEIGHT;
+        drawCategoryWithDescription(context, "DM Telegram", "Send Telegram notifications for DMs", currentY);
+        currentY += ROW_HEIGHT;
+        drawCategoryWithDescription(context, "DM In-Game", "Show in-game notifications for DMs", currentY);
+        currentY += ROW_HEIGHT + SECTION_SPACING;
         
         // Draw separator line
         drawHorizontalSeparator(context, currentY - 10);
@@ -1340,19 +1407,39 @@ public class PokeAlertConfigScreen extends Screen {
         // Re-enable scissor for scrollbar rendering
         context.enableScissor(SIDE_MARGIN, scrollAreaTop, this.width - SIDE_MARGIN, scrollAreaBottom);
         
-        // Draw scroll indicator if content is scrollable
+        // Draw scrollbar if content is scrollable
         if (maxScroll > 0) {
-            int scrollbarX = this.width - 10;
+            int scrollbarX = this.width - SCROLLBAR_X_OFFSET - SCROLLBAR_WIDTH;
             int scrollbarY = TOP_MARGIN;
             int scrollbarHeight = this.height - TOP_MARGIN - BOTTOM_MARGIN;
-            int thumbHeight = Math.max(20, (int)(scrollbarHeight * (scrollbarHeight / (double)(contentHeight + scrollbarHeight))));
+            int thumbHeight = Math.max(30, (int)(scrollbarHeight * (scrollbarHeight / (double)(contentHeight + scrollbarHeight))));
             int thumbY = scrollbarY + (int)((scrollbarHeight - thumbHeight) * (scrollOffset / maxScroll));
             
-            // Draw scrollbar track
-            context.fill(scrollbarX, scrollbarY, scrollbarX + 5, scrollbarY + scrollbarHeight, 0x40FFFFFF);
+            // Check if mouse is hovering over scrollbar
+            boolean hovering = mouseX >= scrollbarX - 2 && mouseX <= scrollbarX + SCROLLBAR_WIDTH + 2 &&
+                              mouseY >= scrollbarY && mouseY <= scrollbarY + scrollbarHeight;
+            isHoveringScrollbar = hovering;
             
-            // Draw scrollbar thumb
-            context.fill(scrollbarX, thumbY, scrollbarX + 5, thumbY + thumbHeight, 0x80FFFFFF);
+            // Draw scrollbar track (darker background)
+            int trackColor = hovering ? 0x60000000 : 0x40000000;
+            context.fill(scrollbarX, scrollbarY, scrollbarX + SCROLLBAR_WIDTH, scrollbarY + scrollbarHeight, trackColor);
+            
+            // Draw scrollbar track border
+            context.fill(scrollbarX, scrollbarY, scrollbarX + SCROLLBAR_WIDTH, scrollbarY + 1, 0x80FFFFFF);
+            context.fill(scrollbarX, scrollbarY + scrollbarHeight - 1, scrollbarX + SCROLLBAR_WIDTH, scrollbarY + scrollbarHeight, 0x80FFFFFF);
+            context.fill(scrollbarX, scrollbarY, scrollbarX + 1, scrollbarY + scrollbarHeight, 0x80FFFFFF);
+            context.fill(scrollbarX + SCROLLBAR_WIDTH - 1, scrollbarY, scrollbarX + SCROLLBAR_WIDTH, scrollbarY + scrollbarHeight, 0x80FFFFFF);
+            
+            // Draw scrollbar thumb (brighter when hovering or dragging)
+            int thumbColor = (isDraggingScrollbar || hovering) ? 0xFF808080 : 0xFF606060;
+            context.fill(scrollbarX + 1, thumbY, scrollbarX + SCROLLBAR_WIDTH - 1, thumbY + thumbHeight, thumbColor);
+            
+            // Draw thumb border for better visibility
+            int thumbBorderColor = (isDraggingScrollbar || hovering) ? 0xFFFFFFFF : 0xFFCCCCCC;
+            context.fill(scrollbarX + 1, thumbY, scrollbarX + SCROLLBAR_WIDTH - 1, thumbY + 1, thumbBorderColor);
+            context.fill(scrollbarX + 1, thumbY + thumbHeight - 1, scrollbarX + SCROLLBAR_WIDTH - 1, thumbY + thumbHeight, thumbBorderColor);
+        } else {
+            isHoveringScrollbar = false;
         }
         
         // Disable scissor clipping after all rendering is complete
@@ -1400,14 +1487,29 @@ public class PokeAlertConfigScreen extends Screen {
         
         // Check if clicking on scrollbar
         if (maxScroll > 0 && button == 0) {
-            int scrollbarX = this.width - 10;
+            int scrollbarX = this.width - SCROLLBAR_X_OFFSET - SCROLLBAR_WIDTH;
             int scrollbarY = TOP_MARGIN;
             int scrollbarHeight = this.height - TOP_MARGIN - BOTTOM_MARGIN;
             
-            if (mouseX >= scrollbarX && mouseX <= scrollbarX + 5 &&
+            // Expanded click area for easier interaction
+            if (mouseX >= scrollbarX - 2 && mouseX <= scrollbarX + SCROLLBAR_WIDTH + 2 &&
                 mouseY >= scrollbarY && mouseY <= scrollbarY + scrollbarHeight) {
                 isDraggingScrollbar = true;
                 dragStartY = mouseY;
+                
+                // If clicking on track (not thumb), jump to that position
+                int thumbHeight = Math.max(30, (int)(scrollbarHeight * (scrollbarHeight / (double)(contentHeight + scrollbarHeight))));
+                int thumbY = scrollbarY + (int)((scrollbarHeight - thumbHeight) * (scrollOffset / maxScroll));
+                
+                if (mouseY < thumbY || mouseY > thumbY + thumbHeight) {
+                    // Clicked on track - jump to position
+                    double relativeY = mouseY - scrollbarY;
+                    double scrollableHeight = scrollbarHeight - thumbHeight;
+                    double scrollPercent = Math.max(0, Math.min(1, relativeY / scrollableHeight));
+                    scrollOffset = scrollPercent * maxScroll;
+                    updateWidgetPositions();
+                }
+                
                 return true;
             }
         }
@@ -1420,7 +1522,7 @@ public class PokeAlertConfigScreen extends Screen {
         if (isDraggingScrollbar && maxScroll > 0) {
             int scrollbarY = TOP_MARGIN;
             int scrollbarHeight = this.height - TOP_MARGIN - BOTTOM_MARGIN;
-            int thumbHeight = Math.max(20, (int)(scrollbarHeight * (scrollbarHeight / (double)(contentHeight + scrollbarHeight))));
+            int thumbHeight = Math.max(30, (int)(scrollbarHeight * (scrollbarHeight / (double)(contentHeight + scrollbarHeight))));
             
             // Calculate new scroll position based on mouse Y
             double relativeY = mouseY - scrollbarY;
@@ -1616,6 +1718,11 @@ public class PokeAlertConfigScreen extends Screen {
         if (maxLongPauseField != null) maxLongPauseField.active = enabled;
         if (minBreakPauseField != null) minBreakPauseField.active = enabled;
         if (maxBreakPauseField != null) maxBreakPauseField.active = enabled;
+    }
+    
+    private void updateDmNotificationWidgetsEnabled(boolean enabled) {
+        if (dmTelegramNotificationButton != null) dmTelegramNotificationButton.active = enabled;
+        if (dmInGameNotificationButton != null) dmInGameNotificationButton.active = enabled;
     }
     
     /**

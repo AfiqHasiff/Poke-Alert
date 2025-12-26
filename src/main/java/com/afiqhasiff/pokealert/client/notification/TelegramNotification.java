@@ -170,6 +170,86 @@ public class TelegramNotification extends NotificationService {
             PokeAlertClient.LOGGER.error("Error sending egg timer notification to Telegram", e);
         }
     }
+    
+    /**
+     * Send DM notification to Telegram
+     */
+    public void sendDmNotification(String sender, String message, boolean isAvoided) {
+        // Refresh config reference
+        config = PokeAlertClient.getInstance().config;
+        
+        if (!isEnabled()) {
+            PokeAlertClient.LOGGER.debug("DM Telegram notification skipped - service not enabled or config invalid");
+            return;
+        }
+        
+        // Check rate limiting (uses existing Telegram rate limiter)
+        if (!checkRateLimit()) {
+            PokeAlertClient.LOGGER.warn("Telegram rate limit exceeded, skipping DM notification");
+            return;
+        }
+        
+        try {
+            // Format message
+            StringBuilder messageText = new StringBuilder();
+            messageText.append("<b>💬 Egg Hatcher DM</b>\n");
+            messageText.append("From: <code>").append(escapeHtml(sender)).append("</code>\n");
+            messageText.append("Message: ").append(escapeHtml(message));
+            
+            if (isAvoided) {
+                messageText.append("\n⚠️ <b>WARNING:</b> This player is in your avoided list");
+            }
+            
+            JsonObject jsonPayload = new JsonObject();
+            jsonPayload.addProperty("chat_id", config.telegramChatId);
+            jsonPayload.addProperty("text", messageText.toString());
+            jsonPayload.addProperty("parse_mode", "HTML");
+            
+            RequestBody body = RequestBody.create(
+                MediaType.parse("application/json"),
+                jsonPayload.toString()
+            );
+            
+            Request request = new Request.Builder()
+                .url(config.getTelegramSendMessageUrl())
+                .post(body)
+                .build();
+            
+            httpClient.newCall(request).enqueue(new Callback() {
+                @Override
+                public void onFailure(Call call, IOException e) {
+                    PokeAlertClient.LOGGER.error("Failed to send DM notification to Telegram: {}", e.getMessage());
+                }
+                
+                @Override
+                public void onResponse(Call call, Response response) throws IOException {
+                    if (response.isSuccessful()) {
+                        PokeAlertClient.LOGGER.debug("DM notification sent to Telegram successfully");
+                    } else {
+                        PokeAlertClient.LOGGER.error(
+                            "Telegram API returned error for DM: {} - {}",
+                            response.code(),
+                            response.body() != null ? response.body().string() : "No body"
+                        );
+                    }
+                    response.close();
+                }
+            });
+        } catch (Exception e) {
+            PokeAlertClient.LOGGER.error("Error sending DM notification to Telegram", e);
+        }
+    }
+    
+    /**
+     * Escape HTML special characters for Telegram
+     */
+    private String escapeHtml(String text) {
+        return text.replace("&", "&amp;")
+                   .replace("<", "&lt;")
+                   .replace(">", "&gt;")
+                   .replace("\"", "&quot;")
+                   .replace("'", "&#39;");
+    }
 
     /**
      * Format a rich message for Telegram

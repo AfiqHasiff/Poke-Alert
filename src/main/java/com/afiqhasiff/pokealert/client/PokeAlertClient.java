@@ -3,6 +3,7 @@ package com.afiqhasiff.pokealert.client;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 
 import net.minecraft.client.option.KeyBinding;
@@ -34,6 +35,7 @@ import com.afiqhasiff.pokealert.client.notification.PokemonSpawnData;
 import com.afiqhasiff.pokealert.client.notification.TelegramNotification;
 import com.afiqhasiff.pokealert.client.notification.EggTimerManager;
 import com.afiqhasiff.pokealert.client.automation.EggHatcher;
+import com.afiqhasiff.pokealert.client.util.DmDetector;
 
 public class PokeAlertClient implements ClientModInitializer {
     public static final String MOD_ID = "pokealert";
@@ -88,6 +90,15 @@ public class PokeAlertClient implements ClientModInitializer {
         notificationManager.registerService(new InGameNotification());
         notificationManager.registerService(new TelegramNotification());
         
+        // Initialize DM detector
+        DmDetector.initialize();
+        
+        // Register chat message listener for DM detection
+        ClientReceiveMessageEvents.CHAT.register((message, signedMessage, sender, params, receptionTimestamp) -> {
+            // Process message on client thread
+            DmDetector.onChatMessage(message);
+        });
+        
         // Register keybindings
         toggleModKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
             "key.pokealert.toggle",
@@ -120,6 +131,9 @@ public class PokeAlertClient implements ClientModInitializer {
         
         // Register connection event handlers for realm manager automation
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
+            // Update DM detector player name
+            DmDetector.updatePlayerName();
+            
             // Only start realm manager if PokeAlert is enabled
             if (ConfigManager.getConfig().modEnabled) {
                 EggHatcher.getInstance().markConnected();

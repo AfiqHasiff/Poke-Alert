@@ -51,6 +51,11 @@ public class PokeAlertConfig {
     public boolean eggHatcherEnabled = true;
     public String realmReturnCommand = "/home new"; // Default command to return to main realm for egg hatching
     
+    // Egg Hatcher DM Detection Settings
+    public boolean dmDetectionEnabled = true; // Master toggle for DM detection (requires eggHatcherEnabled)
+    public boolean dmTelegramNotification = true; // Send Telegram notifications for DMs
+    public boolean dmInGameNotification = false; // Optional in-game notifications for DMs (default false to avoid spam)
+    
     // ========== v3.0.0 Anti-AFK Settings ==========
     
     // Anti-AFK Region (X, Z only - Y handled by Baritone)

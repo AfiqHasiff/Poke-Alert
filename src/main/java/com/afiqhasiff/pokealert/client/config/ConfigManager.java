@@ -7,6 +7,7 @@ import com.afiqhasiff.pokealert.client.PokeAlertClient;
 import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 
@@ -75,9 +76,35 @@ public class ConfigManager {
         PokeAlertConfig config = new PokeAlertConfig();
         
         if (SETTINGS_FILE.exists()) {
-            try (FileReader reader = new FileReader(SETTINGS_FILE)) {
-                config = GSON.fromJson(reader, PokeAlertConfig.class);
+            try {
+                // Read file content as string to check for missing fields
+                String fileContent = new String(Files.readAllBytes(SETTINGS_FILE.toPath()), StandardCharsets.UTF_8);
+                
+                // Parse JSON (Gson will use default values for missing fields)
+                config = GSON.fromJson(fileContent, PokeAlertConfig.class);
                 PokeAlertClient.LOGGER.info("Loaded settings from {}", SETTINGS_FILE.getName());
+                
+                // Check if config file is missing any fields (general migration for all new fields)
+                // Compare the loaded JSON with a fresh default config to detect missing fields
+                com.google.gson.JsonObject fileJson = GSON.fromJson(fileContent, com.google.gson.JsonObject.class);
+                String defaultJson = GSON.toJson(new PokeAlertConfig());
+                com.google.gson.JsonObject defaultJsonObj = GSON.fromJson(defaultJson, com.google.gson.JsonObject.class);
+                
+                // Check if any fields from default config are missing in the file
+                boolean hasMissingFields = false;
+                for (String fieldName : defaultJsonObj.keySet()) {
+                    if (!fileJson.has(fieldName)) {
+                        hasMissingFields = true;
+                        PokeAlertClient.LOGGER.info("Config file missing field: {}", fieldName);
+                        break;
+                    }
+                }
+                
+                // If fields are missing, save config to add them (preserves existing values, adds missing ones)
+                if (hasMissingFields) {
+                    saveSettings(config);
+                    PokeAlertClient.LOGGER.info("Config file updated: Added missing fields with default values");
+                }
             } catch (Exception e) {
                 PokeAlertClient.LOGGER.error("Failed to read settings file, using defaults", e);
             }
