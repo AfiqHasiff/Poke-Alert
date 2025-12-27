@@ -209,6 +209,17 @@ public class TelegramCommandReceiver {
             
             String text = message.get("text").getAsString();
             
+            // Extract sender info first (needed for DM reply handling)
+            if (!message.has("from")) {
+                return;
+            }
+            
+            JsonObject from = message.getAsJsonObject("from");
+            long userId = from.get("id").getAsLong();
+            JsonObject chat = message.get("chat").getAsJsonObject();
+            long chatId = chat.get("id").getAsLong();
+            int messageId = message.get("message_id").getAsInt();
+            
             // Check if this is a reply to a DM notification
             if (message.has("reply_to_message")) {
                 JsonObject replyTo = message.getAsJsonObject("reply_to_message");
@@ -227,16 +238,6 @@ public class TelegramCommandReceiver {
             if (!text.startsWith("/pa")) {
                 return;
             }
-            
-            // Extract sender info
-            if (!message.has("from")) {
-                return;
-            }
-            
-            JsonObject from = message.getAsJsonObject("from");
-            long userId = from.get("id").getAsLong();
-            long chatId = message.get("chat").getAsJsonObject("id").getAsLong();
-            int messageId = message.get("message_id").getAsInt();
             
             // Check authorization
             if (!isAuthorizedUser(userId)) {

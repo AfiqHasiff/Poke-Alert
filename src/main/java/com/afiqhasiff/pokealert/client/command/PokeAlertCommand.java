@@ -338,7 +338,7 @@ public class PokeAlertCommand {
                                     .executes(context -> setLocationsForStep5(context))))
                             .then(ClientCommandManager.literal("timeouts")
                                 .then(ClientCommandManager.argument("max", IntegerArgumentType.integer(1, 10))
-                                    .executes(context -> setMaxConsecutiveTimeouts(context)))))
+                                    .executes(context -> setMaxConsecutiveTimeouts(context))))))
                     
                     // ========== Phase 3: Human-like Behavior Commands ==========
                     
