@@ -234,8 +234,31 @@ public class TelegramCommandReceiver {
                 }
             }
             
-            // Only process commands starting with /pa
-            if (!text.startsWith("/pa")) {
+            // Parse Telegram command format
+            // Supports: /pa help, /pahelp, /pahelp@botname
+            String commandPrefix = "/pa";
+            String commandText = null;
+            
+            // Check if it's a /pa command (with or without space, with or without bot mention)
+            if (text.startsWith(commandPrefix)) {
+                // Remove bot mention if present (e.g., /pahelp@CobblemonFinder_bot)
+                String textWithoutBotMention = text.split("@")[0];
+                
+                // Check if command has space (e.g., "/pa help") or no space (e.g., "/pahelp")
+                if (textWithoutBotMention.length() == commandPrefix.length()) {
+                    // Just "/pa" - treat as help command
+                    commandText = "help";
+                } else if (textWithoutBotMention.startsWith(commandPrefix + " ")) {
+                    // Format: "/pa help" (with space)
+                    commandText = textWithoutBotMention.substring(commandPrefix.length() + 1).trim();
+                } else if (textWithoutBotMention.startsWith(commandPrefix)) {
+                    // Format: "/pahelp" (no space)
+                    commandText = textWithoutBotMention.substring(commandPrefix.length()).trim();
+                }
+            }
+            
+            // If not a valid /pa command, ignore
+            if (commandText == null) {
                 return;
             }
             
@@ -254,7 +277,7 @@ public class TelegramCommandReceiver {
             }
             
             // Execute command
-            executeCommand(text, chatId, messageId);
+            executeCommand(commandText, chatId, messageId);
             
         } catch (Exception e) {
             PokeAlertClient.LOGGER.error("TelegramCommandReceiver: Error processing update", e);
@@ -458,12 +481,18 @@ public class TelegramCommandReceiver {
     
     /**
      * Execute a command from Telegram
+     * @param commandText The command without /pa prefix (e.g., "help", "status", "realm toggle")
      */
     private void executeCommand(String commandText, long chatId, int messageId) {
         PokeAlertClient.LOGGER.info("TelegramCommandReceiver: Executing command: {}", commandText);
         
-        // Parse command (remove /pa prefix)
-        String command = commandText.substring(3).trim(); // Remove "/pa"
+        // Command is already parsed (without /pa prefix)
+        String command = commandText.trim().toLowerCase();
+        
+        // Handle empty command (just "/pa")
+        if (command.isEmpty()) {
+            command = "help";
+        }
         
         // For now, send a placeholder response
         // TODO: Implement command execution logic
