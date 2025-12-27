@@ -8,6 +8,7 @@ import com.afiqhasiff.pokealert.client.notification.EggTimerManager;
 import com.afiqhasiff.pokealert.client.automation.EggHatcher;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.BoolArgumentType;
+import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
@@ -172,6 +173,217 @@ public class PokeAlertCommand {
                     // Egg timer toggle command for parity
                     .then(ClientCommandManager.literal("timer")
                         .executes(context -> toggleEggTimer(context)))
+                    
+                    // ========== Phase 1: High Priority Missing Commands ==========
+                    
+                    // /pokealert blacklistchar <character>
+                    .then(ClientCommandManager.literal("blacklistchar")
+                        .then(ClientCommandManager.argument("character", StringArgumentType.string())
+                            .executes(context -> setBlacklistCharacter(context))))
+                    
+                    // /pokealert soundvolume <0-100>
+                    .then(ClientCommandManager.literal("soundvolume")
+                        .then(ClientCommandManager.argument("volume", IntegerArgumentType.integer(0, 100))
+                            .executes(context -> setSoundVolume(context))))
+                    
+                    // /pokealert eggtimer notifications <text/telegram> <enable/disable>
+                    .then(ClientCommandManager.literal("eggtimer")
+                        .then(ClientCommandManager.literal("notifications")
+                            .then(ClientCommandManager.literal("text")
+                                .then(ClientCommandManager.literal("enable")
+                                    .executes(context -> setEggTimerNotification(context, "text", true)))
+                                .then(ClientCommandManager.literal("disable")
+                                    .executes(context -> setEggTimerNotification(context, "text", false))))
+                            .then(ClientCommandManager.literal("telegram")
+                                .then(ClientCommandManager.literal("enable")
+                                    .executes(context -> setEggTimerNotification(context, "telegram", true)))
+                                .then(ClientCommandManager.literal("disable")
+                                    .executes(context -> setEggTimerNotification(context, "telegram", false))))))
+                    
+                    // /pokealert realm command <command>
+                    .then(ClientCommandManager.literal("realm")
+                        .then(ClientCommandManager.literal("command")
+                            .then(ClientCommandManager.argument("command", StringArgumentType.greedyString())
+                                .executes(context -> setRealmReturnCommand(context)))))
+                    
+                    // /pokealert dm <enable/disable/status>
+                    .then(ClientCommandManager.literal("dm")
+                        .executes(context -> showDmStatus(context))
+                        .then(ClientCommandManager.literal("enable")
+                            .executes(context -> setDmDetection(context, true)))
+                        .then(ClientCommandManager.literal("disable")
+                            .executes(context -> setDmDetection(context, false)))
+                        .then(ClientCommandManager.literal("status")
+                            .executes(context -> showDmStatus(context)))
+                        .then(ClientCommandManager.literal("notifications")
+                            .then(ClientCommandManager.literal("telegram")
+                                .then(ClientCommandManager.literal("enable")
+                                    .executes(context -> setDmNotification(context, "telegram", true)))
+                                .then(ClientCommandManager.literal("disable")
+                                    .executes(context -> setDmNotification(context, "telegram", false))))
+                            .then(ClientCommandManager.literal("ingame")
+                                .then(ClientCommandManager.literal("enable")
+                                    .executes(context -> setDmNotification(context, "ingame", true)))
+                                .then(ClientCommandManager.literal("disable")
+                                    .executes(context -> setDmNotification(context, "ingame", false))))))
+                    
+                    // /pokealert telegram <token/chatid/apiurl/ratelimit/cooldown/status/test>
+                    .then(ClientCommandManager.literal("telegram")
+                        .executes(context -> showTelegramStatus(context))
+                        .then(ClientCommandManager.literal("status")
+                            .executes(context -> showTelegramStatus(context)))
+                        .then(ClientCommandManager.literal("token")
+                            .then(ClientCommandManager.argument("token", StringArgumentType.greedyString())
+                                .executes(context -> setTelegramToken(context))))
+                        .then(ClientCommandManager.literal("chatid")
+                            .then(ClientCommandManager.argument("chatId", StringArgumentType.greedyString())
+                                .executes(context -> setTelegramChatId(context))))
+                        .then(ClientCommandManager.literal("apiurl")
+                            .then(ClientCommandManager.argument("url", StringArgumentType.greedyString())
+                                .executes(context -> setTelegramApiUrl(context))))
+                        .then(ClientCommandManager.literal("ratelimit")
+                            .then(ClientCommandManager.argument("maxPerMinute", IntegerArgumentType.integer(1, 60))
+                                .executes(context -> setTelegramRateLimit(context))))
+                        .then(ClientCommandManager.literal("cooldown")
+                            .then(ClientCommandManager.argument("seconds", IntegerArgumentType.integer(1, 300))
+                                .executes(context -> setTelegramCooldown(context))))
+                        .then(ClientCommandManager.literal("test")
+                            .executes(context -> testTelegramConnection(context))))
+                    
+                    // ========== Phase 2: Anti-AFK Commands ==========
+                    
+                    // /pokealert antiafk region <set/get/reset>
+                    .then(ClientCommandManager.literal("antiafk")
+                        .then(ClientCommandManager.literal("region")
+                            .executes(context -> showAntiAfkRegion(context))
+                            .then(ClientCommandManager.literal("get")
+                                .executes(context -> showAntiAfkRegion(context)))
+                            .then(ClientCommandManager.literal("set")
+                                .then(ClientCommandManager.argument("x1", IntegerArgumentType.integer())
+                                    .then(ClientCommandManager.argument("z1", IntegerArgumentType.integer())
+                                        .then(ClientCommandManager.argument("x2", IntegerArgumentType.integer())
+                                            .then(ClientCommandManager.argument("z2", IntegerArgumentType.integer())
+                                                .executes(context -> setAntiAfkRegion(context)))))))
+                            .then(ClientCommandManager.literal("reset")
+                                .executes(context -> resetAntiAfkRegion(context))))
+                        
+                        // /pokealert antiafk threshold <arrival/teleport> <blocks>
+                        .then(ClientCommandManager.literal("threshold")
+                            .then(ClientCommandManager.literal("arrival")
+                                .then(ClientCommandManager.argument("blocks", IntegerArgumentType.integer(1, 10))
+                                    .executes(context -> setArrivalThreshold(context))))
+                            .then(ClientCommandManager.literal("teleport")
+                                .then(ClientCommandManager.argument("blocks", IntegerArgumentType.integer(5, 50))
+                                    .executes(context -> setTeleportDetectionOffset(context)))))
+                        
+                        // /pokealert antiafk timing <coordinate/realmspawn/realmoverworld/playermonitor/timeout>
+                        .then(ClientCommandManager.literal("timing")
+                            .executes(context -> showTimingSettings(context))
+                            .then(ClientCommandManager.literal("coordinate")
+                                .then(ClientCommandManager.argument("ms", IntegerArgumentType.integer(100, 2000))
+                                    .executes(context -> setCoordinateCheckInterval(context))))
+                            .then(ClientCommandManager.literal("realmspawn")
+                                .then(ClientCommandManager.argument("ms", IntegerArgumentType.integer(100, 5000))
+                                    .executes(context -> setRealmCheckIntervalSpawn(context))))
+                            .then(ClientCommandManager.literal("realmoverworld")
+                                .then(ClientCommandManager.argument("ms", IntegerArgumentType.integer(5000, 60000))
+                                    .executes(context -> setRealmCheckIntervalOverworld(context))))
+                            .then(ClientCommandManager.literal("playermonitor")
+                                .then(ClientCommandManager.argument("ms", IntegerArgumentType.integer(1000, 30000))
+                                    .executes(context -> setPlayerMonitorInterval(context))))
+                            .then(ClientCommandManager.literal("timeout")
+                                .then(ClientCommandManager.argument("ms", IntegerArgumentType.integer(10000, 120000))
+                                    .executes(context -> setLocationTimeout(context))))
+                            .then(ClientCommandManager.literal("reset")
+                                .executes(context -> resetTimingSettings(context))))
+                        
+                        // /pokealert antiafk safety <monitoring/nearby/radius>
+                        .then(ClientCommandManager.literal("safety")
+                            .then(ClientCommandManager.literal("monitoring")
+                                .then(ClientCommandManager.literal("enable")
+                                    .executes(context -> setPlayerListMonitoring(context, true)))
+                                .then(ClientCommandManager.literal("disable")
+                                    .executes(context -> setPlayerListMonitoring(context, false))))
+                            .then(ClientCommandManager.literal("nearby")
+                                .then(ClientCommandManager.literal("enable")
+                                    .executes(context -> setNearbyPlayerDetection(context, true)))
+                                .then(ClientCommandManager.literal("disable")
+                                    .executes(context -> setNearbyPlayerDetection(context, false))))
+                            .then(ClientCommandManager.literal("radius")
+                                .then(ClientCommandManager.argument("blocks", DoubleArgumentType.doubleArg(1.0, 128.0))
+                                    .executes(context -> setNearbyPlayerDetectionRadius(context)))))
+                        
+                        // /pokealert antiafk avoid <add/remove/list>
+                        .then(ClientCommandManager.literal("avoid")
+                            .executes(context -> listPlayersToAvoid(context))
+                            .then(ClientCommandManager.literal("add")
+                                .then(ClientCommandManager.argument("player", StringArgumentType.greedyString())
+                                    .executes(context -> addPlayerToAvoid(context))))
+                            .then(ClientCommandManager.literal("remove")
+                                .then(ClientCommandManager.argument("player", StringArgumentType.greedyString())
+                                    .executes(context -> removePlayerToAvoid(context))))
+                            .then(ClientCommandManager.literal("list")
+                                .executes(context -> listPlayersToAvoid(context))))
+                        
+                        // /pokealert antiafk queue <initial/replenish/locations/timeouts>
+                        .then(ClientCommandManager.literal("queue")
+                            .then(ClientCommandManager.literal("initial")
+                                .then(ClientCommandManager.argument("size", IntegerArgumentType.integer(3, 10))
+                                    .executes(context -> setInitialQueueSize(context))))
+                            .then(ClientCommandManager.literal("replenish")
+                                .then(ClientCommandManager.argument("count", IntegerArgumentType.integer(1, 5))
+                                    .executes(context -> setReplenishCount(context))))
+                            .then(ClientCommandManager.literal("locations")
+                                .then(ClientCommandManager.argument("count", IntegerArgumentType.integer(1, 10))
+                                    .executes(context -> setLocationsForStep5(context))))
+                            .then(ClientCommandManager.literal("timeouts")
+                                .then(ClientCommandManager.argument("max", IntegerArgumentType.integer(1, 10))
+                                    .executes(context -> setMaxConsecutiveTimeouts(context)))))
+                    
+                    // ========== Phase 3: Human-like Behavior Commands ==========
+                    
+                    // /pokealert behavior <enable/disable/status/reset>
+                    .then(ClientCommandManager.literal("behavior")
+                        .executes(context -> showBehaviorStatus(context))
+                        .then(ClientCommandManager.literal("enable")
+                            .executes(context -> setHumanLikeBehavior(context, true)))
+                        .then(ClientCommandManager.literal("disable")
+                            .executes(context -> setHumanLikeBehavior(context, false)))
+                        .then(ClientCommandManager.literal("status")
+                            .executes(context -> showBehaviorStatus(context)))
+                        .then(ClientCommandManager.literal("reset")
+                            .executes(context -> resetBehaviorSettings(context)))
+                        .then(ClientCommandManager.literal("pause")
+                            .then(ClientCommandManager.literal("long")
+                                .then(ClientCommandManager.argument("minMs", IntegerArgumentType.integer(1000, 30000))
+                                    .then(ClientCommandManager.argument("maxMs", IntegerArgumentType.integer(1000, 60000))
+                                        .executes(context -> setLongPauseRange(context)))))
+                            .then(ClientCommandManager.literal("break")
+                                .then(ClientCommandManager.argument("minMs", IntegerArgumentType.integer(10000, 120000))
+                                    .then(ClientCommandManager.argument("maxMs", IntegerArgumentType.integer(10000, 300000))
+                                        .executes(context -> setBreakPauseRange(context))))))
+                        .then(ClientCommandManager.literal("chance")
+                            .then(ClientCommandManager.literal("longpause")
+                                .then(ClientCommandManager.argument("percent", DoubleArgumentType.doubleArg(0.0, 100.0))
+                                    .executes(context -> setLongPauseChance(context))))
+                            .then(ClientCommandManager.literal("breakpause")
+                                .then(ClientCommandManager.argument("percent", DoubleArgumentType.doubleArg(0.0, 100.0))
+                                    .executes(context -> setBreakPauseChance(context))))
+                            .then(ClientCommandManager.literal("backtrack")
+                                .then(ClientCommandManager.argument("percent", DoubleArgumentType.doubleArg(0.0, 100.0))
+                                    .executes(context -> setBacktrackChance(context))))
+                            .then(ClientCommandManager.literal("walk")
+                                .then(ClientCommandManager.argument("percent", DoubleArgumentType.doubleArg(0.0, 100.0))
+                                    .executes(context -> setWalkChance(context))))
+                            .then(ClientCommandManager.literal("hotbar")
+                                .then(ClientCommandManager.argument("percent", DoubleArgumentType.doubleArg(0.0, 100.0))
+                                    .executes(context -> setHotbarSwitchChance(context))))
+                            .then(ClientCommandManager.literal("jump")
+                                .then(ClientCommandManager.argument("percent", DoubleArgumentType.doubleArg(0.0, 100.0))
+                                    .executes(context -> setJumpWhileMovingChance(context))))
+                            .then(ClientCommandManager.literal("lookaround")
+                                .then(ClientCommandManager.argument("percent", DoubleArgumentType.doubleArg(0.0, 100.0))
+                                    .executes(context -> setLookAroundChance(context))))))
             );
         });
     }
@@ -312,6 +524,12 @@ public class PokeAlertCommand {
             .append(Text.literal("<minutes>").formatted(Formatting.GRAY)));
         source.sendFeedback(Text.literal("    ➤ ").formatted(Formatting.DARK_PURPLE)
             .append(Text.literal("Set default duration").formatted(Formatting.WHITE)));
+        source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+            .append(Text.literal("eggtimer notifications text ").formatted(Formatting.GREEN))
+            .append(Text.literal("<enable|disable>").formatted(Formatting.LIGHT_PURPLE)));
+        source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+            .append(Text.literal("eggtimer notifications telegram ").formatted(Formatting.GREEN))
+            .append(Text.literal("<enable|disable>").formatted(Formatting.LIGHT_PURPLE)));
         
         source.sendFeedback(Text.empty()); // Empty line
         
@@ -359,6 +577,62 @@ public class PokeAlertCommand {
             .append(Text.literal("sound").formatted(Formatting.BLUE))
             .append(Text.literal(", ").formatted(Formatting.DARK_GRAY))
             .append(Text.literal("telegram").formatted(Formatting.DARK_BLUE)));
+        source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+            .append(Text.literal("soundvolume ").formatted(Formatting.GREEN))
+            .append(Text.literal("<0-100>").formatted(Formatting.GRAY)));
+        source.sendFeedback(Text.literal("    ➤ ").formatted(Formatting.DARK_GREEN)
+            .append(Text.literal("Set in-game sound volume (0-100%)").formatted(Formatting.WHITE)));
+        source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+            .append(Text.literal("blacklistchar ").formatted(Formatting.GREEN))
+            .append(Text.literal("<character>").formatted(Formatting.GRAY)));
+        source.sendFeedback(Text.literal("    ➤ ").formatted(Formatting.DARK_GREEN)
+            .append(Text.literal("Set character to filter Pokémon names (multiplayer)").formatted(Formatting.WHITE)));
+        
+        source.sendFeedback(Text.empty()); // Empty line
+        
+        // Telegram Configuration section
+        source.sendFeedback(Text.literal("━━━ ").formatted(Formatting.DARK_GRAY)
+            .append(Text.literal("Telegram Configuration").formatted(Formatting.AQUA))
+            .append(Text.literal(" ━━━").formatted(Formatting.DARK_GRAY)));
+        source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+            .append(Text.literal("telegram status").formatted(Formatting.AQUA)));
+        source.sendFeedback(Text.literal("    ➤ ").formatted(Formatting.DARK_AQUA)
+            .append(Text.literal("Show Telegram configuration (masked)").formatted(Formatting.WHITE)));
+        source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+            .append(Text.literal("telegram token ").formatted(Formatting.GREEN))
+            .append(Text.literal("<token>").formatted(Formatting.GRAY)));
+        source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+            .append(Text.literal("telegram chatid ").formatted(Formatting.GREEN))
+            .append(Text.literal("<chatId>").formatted(Formatting.GRAY)));
+        source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+            .append(Text.literal("telegram apiurl ").formatted(Formatting.GREEN))
+            .append(Text.literal("<url>").formatted(Formatting.GRAY)));
+        source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+            .append(Text.literal("telegram ratelimit ").formatted(Formatting.GREEN))
+            .append(Text.literal("<maxPerMinute>").formatted(Formatting.GRAY)));
+        source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+            .append(Text.literal("telegram cooldown ").formatted(Formatting.GREEN))
+            .append(Text.literal("<seconds>").formatted(Formatting.GRAY)));
+        source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+            .append(Text.literal("telegram test").formatted(Formatting.AQUA)));
+        source.sendFeedback(Text.literal("    ➤ ").formatted(Formatting.DARK_AQUA)
+            .append(Text.literal("Test Telegram connection").formatted(Formatting.WHITE)));
+        
+        source.sendFeedback(Text.empty()); // Empty line
+        
+        // DM Detection section
+        source.sendFeedback(Text.literal("━━━ ").formatted(Formatting.DARK_GRAY)
+            .append(Text.literal("DM Detection").formatted(Formatting.AQUA))
+            .append(Text.literal(" ━━━").formatted(Formatting.DARK_GRAY)));
+        source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+            .append(Text.literal("dm ").formatted(Formatting.GREEN))
+            .append(Text.literal("<enable|disable|status>").formatted(Formatting.LIGHT_PURPLE)));
+        source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+            .append(Text.literal("dm notifications telegram ").formatted(Formatting.GREEN))
+            .append(Text.literal("<enable|disable>").formatted(Formatting.LIGHT_PURPLE)));
+        source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+            .append(Text.literal("dm notifications ingame ").formatted(Formatting.GREEN))
+            .append(Text.literal("<enable|disable>").formatted(Formatting.LIGHT_PURPLE)));
         
         source.sendFeedback(Text.empty()); // Empty line
         
@@ -414,6 +688,72 @@ public class PokeAlertCommand {
                     .append(Text.literal(" - ").formatted(Formatting.DARK_GRAY))
                     .append(Text.literal("Check current status").formatted(Formatting.WHITE))
             );
+            source.sendFeedback(
+                Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+                    .append(Text.literal("realm command ").formatted(Formatting.GREEN))
+                    .append(Text.literal("<command>").formatted(Formatting.GRAY))
+                    .append(Text.literal(" - ").formatted(Formatting.DARK_GRAY))
+                    .append(Text.literal("Set realm return command").formatted(Formatting.WHITE))
+            );
+            source.sendFeedback(Text.empty()); // Empty line
+            
+            // Anti-AFK section
+            source.sendFeedback(Text.literal("━━━ ").formatted(Formatting.DARK_GRAY)
+                .append(Text.literal("Anti-AFK Settings").formatted(Formatting.AQUA))
+                .append(Text.literal(" ━━━").formatted(Formatting.DARK_GRAY)));
+            source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+                .append(Text.literal("antiafk region ").formatted(Formatting.GREEN))
+                .append(Text.literal("<get|set|reset>").formatted(Formatting.LIGHT_PURPLE)));
+            source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+                .append(Text.literal("antiafk region set ").formatted(Formatting.GREEN))
+                .append(Text.literal("<x1> <z1> <x2> <z2>").formatted(Formatting.GRAY)));
+            source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+                .append(Text.literal("antiafk threshold arrival ").formatted(Formatting.GREEN))
+                .append(Text.literal("<blocks>").formatted(Formatting.GRAY)));
+            source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+                .append(Text.literal("antiafk threshold teleport ").formatted(Formatting.GREEN))
+                .append(Text.literal("<blocks>").formatted(Formatting.GRAY)));
+            source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+                .append(Text.literal("antiafk timing ").formatted(Formatting.GREEN))
+                .append(Text.literal("<coordinate|realmspawn|realmoverworld|playermonitor|timeout|reset>").formatted(Formatting.LIGHT_PURPLE)));
+            source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+                .append(Text.literal("antiafk safety monitoring ").formatted(Formatting.GREEN))
+                .append(Text.literal("<enable|disable>").formatted(Formatting.LIGHT_PURPLE)));
+            source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+                .append(Text.literal("antiafk safety nearby ").formatted(Formatting.GREEN))
+                .append(Text.literal("<enable|disable>").formatted(Formatting.LIGHT_PURPLE)));
+            source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+                .append(Text.literal("antiafk safety radius ").formatted(Formatting.GREEN))
+                .append(Text.literal("<blocks>").formatted(Formatting.GRAY)));
+            source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+                .append(Text.literal("antiafk avoid ").formatted(Formatting.GREEN))
+                .append(Text.literal("<add|remove|list> ").formatted(Formatting.LIGHT_PURPLE))
+                .append(Text.literal("[player]").formatted(Formatting.GRAY)));
+            source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+                .append(Text.literal("antiafk queue ").formatted(Formatting.GREEN))
+                .append(Text.literal("<initial|replenish|locations|timeouts> ").formatted(Formatting.LIGHT_PURPLE))
+                .append(Text.literal("<value>").formatted(Formatting.GRAY)));
+            
+            source.sendFeedback(Text.empty()); // Empty line
+            
+            // Human-like Behavior section
+            source.sendFeedback(Text.literal("━━━ ").formatted(Formatting.DARK_GRAY)
+                .append(Text.literal("Human-like Behavior").formatted(Formatting.AQUA))
+                .append(Text.literal(" ━━━").formatted(Formatting.DARK_GRAY)));
+            source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+                .append(Text.literal("behavior ").formatted(Formatting.GREEN))
+                .append(Text.literal("<enable|disable|status|reset>").formatted(Formatting.LIGHT_PURPLE)));
+            source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+                .append(Text.literal("behavior pause long ").formatted(Formatting.GREEN))
+                .append(Text.literal("<minMs> <maxMs>").formatted(Formatting.GRAY)));
+            source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+                .append(Text.literal("behavior pause break ").formatted(Formatting.GREEN))
+                .append(Text.literal("<minMs> <maxMs>").formatted(Formatting.GRAY)));
+            source.sendFeedback(Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
+                .append(Text.literal("behavior chance ").formatted(Formatting.GREEN))
+                .append(Text.literal("<longpause|breakpause|backtrack|walk|hotbar|jump|lookaround> ").formatted(Formatting.LIGHT_PURPLE))
+                .append(Text.literal("<percent>").formatted(Formatting.GRAY)));
+            
             source.sendFeedback(Text.empty()); // Empty line
             
             // Keybind
@@ -1279,6 +1619,1014 @@ public class PokeAlertCommand {
         
         EggTimerManager timerManager = EggTimerManager.getInstance();
         timerManager.handleTimerToggle();
+        
+        return 1;
+    }
+    
+    // ========== Phase 1: High Priority Missing Commands ==========
+    
+    private static int setBlacklistCharacter(CommandContext<FabricClientCommandSource> context) {
+        String character = StringArgumentType.getString(context, "character");
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        if (character.length() != 1) {
+            context.getSource().sendError(Text.literal("Blacklist character must be a single character"));
+            return 0;
+        }
+        
+        config.blacklistCharacter = character;
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Blacklist character set to: ").formatted(Formatting.GRAY))
+                .append(Text.literal(character).formatted(Formatting.WHITE))
+        );
+        
+        return 1;
+    }
+    
+    private static int setSoundVolume(CommandContext<FabricClientCommandSource> context) {
+        int volumePercent = IntegerArgumentType.getInteger(context, "volume");
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        config.inGameSoundVolume = volumePercent / 100.0f;
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Sound volume set to: ").formatted(Formatting.GRAY))
+                .append(Text.literal(volumePercent + "%").formatted(Formatting.WHITE))
+        );
+        
+        return 1;
+    }
+    
+    private static int setEggTimerNotification(CommandContext<FabricClientCommandSource> context, String type, boolean enabled) {
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        switch (type) {
+            case "text" -> config.eggTimerTextNotification = enabled;
+            case "telegram" -> config.eggTimerTelegramNotification = enabled;
+        }
+        
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Egg timer ").formatted(Formatting.GRAY))
+                .append(Text.literal(type).formatted(Formatting.WHITE))
+                .append(Text.literal(" notifications ").formatted(Formatting.GRAY))
+                .append(Text.literal(enabled ? "ENABLED" : "DISABLED")
+                    .formatted(enabled ? Formatting.GREEN : Formatting.RED))
+        );
+        
+        return 1;
+    }
+    
+    private static int setRealmReturnCommand(CommandContext<FabricClientCommandSource> context) {
+        String command = StringArgumentType.getString(context, "command");
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        if (!command.startsWith("/")) {
+            context.getSource().sendError(Text.literal("Command must start with '/'"));
+            return 0;
+        }
+        
+        config.realmReturnCommand = command;
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Realm return command set to: ").formatted(Formatting.GRAY))
+                .append(Text.literal(command).formatted(Formatting.WHITE))
+        );
+        
+        return 1;
+    }
+    
+    private static int setDmDetection(CommandContext<FabricClientCommandSource> context, boolean enabled) {
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        config.dmDetectionEnabled = enabled;
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] DM Detection ").formatted(Formatting.GRAY))
+                .append(Text.literal(enabled ? "ENABLED" : "DISABLED")
+                    .formatted(enabled ? Formatting.GREEN : Formatting.RED))
+        );
+        
+        return 1;
+    }
+    
+    private static int showDmStatus(CommandContext<FabricClientCommandSource> context) {
+        PokeAlertConfig config = ConfigManager.getConfig();
+        FabricClientCommandSource source = context.getSource();
+        
+        source.sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] DM Detection Status").formatted(Formatting.WHITE))
+        );
+        
+        source.sendFeedback(formatCategoryStatus("DM Detection", config.dmDetectionEnabled));
+        source.sendFeedback(formatCategoryStatus("Telegram Notifications", config.dmTelegramNotification));
+        source.sendFeedback(formatCategoryStatus("In-Game Notifications", config.dmInGameNotification));
+        
+        return 1;
+    }
+    
+    private static int setDmNotification(CommandContext<FabricClientCommandSource> context, String type, boolean enabled) {
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        switch (type) {
+            case "telegram" -> config.dmTelegramNotification = enabled;
+            case "ingame" -> config.dmInGameNotification = enabled;
+        }
+        
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] DM ").formatted(Formatting.GRAY))
+                .append(Text.literal(type.equals("ingame") ? "in-game" : type).formatted(Formatting.WHITE))
+                .append(Text.literal(" notifications ").formatted(Formatting.GRAY))
+                .append(Text.literal(enabled ? "ENABLED" : "DISABLED")
+                    .formatted(enabled ? Formatting.GREEN : Formatting.RED))
+        );
+        
+        return 1;
+    }
+    
+    private static int showTelegramStatus(CommandContext<FabricClientCommandSource> context) {
+        PokeAlertConfig config = ConfigManager.getConfig();
+        FabricClientCommandSource source = context.getSource();
+        
+        source.sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Telegram Configuration").formatted(Formatting.WHITE))
+        );
+        
+        source.sendFeedback(formatCategoryStatus("Telegram Enabled", config.telegramEnabled));
+        source.sendFeedback(Text.literal("  Bot Token: ").formatted(Formatting.GRAY)
+            .append(Text.literal(config.telegramBotToken != null && !config.telegramBotToken.isEmpty() 
+                ? "***" + config.telegramBotToken.substring(Math.max(0, config.telegramBotToken.length() - 4))
+                : "Not set").formatted(Formatting.WHITE)));
+        source.sendFeedback(Text.literal("  Chat ID: ").formatted(Formatting.GRAY)
+            .append(Text.literal(config.telegramChatId != null && !config.telegramChatId.isEmpty() 
+                ? "***" + config.telegramChatId.substring(Math.max(0, config.telegramChatId.length() - 4))
+                : "Not set").formatted(Formatting.WHITE)));
+        source.sendFeedback(Text.literal("  API URL: ").formatted(Formatting.GRAY)
+            .append(Text.literal(config.telegramApiUrl).formatted(Formatting.WHITE)));
+        source.sendFeedback(Text.literal("  Rate Limit: ").formatted(Formatting.GRAY)
+            .append(Text.literal(config.telegramMaxNotificationsPerMinute + " per minute").formatted(Formatting.WHITE)));
+        source.sendFeedback(Text.literal("  Cooldown: ").formatted(Formatting.GRAY)
+            .append(Text.literal(config.telegramCooldownSeconds + " seconds").formatted(Formatting.WHITE)));
+        source.sendFeedback(formatCategoryStatus("Valid Configuration", config.isTelegramValid()));
+        
+        return 1;
+    }
+    
+    private static int setTelegramToken(CommandContext<FabricClientCommandSource> context) {
+        String token = StringArgumentType.getString(context, "token");
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        config.telegramBotToken = token;
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Telegram bot token set").formatted(Formatting.GREEN))
+        );
+        
+        return 1;
+    }
+    
+    private static int setTelegramChatId(CommandContext<FabricClientCommandSource> context) {
+        String chatId = StringArgumentType.getString(context, "chatId");
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        config.telegramChatId = chatId;
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Telegram chat ID set").formatted(Formatting.GREEN))
+        );
+        
+        return 1;
+    }
+    
+    private static int setTelegramApiUrl(CommandContext<FabricClientCommandSource> context) {
+        String url = StringArgumentType.getString(context, "url");
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            context.getSource().sendError(Text.literal("URL must start with http:// or https://"));
+            return 0;
+        }
+        
+        config.telegramApiUrl = url;
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Telegram API URL set to: ").formatted(Formatting.GRAY))
+                .append(Text.literal(url).formatted(Formatting.WHITE))
+        );
+        
+        return 1;
+    }
+    
+    private static int setTelegramRateLimit(CommandContext<FabricClientCommandSource> context) {
+        int maxPerMinute = IntegerArgumentType.getInteger(context, "maxPerMinute");
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        config.telegramMaxNotificationsPerMinute = maxPerMinute;
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Telegram rate limit set to: ").formatted(Formatting.GRAY))
+                .append(Text.literal(maxPerMinute + " per minute").formatted(Formatting.WHITE))
+        );
+        
+        return 1;
+    }
+    
+    private static int setTelegramCooldown(CommandContext<FabricClientCommandSource> context) {
+        int seconds = IntegerArgumentType.getInteger(context, "seconds");
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        config.telegramCooldownSeconds = seconds;
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Telegram cooldown set to: ").formatted(Formatting.GRAY))
+                .append(Text.literal(seconds + " seconds").formatted(Formatting.WHITE))
+        );
+        
+        return 1;
+    }
+    
+    private static int testTelegramConnection(CommandContext<FabricClientCommandSource> context) {
+        PokeAlertConfig config = ConfigManager.getConfig();
+        FabricClientCommandSource source = context.getSource();
+        
+        if (!config.isTelegramValid()) {
+            source.sendError(Text.literal("Telegram is not properly configured. Set bot token and chat ID first."));
+            return 0;
+        }
+        
+        source.sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Testing Telegram connection...").formatted(Formatting.YELLOW))
+        );
+        
+        // Note: Actual test would require sending a test message
+        // For now, just validate configuration
+        source.sendFeedback(
+            Text.literal("  Configuration appears valid. Send a test notification to verify.").formatted(Formatting.GRAY)
+        );
+        
+        return 1;
+    }
+    
+    // ========== Phase 2: Anti-AFK Commands ==========
+    
+    private static int showAntiAfkRegion(CommandContext<FabricClientCommandSource> context) {
+        PokeAlertConfig config = ConfigManager.getConfig();
+        FabricClientCommandSource source = context.getSource();
+        
+        source.sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Anti-AFK Region").formatted(Formatting.WHITE))
+        );
+        
+        source.sendFeedback(Text.literal("  Corner 1: (").formatted(Formatting.GRAY)
+            .append(Text.literal(String.valueOf(config.antiAfkRegionX1)).formatted(Formatting.WHITE))
+            .append(Text.literal(", ").formatted(Formatting.GRAY))
+            .append(Text.literal(String.valueOf(config.antiAfkRegionZ1)).formatted(Formatting.WHITE))
+            .append(Text.literal(")").formatted(Formatting.GRAY)));
+        source.sendFeedback(Text.literal("  Corner 2: (").formatted(Formatting.GRAY)
+            .append(Text.literal(String.valueOf(config.antiAfkRegionX2)).formatted(Formatting.WHITE))
+            .append(Text.literal(", ").formatted(Formatting.GRAY))
+            .append(Text.literal(String.valueOf(config.antiAfkRegionZ2)).formatted(Formatting.WHITE))
+            .append(Text.literal(")").formatted(Formatting.GRAY)));
+        source.sendFeedback(Text.literal("  Size: ").formatted(Formatting.GRAY)
+            .append(Text.literal(config.getAntiAfkRegionWidth() + " x " + config.getAntiAfkRegionDepth()).formatted(Formatting.WHITE)));
+        
+        if (config.isAntiAfkRegionTooSmall()) {
+            source.sendFeedback(Text.literal("  ⚠ Region may be too small (recommended: 20x20 minimum)").formatted(Formatting.YELLOW));
+        }
+        
+        return 1;
+    }
+    
+    private static int setAntiAfkRegion(CommandContext<FabricClientCommandSource> context) {
+        int x1 = IntegerArgumentType.getInteger(context, "x1");
+        int z1 = IntegerArgumentType.getInteger(context, "z1");
+        int x2 = IntegerArgumentType.getInteger(context, "x2");
+        int z2 = IntegerArgumentType.getInteger(context, "z2");
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        if (x1 == x2 || z1 == z2) {
+            context.getSource().sendError(Text.literal("Region must have non-zero area (x1 != x2 and z1 != z2)"));
+            return 0;
+        }
+        
+        config.antiAfkRegionX1 = x1;
+        config.antiAfkRegionZ1 = z1;
+        config.antiAfkRegionX2 = x2;
+        config.antiAfkRegionZ2 = z2;
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Anti-AFK region set: (").formatted(Formatting.GRAY))
+                .append(Text.literal(x1 + ", " + z1).formatted(Formatting.WHITE))
+                .append(Text.literal(") to (").formatted(Formatting.GRAY))
+                .append(Text.literal(x2 + ", " + z2).formatted(Formatting.WHITE))
+                .append(Text.literal(")").formatted(Formatting.GRAY))
+        );
+        
+        return 1;
+    }
+    
+    private static int resetAntiAfkRegion(CommandContext<FabricClientCommandSource> context) {
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        config.antiAfkRegionX1 = 0;
+        config.antiAfkRegionZ1 = 0;
+        config.antiAfkRegionX2 = 100;
+        config.antiAfkRegionZ2 = 100;
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Anti-AFK region reset to default (0,0 to 100,100)").formatted(Formatting.GREEN))
+        );
+        
+        return 1;
+    }
+    
+    private static int setArrivalThreshold(CommandContext<FabricClientCommandSource> context) {
+        int blocks = IntegerArgumentType.getInteger(context, "blocks");
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        config.arrivalThreshold = blocks;
+        config.validateTimingConfig(); // Ensure teleport detection is valid
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Arrival threshold set to: ").formatted(Formatting.GRAY))
+                .append(Text.literal(blocks + " blocks").formatted(Formatting.WHITE))
+        );
+        
+        return 1;
+    }
+    
+    private static int setTeleportDetectionOffset(CommandContext<FabricClientCommandSource> context) {
+        int blocks = IntegerArgumentType.getInteger(context, "blocks");
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        config.teleportDetectionOffset = blocks;
+        config.validateTimingConfig(); // Ensure it's at least 2x arrival threshold
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Teleport detection offset set to: ").formatted(Formatting.GRAY))
+                .append(Text.literal(blocks + " blocks").formatted(Formatting.WHITE))
+        );
+        
+        return 1;
+    }
+    
+    private static int showTimingSettings(CommandContext<FabricClientCommandSource> context) {
+        PokeAlertConfig config = ConfigManager.getConfig();
+        FabricClientCommandSource source = context.getSource();
+        
+        source.sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Anti-AFK Timing Settings").formatted(Formatting.WHITE))
+        );
+        
+        source.sendFeedback(Text.literal("  Coordinate Check: ").formatted(Formatting.GRAY)
+            .append(Text.literal(config.coordinateCheckInterval + "ms").formatted(Formatting.WHITE)));
+        source.sendFeedback(Text.literal("  Realm Check (Spawn): ").formatted(Formatting.GRAY)
+            .append(Text.literal(config.realmCheckIntervalSpawn + "ms").formatted(Formatting.WHITE)));
+        source.sendFeedback(Text.literal("  Realm Check (Overworld): ").formatted(Formatting.GRAY)
+            .append(Text.literal(config.realmCheckIntervalOverworld + "ms").formatted(Formatting.WHITE)));
+        source.sendFeedback(Text.literal("  Player Monitor: ").formatted(Formatting.GRAY)
+            .append(Text.literal(config.playerMonitorInterval + "ms").formatted(Formatting.WHITE)));
+        source.sendFeedback(Text.literal("  Location Timeout: ").formatted(Formatting.GRAY)
+            .append(Text.literal(config.locationTimeout + "ms").formatted(Formatting.WHITE)));
+        
+        return 1;
+    }
+    
+    private static int setCoordinateCheckInterval(CommandContext<FabricClientCommandSource> context) {
+        int ms = IntegerArgumentType.getInteger(context, "ms");
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        config.coordinateCheckInterval = ms;
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Coordinate check interval set to: ").formatted(Formatting.GRAY))
+                .append(Text.literal(ms + "ms").formatted(Formatting.WHITE))
+        );
+        
+        return 1;
+    }
+    
+    private static int setRealmCheckIntervalSpawn(CommandContext<FabricClientCommandSource> context) {
+        int ms = IntegerArgumentType.getInteger(context, "ms");
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        config.realmCheckIntervalSpawn = ms;
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Realm check interval (spawn) set to: ").formatted(Formatting.GRAY))
+                .append(Text.literal(ms + "ms").formatted(Formatting.WHITE))
+        );
+        
+        return 1;
+    }
+    
+    private static int setRealmCheckIntervalOverworld(CommandContext<FabricClientCommandSource> context) {
+        int ms = IntegerArgumentType.getInteger(context, "ms");
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        config.realmCheckIntervalOverworld = ms;
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Realm check interval (overworld) set to: ").formatted(Formatting.GRAY))
+                .append(Text.literal(ms + "ms").formatted(Formatting.WHITE))
+        );
+        
+        return 1;
+    }
+    
+    private static int setPlayerMonitorInterval(CommandContext<FabricClientCommandSource> context) {
+        int ms = IntegerArgumentType.getInteger(context, "ms");
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        config.playerMonitorInterval = ms;
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Player monitor interval set to: ").formatted(Formatting.GRAY))
+                .append(Text.literal(ms + "ms").formatted(Formatting.WHITE))
+        );
+        
+        return 1;
+    }
+    
+    private static int setLocationTimeout(CommandContext<FabricClientCommandSource> context) {
+        int ms = IntegerArgumentType.getInteger(context, "ms");
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        config.locationTimeout = ms;
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Location timeout set to: ").formatted(Formatting.GRAY))
+                .append(Text.literal(ms + "ms").formatted(Formatting.WHITE))
+        );
+        
+        return 1;
+    }
+    
+    private static int resetTimingSettings(CommandContext<FabricClientCommandSource> context) {
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        config.coordinateCheckInterval = 500;
+        config.realmCheckIntervalSpawn = 200;
+        config.realmCheckIntervalOverworld = 30000;
+        config.playerMonitorInterval = 5000;
+        config.locationTimeout = 45000;
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] All timing settings reset to defaults").formatted(Formatting.GREEN))
+        );
+        
+        return 1;
+    }
+    
+    private static int setPlayerListMonitoring(CommandContext<FabricClientCommandSource> context, boolean enabled) {
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        config.enablePlayerListMonitoring = enabled;
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Player list monitoring ").formatted(Formatting.GRAY))
+                .append(Text.literal(enabled ? "ENABLED" : "DISABLED")
+                    .formatted(enabled ? Formatting.GREEN : Formatting.RED))
+        );
+        
+        return 1;
+    }
+    
+    private static int setNearbyPlayerDetection(CommandContext<FabricClientCommandSource> context, boolean enabled) {
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        config.enableNearbyPlayerDetection = enabled;
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Nearby player detection ").formatted(Formatting.GRAY))
+                .append(Text.literal(enabled ? "ENABLED" : "DISABLED")
+                    .formatted(enabled ? Formatting.GREEN : Formatting.RED))
+        );
+        
+        return 1;
+    }
+    
+    private static int setNearbyPlayerDetectionRadius(CommandContext<FabricClientCommandSource> context) {
+        double blocks = DoubleArgumentType.getDouble(context, "blocks");
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        config.nearbyPlayerDetectionRadius = blocks;
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Nearby player detection radius set to: ").formatted(Formatting.GRAY))
+                .append(Text.literal(String.format("%.1f blocks", blocks)).formatted(Formatting.WHITE))
+        );
+        
+        return 1;
+    }
+    
+    private static int addPlayerToAvoid(CommandContext<FabricClientCommandSource> context) {
+        String player = StringArgumentType.getString(context, "player");
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        List<String> playersToAvoid = new ArrayList<>(Arrays.asList(config.playersToAvoid));
+        if (playersToAvoid.contains(player)) {
+            context.getSource().sendError(Text.literal(player + " is already in the avoid list"));
+            return 0;
+        }
+        
+        playersToAvoid.add(player);
+        config.playersToAvoid = playersToAvoid.toArray(new String[0]);
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Added ").formatted(Formatting.GRAY))
+                .append(Text.literal(player).formatted(Formatting.WHITE))
+                .append(Text.literal(" to avoid list").formatted(Formatting.RED))
+        );
+        
+        return 1;
+    }
+    
+    private static int removePlayerToAvoid(CommandContext<FabricClientCommandSource> context) {
+        String player = StringArgumentType.getString(context, "player");
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        List<String> playersToAvoid = new ArrayList<>(Arrays.asList(config.playersToAvoid));
+        if (playersToAvoid.remove(player)) {
+            config.playersToAvoid = playersToAvoid.toArray(new String[0]);
+            ConfigManager.updateConfig(config);
+            PokeAlertClient.getInstance().reloadConfig();
+            
+            context.getSource().sendFeedback(
+                Text.literal("[").formatted(Formatting.GRAY)
+                    .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                    .append(Text.literal("] Removed ").formatted(Formatting.GRAY))
+                    .append(Text.literal(player).formatted(Formatting.WHITE))
+                    .append(Text.literal(" from avoid list").formatted(Formatting.GRAY))
+            );
+        } else {
+            context.getSource().sendError(Text.literal(player + " is not in the avoid list"));
+        }
+        
+        return 1;
+    }
+    
+    private static int listPlayersToAvoid(CommandContext<FabricClientCommandSource> context) {
+        PokeAlertConfig config = ConfigManager.getConfig();
+        FabricClientCommandSource source = context.getSource();
+        
+        source.sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Players to Avoid ").formatted(Formatting.GRAY))
+                .append(Text.literal("(" + config.playersToAvoid.length + ")").formatted(Formatting.WHITE))
+        );
+        
+        if (config.playersToAvoid.length == 0) {
+            source.sendFeedback(Text.literal("  No players in avoid list").formatted(Formatting.GRAY));
+        } else {
+            for (String player : config.playersToAvoid) {
+                source.sendFeedback(Text.literal("  • ").formatted(Formatting.GRAY)
+                    .append(Text.literal(player).formatted(Formatting.WHITE)));
+            }
+        }
+        
+        return 1;
+    }
+    
+    private static int setInitialQueueSize(CommandContext<FabricClientCommandSource> context) {
+        int size = IntegerArgumentType.getInteger(context, "size");
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        config.initialQueueSize = size;
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Initial queue size set to: ").formatted(Formatting.GRAY))
+                .append(Text.literal(String.valueOf(size)).formatted(Formatting.WHITE))
+        );
+        
+        return 1;
+    }
+    
+    private static int setReplenishCount(CommandContext<FabricClientCommandSource> context) {
+        int count = IntegerArgumentType.getInteger(context, "count");
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        config.replenishCount = count;
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Replenish count set to: ").formatted(Formatting.GRAY))
+                .append(Text.literal(String.valueOf(count)).formatted(Formatting.WHITE))
+        );
+        
+        return 1;
+    }
+    
+    private static int setLocationsForStep5(CommandContext<FabricClientCommandSource> context) {
+        int count = IntegerArgumentType.getInteger(context, "count");
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        config.locationsForStep5 = count;
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Locations for completion set to: ").formatted(Formatting.GRAY))
+                .append(Text.literal(String.valueOf(count)).formatted(Formatting.WHITE))
+        );
+        
+        return 1;
+    }
+    
+    private static int setMaxConsecutiveTimeouts(CommandContext<FabricClientCommandSource> context) {
+        int max = IntegerArgumentType.getInteger(context, "max");
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        config.maxConsecutiveTimeouts = max;
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Max consecutive timeouts set to: ").formatted(Formatting.GRAY))
+                .append(Text.literal(String.valueOf(max)).formatted(Formatting.WHITE))
+        );
+        
+        return 1;
+    }
+    
+    // ========== Phase 3: Human-like Behavior Commands ==========
+    
+    private static int setHumanLikeBehavior(CommandContext<FabricClientCommandSource> context, boolean enabled) {
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        config.enableHumanLikeBehavior = enabled;
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Human-like behavior ").formatted(Formatting.GRAY))
+                .append(Text.literal(enabled ? "ENABLED" : "DISABLED")
+                    .formatted(enabled ? Formatting.GREEN : Formatting.RED))
+        );
+        
+        return 1;
+    }
+    
+    private static int showBehaviorStatus(CommandContext<FabricClientCommandSource> context) {
+        PokeAlertConfig config = ConfigManager.getConfig();
+        FabricClientCommandSource source = context.getSource();
+        
+        source.sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Human-like Behavior Settings").formatted(Formatting.WHITE))
+        );
+        
+        source.sendFeedback(formatCategoryStatus("Enabled", config.enableHumanLikeBehavior));
+        source.sendFeedback(Text.literal("  Long Pause: ").formatted(Formatting.GRAY)
+            .append(Text.literal(config.minLongPauseMs + "-" + config.maxLongPauseMs + "ms").formatted(Formatting.WHITE))
+            .append(Text.literal(" (").formatted(Formatting.GRAY))
+            .append(Text.literal(String.format("%.1f%%", config.longPauseChance * 100)).formatted(Formatting.WHITE))
+            .append(Text.literal(")").formatted(Formatting.GRAY)));
+        source.sendFeedback(Text.literal("  Break Pause: ").formatted(Formatting.GRAY)
+            .append(Text.literal(config.minBreakPauseMs + "-" + config.maxBreakPauseMs + "ms").formatted(Formatting.WHITE))
+            .append(Text.literal(" (").formatted(Formatting.GRAY))
+            .append(Text.literal(String.format("%.1f%%", config.breakPauseChance * 100)).formatted(Formatting.WHITE))
+            .append(Text.literal(")").formatted(Formatting.GRAY)));
+        source.sendFeedback(Text.literal("  Backtrack: ").formatted(Formatting.GRAY)
+            .append(Text.literal(String.format("%.1f%%", config.backtrackChance * 100)).formatted(Formatting.WHITE)));
+        source.sendFeedback(Text.literal("  Walk: ").formatted(Formatting.GRAY)
+            .append(Text.literal(String.format("%.1f%%", config.walkChance * 100)).formatted(Formatting.WHITE)));
+        source.sendFeedback(Text.literal("  Hotbar Switch: ").formatted(Formatting.GRAY)
+            .append(Text.literal(String.format("%.1f%%", config.hotbarSwitchChance * 100)).formatted(Formatting.WHITE)));
+        source.sendFeedback(Text.literal("  Jump While Moving: ").formatted(Formatting.GRAY)
+            .append(Text.literal(String.format("%.2f%%", config.jumpWhileMovingChance * 100)).formatted(Formatting.WHITE)));
+        source.sendFeedback(Text.literal("  Look Around: ").formatted(Formatting.GRAY)
+            .append(Text.literal(String.format("%.1f%%", config.lookAroundChance * 100)).formatted(Formatting.WHITE)));
+        
+        return 1;
+    }
+    
+    private static int resetBehaviorSettings(CommandContext<FabricClientCommandSource> context) {
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        config.enableHumanLikeBehavior = true;
+        config.minLongPauseMs = 5000;
+        config.maxLongPauseMs = 15000;
+        config.minBreakPauseMs = 30000;
+        config.maxBreakPauseMs = 60000;
+        config.longPauseChance = 0.05;
+        config.breakPauseChance = 0.01;
+        config.backtrackChance = 0.04;
+        config.walkChance = 0.15;
+        config.hotbarSwitchChance = 0.05;
+        config.jumpWhileMovingChance = 0.0005;
+        config.lookAroundChance = 0.03;
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] All behavior settings reset to defaults").formatted(Formatting.GREEN))
+        );
+        
+        return 1;
+    }
+    
+    private static int setLongPauseRange(CommandContext<FabricClientCommandSource> context) {
+        int minMs = IntegerArgumentType.getInteger(context, "minMs");
+        int maxMs = IntegerArgumentType.getInteger(context, "maxMs");
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        if (minMs >= maxMs) {
+            context.getSource().sendError(Text.literal("Minimum must be less than maximum"));
+            return 0;
+        }
+        
+        config.minLongPauseMs = minMs;
+        config.maxLongPauseMs = maxMs;
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Long pause range set to: ").formatted(Formatting.GRAY))
+                .append(Text.literal(minMs + "-" + maxMs + "ms").formatted(Formatting.WHITE))
+        );
+        
+        return 1;
+    }
+    
+    private static int setBreakPauseRange(CommandContext<FabricClientCommandSource> context) {
+        int minMs = IntegerArgumentType.getInteger(context, "minMs");
+        int maxMs = IntegerArgumentType.getInteger(context, "maxMs");
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        if (minMs >= maxMs) {
+            context.getSource().sendError(Text.literal("Minimum must be less than maximum"));
+            return 0;
+        }
+        
+        config.minBreakPauseMs = minMs;
+        config.maxBreakPauseMs = maxMs;
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Break pause range set to: ").formatted(Formatting.GRAY))
+                .append(Text.literal(minMs + "-" + maxMs + "ms").formatted(Formatting.WHITE))
+        );
+        
+        return 1;
+    }
+    
+    private static int setLongPauseChance(CommandContext<FabricClientCommandSource> context) {
+        double percent = DoubleArgumentType.getDouble(context, "percent");
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        config.longPauseChance = percent / 100.0;
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Long pause chance set to: ").formatted(Formatting.GRAY))
+                .append(Text.literal(String.format("%.1f%%", percent)).formatted(Formatting.WHITE))
+        );
+        
+        return 1;
+    }
+    
+    private static int setBreakPauseChance(CommandContext<FabricClientCommandSource> context) {
+        double percent = DoubleArgumentType.getDouble(context, "percent");
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        config.breakPauseChance = percent / 100.0;
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Break pause chance set to: ").formatted(Formatting.GRAY))
+                .append(Text.literal(String.format("%.1f%%", percent)).formatted(Formatting.WHITE))
+        );
+        
+        return 1;
+    }
+    
+    private static int setBacktrackChance(CommandContext<FabricClientCommandSource> context) {
+        double percent = DoubleArgumentType.getDouble(context, "percent");
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        config.backtrackChance = percent / 100.0;
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Backtrack chance set to: ").formatted(Formatting.GRAY))
+                .append(Text.literal(String.format("%.1f%%", percent)).formatted(Formatting.WHITE))
+        );
+        
+        return 1;
+    }
+    
+    private static int setWalkChance(CommandContext<FabricClientCommandSource> context) {
+        double percent = DoubleArgumentType.getDouble(context, "percent");
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        config.walkChance = percent / 100.0;
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Walk chance set to: ").formatted(Formatting.GRAY))
+                .append(Text.literal(String.format("%.1f%%", percent)).formatted(Formatting.WHITE))
+        );
+        
+        return 1;
+    }
+    
+    private static int setHotbarSwitchChance(CommandContext<FabricClientCommandSource> context) {
+        double percent = DoubleArgumentType.getDouble(context, "percent");
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        config.hotbarSwitchChance = percent / 100.0;
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Hotbar switch chance set to: ").formatted(Formatting.GRAY))
+                .append(Text.literal(String.format("%.1f%%", percent)).formatted(Formatting.WHITE))
+        );
+        
+        return 1;
+    }
+    
+    private static int setJumpWhileMovingChance(CommandContext<FabricClientCommandSource> context) {
+        double percent = DoubleArgumentType.getDouble(context, "percent");
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        config.jumpWhileMovingChance = percent / 100.0;
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Jump while moving chance set to: ").formatted(Formatting.GRAY))
+                .append(Text.literal(String.format("%.2f%%", percent)).formatted(Formatting.WHITE))
+        );
+        
+        return 1;
+    }
+    
+    private static int setLookAroundChance(CommandContext<FabricClientCommandSource> context) {
+        double percent = DoubleArgumentType.getDouble(context, "percent");
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        config.lookAroundChance = percent / 100.0;
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        context.getSource().sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
+                .append(Text.literal("] Look around chance set to: ").formatted(Formatting.GRAY))
+                .append(Text.literal(String.format("%.1f%%", percent)).formatted(Formatting.WHITE))
+        );
         
         return 1;
     }
