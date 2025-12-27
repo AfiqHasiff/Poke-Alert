@@ -200,6 +200,11 @@ public class TelegramNotification extends NotificationService {
                 messageText.append("\n⚠️ <b>WARNING:</b> This player is in your avoided list");
             }
             
+            // Add reply hint if DM replies are enabled
+            if (config.dmReplyEnabled) {
+                messageText.append("\n\n💬 <i>Reply to this message to respond</i>");
+            }
+            
             JsonObject jsonPayload = new JsonObject();
             jsonPayload.addProperty("chat_id", config.telegramChatId);
             jsonPayload.addProperty("text", messageText.toString());

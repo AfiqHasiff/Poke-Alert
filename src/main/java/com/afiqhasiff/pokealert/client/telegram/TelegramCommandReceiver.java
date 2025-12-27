@@ -209,6 +209,20 @@ public class TelegramCommandReceiver {
             
             String text = message.get("text").getAsString();
             
+            // Check if this is a reply to a DM notification
+            if (message.has("reply_to_message")) {
+                JsonObject replyTo = message.getAsJsonObject("reply_to_message");
+                if (replyTo.has("text")) {
+                    String repliedText = replyTo.get("text").getAsString();
+                    // Check if this is a DM notification (contains "Egg Hatcher DM")
+                    if (repliedText.contains("💬 Egg Hatcher DM") || repliedText.contains("Egg Hatcher DM")) {
+                        // This is a reply to a DM notification
+                        handleDmReply(text, repliedText, chatId, messageId, userId);
+                        return; // Don't process as regular command
+                    }
+                }
+            }
+            
             // Only process commands starting with /pa
             if (!text.startsWith("/pa")) {
                 return;
@@ -270,6 +284,175 @@ public class TelegramCommandReceiver {
         
         lastCommandTime = now;
         return true;
+    }
+    
+    /**
+     * Handle reply to a DM notification
+     */
+    private void handleDmReply(String replyText, String originalNotification, long chatId, int messageId, long userId) {
+        // Refresh config
+        config = ConfigManager.getConfig();
+        
+        // Check if DM replies are enabled
+        if (!config.dmReplyEnabled) {
+            sendTelegramResponse(chatId, "❌ DM replies are disabled", messageId);
+            return;
+        }
+        
+        // Check authorization
+        if (!isAuthorizedUser(userId)) {
+            PokeAlertClient.LOGGER.warn("TelegramCommandReceiver: Unauthorized user {} attempted DM reply", userId);
+            sendTelegramResponse(chatId, "❌ Unauthorized: You are not authorized to reply to DMs", messageId);
+            return;
+        }
+        
+        // Check rate limit
+        if (!checkRateLimit()) {
+            PokeAlertClient.LOGGER.warn("TelegramCommandReceiver: Rate limit exceeded for DM reply from user {}", userId);
+            sendTelegramResponse(chatId, "⏳ Rate limit: Please wait before sending another reply", messageId);
+            return;
+        }
+        
+        // Validate reply text
+        if (replyText == null || replyText.trim().isEmpty()) {
+            sendTelegramResponse(chatId, "❌ Reply message cannot be empty", messageId);
+            return;
+        }
+        
+        // Parse sender from original notification
+        // Format: "From: <code>sender</code>"
+        String sender = extractSenderFromNotification(originalNotification);
+        if (sender == null || sender.isEmpty()) {
+            PokeAlertClient.LOGGER.warn("TelegramCommandReceiver: Could not extract sender from DM notification");
+            sendTelegramResponse(chatId, "❌ Could not determine sender. Please reply directly to the DM notification.", messageId);
+            return;
+        }
+        
+        // Check if sender is in avoided list
+        if (isPlayerAvoided(sender, config)) {
+            PokeAlertClient.LOGGER.warn("TelegramCommandReceiver: Attempted reply to avoided player: {}", sender);
+            sendTelegramResponse(chatId, 
+                "⚠️ Warning: This player is in your avoided list. Reply not sent.", 
+                messageId);
+            return;
+        }
+        
+        // Send in-game DM command
+        sendInGameDm(sender, replyText.trim());
+        
+        // Send confirmation to Telegram
+        sendTelegramResponse(chatId, 
+            "✅ Reply sent to <code>" + escapeHtml(sender) + "</code>: " + escapeHtml(replyText.trim()), 
+            messageId);
+        
+        PokeAlertClient.LOGGER.info("TelegramCommandReceiver: DM reply sent to {}: {}", sender, replyText);
+    }
+    
+    /**
+     * Extract sender name from DM notification message
+     * Format: "From: <code>sender</code>"
+     */
+    private String extractSenderFromNotification(String notification) {
+        if (notification == null || notification.isEmpty()) {
+            return null;
+        }
+        
+        // Look for "From: <code>sender</code>" pattern
+        // Handle both HTML and plain text formats
+        String[] lines = notification.split("\n");
+        for (String line : lines) {
+            if (line.contains("From:")) {
+                // Try to extract from HTML format: "From: <code>sender</code>"
+                int codeStart = line.indexOf("<code>");
+                int codeEnd = line.indexOf("</code>");
+                if (codeStart != -1 && codeEnd != -1 && codeEnd > codeStart) {
+                    return line.substring(codeStart + 6, codeEnd).trim();
+                }
+                
+                // Try plain text format: "From: sender"
+                int colonIndex = line.indexOf(":");
+                if (colonIndex != -1 && colonIndex < line.length() - 1) {
+                    String afterColon = line.substring(colonIndex + 1).trim();
+                    // Remove any HTML tags if present
+                    afterColon = afterColon.replaceAll("<[^>]+>", "").trim();
+                    if (!afterColon.isEmpty()) {
+                        return afterColon;
+                    }
+                }
+            }
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Check if player is in avoided list
+     */
+    private boolean isPlayerAvoided(String playerName, PokeAlertConfig config) {
+        if (config.playersToAvoid == null || config.playersToAvoid.length == 0) {
+            return false;
+        }
+        
+        String playerLower = playerName.toLowerCase();
+        return Arrays.stream(config.playersToAvoid)
+            .anyMatch(avoided -> avoided != null && avoided.toLowerCase().equals(playerLower));
+    }
+    
+    /**
+     * Send in-game DM command
+     */
+    private void sendInGameDm(String recipient, String message) {
+        net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
+        
+        if (client == null || client.player == null) {
+            PokeAlertClient.LOGGER.warn("TelegramCommandReceiver: Cannot send DM - client or player is null");
+            return;
+        }
+        
+        // Get DM command format from config
+        String dmCommand = config.dmCommandFormat;
+        if (dmCommand == null || dmCommand.trim().isEmpty()) {
+            dmCommand = "/dm"; // Fallback to default
+        }
+        
+        // Ensure command starts with /
+        if (!dmCommand.startsWith("/")) {
+            dmCommand = "/" + dmCommand;
+        }
+        
+        // Format command: /dm <recipient> <message>
+        // Handle player names with spaces by quoting if needed
+        String command;
+        if (recipient.contains(" ")) {
+            command = String.format("%s \"%s\" %s", dmCommand, recipient, message);
+        } else {
+            command = String.format("%s %s %s", dmCommand, recipient, message);
+        }
+        
+        // Send command on client thread
+        client.execute(() -> {
+            if (client.player != null && client.player.networkHandler != null) {
+                // Remove leading '/' if present (sendChatCommand expects command without '/')
+                String commandToSend = command.startsWith("/") ? command.substring(1) : command;
+                client.player.networkHandler.sendChatCommand(commandToSend);
+                
+                PokeAlertClient.LOGGER.info("TelegramCommandReceiver: Sent in-game DM command: {}", command);
+            }
+        });
+    }
+    
+    /**
+     * Escape HTML special characters
+     */
+    private String escapeHtml(String text) {
+        if (text == null) {
+            return "";
+        }
+        return text.replace("&", "&amp;")
+                   .replace("<", "&lt;")
+                   .replace(">", "&gt;")
+                   .replace("\"", "&quot;")
+                   .replace("'", "&#39;");
     }
     
     /**

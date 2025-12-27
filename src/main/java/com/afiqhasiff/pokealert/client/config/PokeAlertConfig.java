@@ -61,6 +61,8 @@ public class PokeAlertConfig {
     public boolean dmDetectionEnabled = true; // Master toggle for DM detection (requires eggHatcherEnabled)
     public boolean dmTelegramNotification = true; // Send Telegram notifications for DMs
     public boolean dmInGameNotification = false; // Optional in-game notifications for DMs (default false to avoid spam)
+    public boolean dmReplyEnabled = true; // Enable replying to DMs from Telegram
+    public String dmCommandFormat = "/dm"; // In-game DM command format (default: /dm)
     
     // ========== v3.0.0 Anti-AFK Settings ==========
     
