@@ -36,6 +36,7 @@ import com.afiqhasiff.pokealert.client.notification.TelegramNotification;
 import com.afiqhasiff.pokealert.client.notification.EggTimerManager;
 import com.afiqhasiff.pokealert.client.automation.EggHatcher;
 import com.afiqhasiff.pokealert.client.util.DmDetector;
+import com.afiqhasiff.pokealert.client.telegram.TelegramCommandReceiver;
 
 public class PokeAlertClient implements ClientModInitializer {
     public static final String MOD_ID = "pokealert";
@@ -178,6 +179,11 @@ public class PokeAlertClient implements ClientModInitializer {
         });
         
         LOGGER.info("PokéAlert initialized with {} whitelisted Pokemon (Mod Enabled: {})", whitelist.length, config.modEnabled);
+        
+        // Initialize Telegram Command Receiver
+        if (config.telegramCommandExecutionEnabled && config.isTelegramValid()) {
+            TelegramCommandReceiver.getInstance().startPolling();
+        }
         
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             // Process toggle mod keybinding
@@ -425,5 +431,19 @@ public class PokeAlertClient implements ClientModInitializer {
         config = ConfigManager.getConfig();
         whitelist = config.getCombinedWhitelist();
         LOGGER.info("Configuration reloaded! Now tracking {} whitelisted Pokemon", whitelist.length);
+        
+        // Reload Telegram Command Receiver config
+        TelegramCommandReceiver.getInstance().reloadConfig();
+        
+        // Start/stop polling based on new config
+        if (config.telegramCommandExecutionEnabled && config.isTelegramValid()) {
+            if (!TelegramCommandReceiver.getInstance().isPolling()) {
+                TelegramCommandReceiver.getInstance().startPolling();
+            }
+        } else {
+            if (TelegramCommandReceiver.getInstance().isPolling()) {
+                TelegramCommandReceiver.getInstance().stopPolling();
+            }
+        }
     }
 }

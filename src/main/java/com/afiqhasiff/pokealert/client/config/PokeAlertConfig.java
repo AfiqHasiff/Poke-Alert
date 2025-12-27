@@ -39,6 +39,12 @@ public class PokeAlertConfig {
     public int telegramMaxNotificationsPerMinute = 10;
     public int telegramCooldownSeconds = 30;
     
+    // Telegram Command Execution Settings
+    public boolean telegramCommandExecutionEnabled = false;  // Master toggle
+    public long[] telegramAuthorizedUsers = {};  // Array of Telegram user IDs allowed to execute commands
+    public int telegramPollingInterval = 5000;  // Milliseconds between polls (5 seconds default, 1-60 seconds)
+    public int telegramCommandRateLimitSeconds = 5;  // Rate limit: 1 command per N seconds (default: 5)
+    
     // World exclusion list (users can input "spawn" or "minecraft:spawn")
     public String[] excludedWorlds = {"spawn"};
     
