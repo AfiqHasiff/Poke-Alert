@@ -181,8 +181,14 @@ public class PokeAlertClient implements ClientModInitializer {
         LOGGER.info("PokéAlert initialized with {} whitelisted Pokemon (Mod Enabled: {})", whitelist.length, config.modEnabled);
         
         // Initialize Telegram Command Receiver
+        LOGGER.info("Telegram Command Execution - Enabled: {}, Valid: {}", 
+            config.telegramCommandExecutionEnabled, config.isTelegramValid());
         if (config.telegramCommandExecutionEnabled && config.isTelegramValid()) {
+            LOGGER.info("Starting Telegram Command Receiver polling...");
             TelegramCommandReceiver.getInstance().startPolling();
+        } else {
+            LOGGER.warn("Telegram Command Receiver NOT starting - CommandExecutionEnabled: {}, IsTelegramValid: {}", 
+                config.telegramCommandExecutionEnabled, config.isTelegramValid());
         }
         
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
