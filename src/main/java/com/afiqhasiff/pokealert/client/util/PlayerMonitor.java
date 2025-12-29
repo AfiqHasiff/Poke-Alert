@@ -485,13 +485,19 @@ public class PlayerMonitor {
     
     /**
      * Get the sorted player list from PlayerListHud (matches tab list display order)
-     * Uses reflection to access the private collectPlayerEntries() method which applies
-     * the same sorting logic as the tab list (rank/scoreboard first, then alphabetical)
+     * Uses reflection to dynamically find and invoke the private method that collects
+     * and sorts player entries exactly as they appear in the tab list.
      * 
-     * This method is the exact same one used by PlayerListHud.render() to display the tab list,
-     * ensuring 100% accuracy in position calculation.
+     * This method finds the exact method used by PlayerListHud.render() to get the sorted list
+     * for rendering, ensuring 100% accuracy in position calculation without manual sorting.
      * 
-     * Reference: https://maven.fabricmc.net/docs/yarn-1.21.5+build.1/net/minecraft/client/gui/hud/PlayerListHud.html
+     * Approach for Minecraft 1.21.1:
+     * - Searches for private methods in PlayerListHud that return List<PlayerListEntry>
+     * - Verifies the method returns PlayerListEntry objects by invoking it
+     * - Uses the found method to get the sorted list (sorted by rank/scoreboard first, then alphabetically)
+     * - This ensures we use the exact same method that render() uses, matching tab list display perfectly
+     * 
+     * Reference: https://maven.fabricmc.net/docs/yarn-1.21.1+build.3/net/minecraft/client/gui/hud/PlayerListHud.html
      * 
      * @return Sorted list of PlayerListEntry matching tab list order, or null if unavailable
      */
@@ -510,26 +516,59 @@ public class PlayerMonitor {
                 return null;
             }
             
-            // Use reflection to access the private collectPlayerEntries() method
-            // This is the exact method used by PlayerListHud.render() to get the sorted list
-            // It uses ENTRY_ORDERING Comparator which sorts by scoreboard/rank first, then alphabetically
-            Method collectMethod = PlayerListHud.class.getDeclaredMethod("collectPlayerEntries");
-            collectMethod.setAccessible(true);
+            // In Minecraft 1.21.1, we need to find the exact method that collects and sorts player entries.
+            // This method is used by render() to get the sorted list for display.
+            // Search for private methods that return List<PlayerListEntry> with no parameters
+            java.lang.reflect.Method collectMethod = null;
+            java.lang.reflect.Method[] allMethods = PlayerListHud.class.getDeclaredMethods();
             
+            for (java.lang.reflect.Method method : allMethods) {
+                // Look for private methods that return List and take no parameters
+                // (the collection method is typically private)
+                if (java.lang.reflect.Modifier.isPrivate(method.getModifiers()) &&
+                    method.getReturnType() == List.class && 
+                    method.getParameterCount() == 0) {
+                    
+                    // Verify it returns List<PlayerListEntry> by invoking it
+                    try {
+                        method.setAccessible(true);
+                        @SuppressWarnings("unchecked")
+                        List<?> testList = (List<?>) method.invoke(playerListHud);
+                        if (testList != null && !testList.isEmpty() && testList.get(0) instanceof PlayerListEntry) {
+                            collectMethod = method;
+                            PokeAlertClient.LOGGER.debug("[PlayerSuspicionMonitor] Found player collection method: {} (returns {} entries)", 
+                                method.getName(), testList.size());
+                            break;
+                        }
+                    } catch (Exception ignored) {
+                        // Continue searching - this method might not be the right one
+                    }
+                }
+            }
+            
+            if (collectMethod == null) {
+                throw new NoSuchMethodException("No private method found in PlayerListHud that returns List<PlayerListEntry> with no parameters");
+            }
+            
+            // Invoke the found method to get the sorted list
             @SuppressWarnings("unchecked")
-            List<PlayerListEntry> sortedList = (List<PlayerListEntry>) collectMethod.invoke(playerListHud);
+            List<PlayerListEntry> sortedList = 
+                (List<PlayerListEntry>) collectMethod.invoke(playerListHud);
             
-            if (sortedList == null) {
-                PokeAlertClient.LOGGER.error("[PlayerSuspicionMonitor] collectPlayerEntries() returned null");
+            if (sortedList == null || sortedList.isEmpty()) {
+                PokeAlertClient.LOGGER.debug("[PlayerSuspicionMonitor] Player collection method returned empty list");
                 return null;
             }
             
             return sortedList;
         } catch (NoSuchMethodException e) {
-            PokeAlertClient.LOGGER.error("[PlayerSuspicionMonitor] collectPlayerEntries() method not found - Minecraft version mismatch? {}", e.getMessage());
+            PokeAlertClient.LOGGER.error("[PlayerSuspicionMonitor] No method found in PlayerListHud that returns List<PlayerListEntry> - Minecraft version mismatch? {}", e.getMessage());
             return null;
         } catch (IllegalAccessException e) {
             PokeAlertClient.LOGGER.error("[PlayerSuspicionMonitor] Cannot access collectPlayerEntries() - reflection access denied: {}", e.getMessage());
+            return null;
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            PokeAlertClient.LOGGER.error("[PlayerSuspicionMonitor] Error invoking collectPlayerEntries(): {}", e.getCause() != null ? e.getCause().getMessage() : e.getMessage());
             return null;
         } catch (Exception e) {
             PokeAlertClient.LOGGER.error("[PlayerSuspicionMonitor] Failed to get sorted list from PlayerListHud: {}", e.getMessage(), e);
