@@ -1111,17 +1111,34 @@ public class EggHatcher {
             return;
         }
         
+        // CRITICAL: Get destination FIRST before any checks that might cause early return
+        // This ensures destination is set even if navigation is skipped, preventing timeout
+        int[] destination = locationQueue.getCurrentDestination();
+        if (destination == null) {
+            PokeAlertClient.LOGGER.error("❌ No destination available!");
+            return;
+        }
+        
         // Guard: Don't start new navigation if Baritone is already pathing
         // This prevents duplicate #goto commands from multiple callbacks (arrival, timeout, safety monitor)
+        // NOTE: gotoLocation() also has this check, but we check here to avoid setting destination unnecessarily
         if (BaritoneController.isPathing()) {
             PokeAlertClient.LOGGER.debug("Baritone already pathing, skipping duplicate navigation");
+            // CRITICAL FIX: Set destination even if navigation is skipped to prevent timeout
+            // This ensures CoordinateMonitor has a destination to monitor, even if Baritone doesn't navigate yet
+            CoordinateMonitor.setDestination(destination[0], destination[1]);
+            PokeAlertClient.LOGGER.debug("Destination set to ({}, {}) despite Baritone already pathing - will navigate when pathing completes", 
+                destination[0], destination[1]);
             return;
         }
         
         // Guard: Don't start navigation if camera is rotating (look around action in progress)
         // Queue navigation to execute after camera rotation completes instead of skipping
+        // CRITICAL FIX: Set destination BEFORE queuing to prevent timeout
         if (isCameraRotating) {
             PokeAlertClient.LOGGER.debug("Camera rotating (look around in progress), queuing navigation");
+            // CRITICAL: Set destination now so CoordinateMonitor has something to monitor during camera rotation
+            CoordinateMonitor.setDestination(destination[0], destination[1]);
             // Schedule navigation to execute after a short delay (camera rotation should complete soon)
             scheduler.schedule(() -> {
                 if (!isCameraRotating && antiAfkActive && !SafetyManager.isSafetyTriggered() && !BaritoneController.isPathing()) {
@@ -1153,11 +1170,7 @@ public class EggHatcher {
         
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        int[] destination = locationQueue.getCurrentDestination();
-        if (destination == null) {
-            PokeAlertClient.LOGGER.error("❌ No destination available!");
-            return;
-        }
+        // Destination already retrieved above (moved before isPathing check to prevent timeout bug)
 
         // Apply preselected action (from arrival callback) or use stored action (from timeout)
         // IMPORTANT: Store action to prevent re-rolling on timeout
