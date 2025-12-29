@@ -88,6 +88,7 @@ public class PokeAlertConfig {
     public boolean enablePlayerListMonitoring = true;
     public boolean enableNearbyPlayerDetection = true;
     public double nearbyPlayerDetectionRadius = 32.0; // (1-128)
+    public int playerSuspicionTopNThreshold = 5; // Top N positions to trigger suspicion detection (1-20)
     
     // Anti-AFK Queue Settings
     public int initialQueueSize = 5;           // Initial locations in queue (3-10)
@@ -260,6 +261,7 @@ public class PokeAlertConfig {
         replenishCount = clamp(replenishCount, 1, 5);
         locationsForStep5 = clamp(locationsForStep5, 1, 10);
         maxConsecutiveTimeouts = clamp(maxConsecutiveTimeouts, 1, 10);
+        playerSuspicionTopNThreshold = clamp(playerSuspicionTopNThreshold, 1, 20);
         
         // Ensure teleport detection is at least 2x arrival threshold
         if (teleportDetectionOffset < arrivalThreshold * 2) {

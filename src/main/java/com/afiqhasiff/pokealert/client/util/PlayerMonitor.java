@@ -409,5 +409,105 @@ public class PlayerMonitor {
         if (!isMonitoring) return "Stopped";
         return String.format("Monitoring %d players", playersToAvoid.size());
     }
+    
+    /**
+     * PlayerSuspicionMonitor Get the current player's position in the server tab list (0-indexed)
+     * Returns -1 if player not found or unable to determine position
+     * 
+     * @return Player's position in tab list (0 = first/top, -1 = not found)
+     */
+    public static int getPlayerPositionInTabList() {
+        if (client.getNetworkHandler() == null || client.player == null) {
+            PokeAlertClient.LOGGER.debug("[PlayerSuspicionMonitor] Cannot get position - network handler or player is null");
+            return -1;
+        }
+        
+        String currentPlayerName = client.player.getName().getString();
+        if (currentPlayerName == null) {
+            PokeAlertClient.LOGGER.debug("[PlayerSuspicionMonitor] Cannot get position - player name is null");
+            return -1;
+        }
+        
+        Collection<PlayerListEntry> playerList = client.getNetworkHandler().getPlayerList();
+        if (playerList == null || playerList.isEmpty()) {
+            PokeAlertClient.LOGGER.debug("[PlayerSuspicionMonitor] Cannot get position - player list is empty");
+            return -1;
+        }
+        
+        // Convert to List to get index (Collection order should be maintained by Minecraft)
+        List<PlayerListEntry> playerListArray = new ArrayList<>(playerList);
+        
+        int position = -1;
+        for (int i = 0; i < playerListArray.size(); i++) {
+            PlayerListEntry entry = playerListArray.get(i);
+            if (entry.getProfile() == null) continue;
+            
+            String playerName = entry.getProfile().getName();
+            if (playerName != null && playerName.equalsIgnoreCase(currentPlayerName)) {
+                position = i;
+                break;
+            }
+        }
+        
+        // Debug logging
+        if (position >= 0) {
+            PokeAlertClient.LOGGER.debug("[PlayerSuspicionMonitor] Player '{}' found at position {} (0-indexed) in tab list (total players: {})", 
+                currentPlayerName, position, playerListArray.size());
+            
+            // Log top 5 players for debugging
+            if (playerListArray.size() > 0) {
+                StringBuilder top5 = new StringBuilder("Top 5 players in tab list: ");
+                int count = Math.min(5, playerListArray.size());
+                for (int i = 0; i < count; i++) {
+                    PlayerListEntry entry = playerListArray.get(i);
+                    if (entry.getProfile() != null) {
+                        String name = entry.getProfile().getName();
+                        if (name != null) {
+                            top5.append(String.format("[%d]%s ", i, name));
+                        }
+                    }
+                }
+                PokeAlertClient.LOGGER.debug("[PlayerSuspicionMonitor] {}", top5.toString());
+            }
+        } else {
+            PokeAlertClient.LOGGER.warn("[PlayerSuspicionMonitor] Player '{}' NOT found in tab list (total players: {})", 
+                currentPlayerName, playerListArray.size());
+        }
+        
+        return position;
+    }
+    
+    /**
+     * [PlayerSuspicionMonitor] Check if current player is in the top N positions of the tab list
+     * 
+     * @param topN Number of top positions to check (e.g., 5 for top 5)
+     * @return true if player is in top N positions, false otherwise
+     */
+    public static boolean isPlayerInTopN(int topN) {
+        int position = getPlayerPositionInTabList();
+        if (position < 0) {
+            // If we can't determine position, assume we're safe (not in top N)
+            PokeAlertClient.LOGGER.debug("[PlayerSuspicionMonitor] Cannot determine position, assuming NOT in top {}", topN);
+            return false;
+        }
+        
+        boolean inTopN = position < topN;
+        if (inTopN) {
+            PokeAlertClient.LOGGER.warn("[PlayerSuspicionMonitor] ⚠️ Player position check - Position: {} (0-indexed), Top {}: {}, In Top {}: TRUE", 
+                position, topN, inTopN);
+        } else {
+            // Log at INFO level every 10th check to show it's working (reduce spam)
+            // Use position as a simple counter - log when position % 10 == 0
+            if (position > 0 && position % 10 == 0) {
+                PokeAlertClient.LOGGER.info("[PlayerSuspicionMonitor] Position check OK - Position: {} (0-indexed), Top {}: {}, Safe", 
+                    position, topN);
+            } else {
+                PokeAlertClient.LOGGER.debug("[PlayerSuspicionMonitor] Player position check - Position: {} (0-indexed), Top {}: {}, In Top {}: false", 
+                    position, topN, inTopN);
+            }
+        }
+        
+        return inTopN;
+    }
 }
 

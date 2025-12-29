@@ -680,7 +680,7 @@ public class PokeAlertCommand {
                 Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
                     .append(Text.literal("realm toggle").formatted(Formatting.GREEN))
                     .append(Text.literal(" - ").formatted(Formatting.DARK_GRAY))
-                    .append(Text.literal("Toggle Auto/Disabled modes").formatted(Formatting.WHITE))
+                    .append(Text.literal("Enable/disable automation").formatted(Formatting.WHITE))
             );
             source.sendFeedback(
                 Text.literal("  /pokealert ").formatted(Formatting.YELLOW)
@@ -764,7 +764,7 @@ public class PokeAlertCommand {
                     .append(Text.literal("[").formatted(Formatting.DARK_GRAY))
                     .append(Text.literal("Home").formatted(Formatting.GOLD, Formatting.BOLD))
                     .append(Text.literal("]").formatted(Formatting.DARK_GRAY))
-                    .append(Text.literal(" to cycle modes or cancel active automation").formatted(Formatting.GRAY))
+                    .append(Text.literal(" to enable/disable automation").formatted(Formatting.GRAY))
             );
             source.sendFeedback(Text.empty()); // Empty line
         }

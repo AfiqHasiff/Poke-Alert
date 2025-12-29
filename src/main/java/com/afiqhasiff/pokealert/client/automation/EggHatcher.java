@@ -42,6 +42,7 @@ public class EggHatcher {
     private ScheduledFuture<?> stuckDetector;
     private ScheduledFuture<?> automationDelayTask;
     private ScheduledFuture<?> safetyMonitorTask;
+    private ScheduledFuture<?> playerSuspicionMonitorTask;
     
     // Track all scheduled automation tasks for proper cancellation
     private ScheduledFuture<?> step1Task;
@@ -279,6 +280,10 @@ public class EggHatcher {
                     PokeAlertClient.LOGGER.info("Starting safety monitor after resource pack load (AUTO mode)");
                     startSafetyMonitor();
                 }
+                // Start player suspicion monitor if not already running
+                if (playerSuspicionMonitorTask == null || playerSuspicionMonitorTask.isDone()) {
+                    startPlayerSuspicionMonitor();
+                }
             }
         }, 10, TimeUnit.SECONDS);
     }
@@ -337,6 +342,10 @@ public class EggHatcher {
                 PokeAlertClient.LOGGER.info("Starting safety monitor for AUTO mode");
                 startSafetyMonitor();
             }
+            // Start player suspicion monitor if not already running
+            if (playerSuspicionMonitorTask == null || playerSuspicionMonitorTask.isDone()) {
+                startPlayerSuspicionMonitor();
+            }
             
             // Check current location and trigger if at spawn
             if (isAtSpawn() && !isAutomationRunning) {
@@ -383,6 +392,23 @@ public class EggHatcher {
             sendNotification("Egg Hatcher", "Disabled", Formatting.RED);
             stopAutomation();
         }
+    }
+    
+    /**
+     * Disable Egg Hatcher completely (stop + set mode to DISABLED)
+     */
+    public void disableCompletely() {
+        PokeAlertConfig config = PokeAlertClient.getInstance().config;
+        
+        // Stop all automation first
+        stopAutomation();
+        
+        // Set mode to DISABLED
+        mode = AutomationMode.DISABLED;
+        config.eggHatcherEnabled = false;
+        ConfigManager.saveSettings(config);
+        
+        PokeAlertClient.LOGGER.info("Egg Hatcher: Completely disabled");
     }
     
     // Removed manualTrigger() and startManualCountdown() methods - Manual mode removed (simplified to Auto/Disabled only)
@@ -571,7 +597,7 @@ public class EggHatcher {
                     .append(Text.literal("] ").formatted(Formatting.GRAY))
                     .append(Text.literal("Egg Hatcher [2/5]: ").formatted(Formatting.WHITE))
                     .append(Text.literal("Server Buffer: Waiting 30s").formatted(Formatting.YELLOW))
-                    .append(Text.literal(" - Press Home to cancel").formatted(Formatting.GRAY));
+                    .append(Text.literal(" - Press Home to disable").formatted(Formatting.GRAY));
                 
                 client.player.sendMessage(notification, false);
             }
@@ -1674,9 +1700,126 @@ public class EggHatcher {
     }
     
     /**
-     * v3.0.0: Safety monitor - simplified for Baritone-based Anti-AFK
-     * Main safety checks are now handled by CoordinateMonitor and PlayerMonitor
-     * This monitor just checks realm state consistency
+     * Start the player suspicion monitor
+     * Checks if player is in top N of tab list (admin suspicion detection)
+     */
+    private void startPlayerSuspicionMonitor() {
+        // Cancel any existing monitor
+        if (playerSuspicionMonitorTask != null && !playerSuspicionMonitorTask.isDone()) {
+            playerSuspicionMonitorTask.cancel(false);
+        }
+        
+        // Fixed 1 minute interval for PlayerSuspicionMonitor
+        int suspicionCheckInterval = 60000; // 1 minute (60 seconds)
+        
+        PokeAlertClient.LOGGER.info("[PlayerSuspicionMonitor] Starting suspicion monitor (check interval: {}ms / 1 minute)", suspicionCheckInterval);
+        
+        playerSuspicionMonitorTask = scheduler.scheduleAtFixedRate(() -> {
+            try {
+                // Refresh config for each check
+                PokeAlertConfig config = ConfigManager.getConfig();
+                
+                // Always check position regardless of mode (security check)
+                // Skip checks during resource pack loading
+                if (isResourcePackLoading) {
+                    PokeAlertClient.LOGGER.debug("[PlayerSuspicionMonitor] Skipping check - resource pack loading");
+                    return;
+                }
+                
+                // Check if player is in top N of tab list (admin suspicion detection)
+                int topNThreshold = config.playerSuspicionTopNThreshold;
+                PokeAlertClient.LOGGER.debug("[PlayerSuspicionMonitor] Running position check (threshold: top {}, mode: {})", 
+                    topNThreshold, mode);
+                boolean inTopN = PlayerMonitor.isPlayerInTopN(topNThreshold);
+                if (inTopN) {
+                    PokeAlertClient.LOGGER.warn("[PlayerSuspicionMonitor] 🚨 CRITICAL: Player detected in TOP {} of tab list - Disabling Egg Hatcher and force closing game!", topNThreshold);
+                    sendNotification("Egg Hatcher", "⚠️ Disabled: Detected in top " + topNThreshold + " of tab list", Formatting.RED);
+                    
+                    // Disable automation completely
+                    mode = AutomationMode.DISABLED;
+                    PokeAlertConfig currentConfig = ConfigManager.getConfig();
+                    currentConfig.eggHatcherEnabled = false;
+                    ConfigManager.saveSettings(currentConfig);
+                    
+                    // Stop all automation (cancels any running instance)
+                    PokeAlertClient.LOGGER.info("[PlayerSuspicionMonitor] Stopping all Egg Hatcher automation...");
+                    stopAutomation();
+                    
+                    // Send Telegram notification
+                    PokeAlertConfig telegramConfig = ConfigManager.getConfig();
+                    if (telegramConfig.telegramEnabled && telegramConfig.isTelegramValid()) {
+                        CompletableFuture.runAsync(() -> {
+                            try {
+                                TelegramNotification telegram = new TelegramNotification();
+                                telegram.initialize();
+                                
+                                StringBuilder message = new StringBuilder();
+                                message.append("🚨 <b>Player Suspicion Alert</b>\n");
+                                message.append("• <b>Status:</b> <i>You are being watched!</i>\n");
+                                message.append("• <b>Detection:</b> You are in the <b>TOP ").append(topNThreshold).append("</b> of the server tab list\n");
+                                message.append("• <b>Action:</b> Egg Hatcher has been <b>disabled</b> for safety\n");
+                                message.append("• <b>Reason:</b> Admins typically monitor players in top positions\n");
+                                message.append("• <b>Game:</b> Force closing game for security\n");
+                                message.append("\n⚠️ <i>Manual restart required after situation clears</i>");
+                                
+                                telegram.sendEggTimerNotification(message.toString());
+                                PokeAlertClient.LOGGER.info("[PlayerSuspicionMonitor] Telegram notification sent - Player suspicion alert");
+                                
+                                // Wait 2 seconds for Telegram to send before force closing
+                                try {
+                                    Thread.sleep(2000);
+                                } catch (InterruptedException e) {
+                                    Thread.currentThread().interrupt();
+                                }
+                                
+                                // Force close the game after Telegram notification
+                                PokeAlertClient.LOGGER.error("[PlayerSuspicionMonitor] 🚨 Forcing game shutdown due to suspicion detection...");
+                                System.exit(1); // Force immediate shutdown
+                            } catch (Exception e) {
+                                PokeAlertClient.LOGGER.error("[PlayerSuspicionMonitor] Failed to send Telegram notification", e);
+                                // Still force close even if Telegram fails
+                                try {
+                                    Thread.sleep(1000);
+                                } catch (InterruptedException ie) {
+                                    Thread.currentThread().interrupt();
+                                }
+                                PokeAlertClient.LOGGER.error("[PlayerSuspicionMonitor] 🚨 Forcing game shutdown...");
+                                System.exit(1);
+                            }
+                        });
+                    } else {
+                        // No Telegram configured - force close immediately
+                        PokeAlertClient.LOGGER.warn("[PlayerSuspicionMonitor] Telegram not configured - force closing immediately");
+                        try {
+                            Thread.sleep(1000); // Brief delay for logs
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                        PokeAlertClient.LOGGER.error("[PlayerSuspicionMonitor] 🚨 Forcing game shutdown...");
+                        System.exit(1);
+                    }
+                } else {
+                    int currentPosition = PlayerMonitor.getPlayerPositionInTabList();
+                    if (currentPosition >= 0) {
+                        PokeAlertClient.LOGGER.debug("[PlayerSuspicionMonitor] Player not in top N of tab list (current position: {} / 1-indexed: {})", 
+                            currentPosition, currentPosition + 1);
+                    } else {
+                        PokeAlertClient.LOGGER.debug("[PlayerSuspicionMonitor] Player not in top N of tab list (position unknown)");
+                    }
+                }
+                
+            } catch (Exception e) {
+                PokeAlertClient.LOGGER.error("[PlayerSuspicionMonitor] Error in player suspicion monitor", e);
+            }
+        }, 5000, suspicionCheckInterval, TimeUnit.MILLISECONDS);
+        
+        PokeAlertClient.LOGGER.info("[PlayerSuspicionMonitor] Player suspicion monitor started (check interval: {}ms / 1 minute)", 
+            suspicionCheckInterval);
+    }
+    
+    /**
+     * Start the safety monitor
+     * Checks realm state consistency, Baritone pathing, and Anti-AFK state
      */
     private void startSafetyMonitor() {
         // Cancel any existing monitor
@@ -1684,20 +1827,13 @@ public class EggHatcher {
             safetyMonitorTask.cancel(false);
         }
         
-        PokeAlertConfig config = ConfigManager.getConfig();
-        int checkInterval = isAtSpawn() ? config.realmCheckIntervalSpawn : config.realmCheckIntervalOverworld;
+        // Safety checks run every 5 seconds
+        int safetyCheckInterval = 5000; // 5 seconds
+        
+        PokeAlertClient.LOGGER.info("Starting safety monitor (check interval: {}ms)", safetyCheckInterval);
         
         safetyMonitorTask = scheduler.scheduleAtFixedRate(() -> {
             try {
-                if (mode != AutomationMode.AUTO) {
-                    return;
-                }
-                
-                // Skip checks during resource pack loading
-                if (isResourcePackLoading) {
-                    return;
-                }
-                
                 String location = isAtSpawn() ? "spawn" : "overworld";
                 
                 // v3.0.0: Check if Anti-AFK should be running at overworld
@@ -1722,9 +1858,9 @@ public class EggHatcher {
             } catch (Exception e) {
                 PokeAlertClient.LOGGER.error("Error in safety monitor", e);
             }
-        }, 5000, checkInterval, TimeUnit.MILLISECONDS);
+        }, 5000, safetyCheckInterval, TimeUnit.MILLISECONDS);
         
-        PokeAlertClient.LOGGER.info("Safety monitor started (interval: {}ms)", checkInterval);
+        PokeAlertClient.LOGGER.info("Safety monitor started (check interval: {}ms)", safetyCheckInterval);
     }
     
     /**
@@ -1735,6 +1871,18 @@ public class EggHatcher {
             safetyMonitorTask.cancel(false);
             safetyMonitorTask = null;
             PokeAlertClient.LOGGER.info("Safety monitor stopped");
+        }
+        stopPlayerSuspicionMonitor();
+    }
+    
+    /**
+     * Stop the player suspicion monitor
+     */
+    private void stopPlayerSuspicionMonitor() {
+        if (playerSuspicionMonitorTask != null && !playerSuspicionMonitorTask.isDone()) {
+            playerSuspicionMonitorTask.cancel(false);
+            playerSuspicionMonitorTask = null;
+            PokeAlertClient.LOGGER.info("[PlayerSuspicionMonitor] Player suspicion monitor stopped");
         }
     }
     

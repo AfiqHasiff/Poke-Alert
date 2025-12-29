@@ -87,6 +87,7 @@ public class PokeAlertConfigScreen extends Screen {
     private TextFieldWidget regionX2Field;
     private TextFieldWidget regionZ2Field;
     private TextFieldWidget playersToAvoidField;
+    private TextFieldWidget playerSuspicionTopNField;
     
     // Human-like behavior settings
     private ButtonWidget enableHumanLikeBehaviorButton;
@@ -196,6 +197,7 @@ public class PokeAlertConfigScreen extends Screen {
         copy.enablePlayerListMonitoring = original.enablePlayerListMonitoring;
         copy.enableNearbyPlayerDetection = original.enableNearbyPlayerDetection;
         copy.nearbyPlayerDetectionRadius = original.nearbyPlayerDetectionRadius;
+        copy.playerSuspicionTopNThreshold = original.playerSuspicionTopNThreshold;
         copy.initialQueueSize = original.initialQueueSize;
         copy.replenishCount = original.replenishCount;
         copy.locationsForStep5 = original.locationsForStep5;
@@ -428,7 +430,7 @@ public class PokeAlertConfigScreen extends Screen {
         // Egg hatcher mode toggle keybind button
         realmReturnKeybindButton = addEggTimerRow(currentY,
             "Mode Toggle Key",
-            "Cycle AUTO/DISABLED or cancel active automation",
+            "Enable/disable Egg Hatcher automation",
             getRealmReturnKeybindText(),
             button -> {
                 waitingForRealmReturnKey = true;
@@ -590,6 +592,26 @@ public class PokeAlertConfigScreen extends Screen {
         playersToAvoidField.setPlaceholder(Text.literal("Usernames to trigger safety stop (comma-separated)").formatted(Formatting.GRAY));
         addSelectableChild(playersToAvoidField);
         addDrawableChild(playersToAvoidField);
+        currentY += 30;
+        
+        // Player Suspicion Top N Threshold
+        int suspicionLabelWidth = this.textRenderer.getWidth("Suspicion Top N Threshold:");
+        int suspicionFieldWidth = this.width - (SIDE_MARGIN * 2) - suspicionLabelWidth - 15;
+        int suspicionFieldX = SIDE_MARGIN + suspicionLabelWidth + 10;
+        
+        playerSuspicionTopNField = new TextFieldWidget(
+            this.textRenderer,
+            suspicionFieldX,
+            currentY - (int)scrollOffset,
+            suspicionFieldWidth,
+            BUTTON_HEIGHT,
+            Text.literal("Suspicion Top N")
+        );
+        playerSuspicionTopNField.setMaxLength(3);
+        playerSuspicionTopNField.setText(String.valueOf(config.playerSuspicionTopNThreshold));
+        playerSuspicionTopNField.setPlaceholder(Text.literal("Top N positions to trigger suspicion (1-20)").formatted(Formatting.GRAY));
+        addSelectableChild(playerSuspicionTopNField);
+        addDrawableChild(playerSuspicionTopNField);
         currentY += 30 + SECTION_SPACING;
         
         // ========== Human-like Behavior Section ==========
@@ -1134,6 +1156,14 @@ public class PokeAlertConfigScreen extends Screen {
         String playersText = playersToAvoidField.getText().trim();
         config.playersToAvoid = parseList(playersText);
         
+        // Parse player suspicion top N threshold
+        try {
+            int topN = Integer.parseInt(playerSuspicionTopNField.getText().trim());
+            config.playerSuspicionTopNThreshold = Math.max(1, Math.min(20, topN));
+        } catch (NumberFormatException e) {
+            PokeAlertClient.LOGGER.warn("Invalid suspicion top N threshold, keeping existing value");
+        }
+        
         // Parse human-like behavior settings
         try {
             config.minLongPauseMs = Integer.parseInt(minLongPauseField.getText().trim());
@@ -1369,7 +1399,7 @@ public class PokeAlertConfigScreen extends Screen {
         currentY += ROW_HEIGHT;
         
         // Egg hatcher mode toggle keybind label
-        drawCategoryWithDescription(context, "Mode Toggle Key", "Cycle AUTO/DISABLED or cancel active automation", currentY);
+        drawCategoryWithDescription(context, "Mode Toggle Key", "Enable/disable Egg Hatcher automation", currentY);
         currentY += ROW_HEIGHT;
         
         // v3.0.0: Anti-AFK keybind REMOVED
@@ -1451,6 +1481,23 @@ public class PokeAlertConfigScreen extends Screen {
             SIDE_MARGIN,
             currentY + 2,
             COLOR_WHITE
+        );
+        currentY += 30;
+        
+        // Player Suspicion Top N Threshold label
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("Suspicion Top N Threshold:"),
+            SIDE_MARGIN,
+            currentY + 2,
+            COLOR_WHITE
+        );
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("If you're in top N of tab list, Egg Hatcher disables and game closes").formatted(Formatting.GRAY),
+            SIDE_MARGIN,
+            currentY + 12,
+            COLOR_GRAY
         );
         currentY += 30 + SECTION_SPACING;
         
@@ -1834,6 +1881,10 @@ public class PokeAlertConfigScreen extends Screen {
         }
         if (playersToAvoidField != null && playersToAvoidField.mouseClicked(mouseX, mouseY, button)) {
             setFocused(playersToAvoidField);
+            return true;
+        }
+        if (playerSuspicionTopNField != null && playerSuspicionTopNField.mouseClicked(mouseX, mouseY, button)) {
+            setFocused(playerSuspicionTopNField);
             return true;
         }
         if (minLongPauseField != null && minLongPauseField.mouseClicked(mouseX, mouseY, button)) {
