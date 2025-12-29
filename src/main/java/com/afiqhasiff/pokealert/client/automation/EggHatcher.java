@@ -391,6 +391,9 @@ public class EggHatcher {
             PokeAlertClient.LOGGER.info("Mode changed to DISABLED - all session flags reset");
             sendNotification("Egg Hatcher", "Disabled", Formatting.RED);
             stopAutomation();
+            
+            // Stop PlayerSuspicionMonitor when disabling automation
+            stopPlayerSuspicionMonitor();
         }
     }
     
@@ -402,6 +405,9 @@ public class EggHatcher {
         
         // Stop all automation first
         stopAutomation();
+        
+        // Stop PlayerSuspicionMonitor when completely disabling
+        stopPlayerSuspicionMonitor();
         
         // Set mode to DISABLED
         mode = AutomationMode.DISABLED;
@@ -1728,7 +1734,7 @@ public class EggHatcher {
                 
                 // Check if player is in top N of tab list (admin suspicion detection)
                 int topNThreshold = config.playerSuspicionTopNThreshold;
-                PokeAlertClient.LOGGER.debug("[PlayerSuspicionMonitor] Running position check (threshold: top {}, mode: {})", 
+                PokeAlertClient.LOGGER.info("[PlayerSuspicionMonitor] Running position check (threshold: top {}, mode: {})", 
                     topNThreshold, mode);
                 boolean inTopN = PlayerMonitor.isPlayerInTopN(topNThreshold);
                 if (inTopN) {
@@ -1801,10 +1807,10 @@ public class EggHatcher {
                 } else {
                     int currentPosition = PlayerMonitor.getPlayerPositionInTabList();
                     if (currentPosition >= 0) {
-                        PokeAlertClient.LOGGER.debug("[PlayerSuspicionMonitor] Player not in top N of tab list (current position: {} / 1-indexed: {})", 
+                        PokeAlertClient.LOGGER.info("[PlayerSuspicionMonitor] Player not in top N of tab list (current position: {} / 1-indexed: {})", 
                             currentPosition, currentPosition + 1);
                     } else {
-                        PokeAlertClient.LOGGER.debug("[PlayerSuspicionMonitor] Player not in top N of tab list (position unknown)");
+                        PokeAlertClient.LOGGER.info("[PlayerSuspicionMonitor] Player not in top N of tab list (position unknown)");
                     }
                 }
                 
@@ -1865,6 +1871,7 @@ public class EggHatcher {
     
     /**
      * Stop the safety monitor
+     * Note: PlayerSuspicionMonitor is NOT stopped here - it runs independently as a security check
      */
     private void stopSafetyMonitor() {
         if (safetyMonitorTask != null && !safetyMonitorTask.isDone()) {
@@ -1872,7 +1879,7 @@ public class EggHatcher {
             safetyMonitorTask = null;
             PokeAlertClient.LOGGER.info("Safety monitor stopped");
         }
-        stopPlayerSuspicionMonitor();
+        // PlayerSuspicionMonitor continues running - it's a security check that should not be stopped during teleports
     }
     
     /**

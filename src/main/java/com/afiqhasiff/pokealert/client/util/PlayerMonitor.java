@@ -16,8 +16,12 @@ import com.afiqhasiff.pokealert.client.PokeAlertClient;
 import com.afiqhasiff.pokealert.client.config.PokeAlertConfig;
 
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.hud.InGameHud;
+import net.minecraft.client.gui.hud.PlayerListHud;
 import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.entity.player.PlayerEntity;
+
+import java.lang.reflect.Method;
 
 /**
  * Monitors for specific players on the server or nearby.
@@ -428,14 +432,14 @@ public class PlayerMonitor {
             return -1;
         }
         
-        Collection<PlayerListEntry> playerList = client.getNetworkHandler().getPlayerList();
-        if (playerList == null || playerList.isEmpty()) {
+        // Try to get the sorted player list from PlayerListHud (matches tab list display order)
+        // This uses the same sorting logic as the tab list (rank/scoreboard first, then alphabetical)
+        List<PlayerListEntry> playerListArray = getSortedPlayerListFromTabList();
+        
+        if (playerListArray == null || playerListArray.isEmpty()) {
             PokeAlertClient.LOGGER.debug("[PlayerSuspicionMonitor] Cannot get position - player list is empty");
             return -1;
         }
-        
-        // Convert to List to get index (Collection order should be maintained by Minecraft)
-        List<PlayerListEntry> playerListArray = new ArrayList<>(playerList);
         
         int position = -1;
         for (int i = 0; i < playerListArray.size(); i++) {
@@ -451,23 +455,25 @@ public class PlayerMonitor {
         
         // Debug logging
         if (position >= 0) {
-            PokeAlertClient.LOGGER.debug("[PlayerSuspicionMonitor] Player '{}' found at position {} (0-indexed) in tab list (total players: {})", 
-                currentPlayerName, position, playerListArray.size());
+            PokeAlertClient.LOGGER.info("[PlayerSuspicionMonitor] Player '{}' found at position {} (0-indexed) / {} (1-indexed) in tab list (total players: {})", 
+                currentPlayerName, position, position + 1, playerListArray.size());
             
-            // Log top 5 players for debugging
+            // Log players around the current position for verification (5 before, current, 5 after)
             if (playerListArray.size() > 0) {
-                StringBuilder top5 = new StringBuilder("Top 5 players in tab list: ");
-                int count = Math.min(5, playerListArray.size());
-                for (int i = 0; i < count; i++) {
+                int startIdx = Math.max(0, position - 5);
+                int endIdx = Math.min(playerListArray.size(), position + 6);
+                StringBuilder context = new StringBuilder("Players around position: ");
+                for (int i = startIdx; i < endIdx; i++) {
                     PlayerListEntry entry = playerListArray.get(i);
                     if (entry.getProfile() != null) {
                         String name = entry.getProfile().getName();
                         if (name != null) {
-                            top5.append(String.format("[%d]%s ", i, name));
+                            String marker = (i == position) ? ">>>" : "   ";
+                            context.append(String.format("%s[%d]%s ", marker, i, name));
                         }
                     }
                 }
-                PokeAlertClient.LOGGER.debug("[PlayerSuspicionMonitor] {}", top5.toString());
+                PokeAlertClient.LOGGER.info("[PlayerSuspicionMonitor] {}", context.toString());
             }
         } else {
             PokeAlertClient.LOGGER.warn("[PlayerSuspicionMonitor] Player '{}' NOT found in tab list (total players: {})", 
@@ -475,6 +481,60 @@ public class PlayerMonitor {
         }
         
         return position;
+    }
+    
+    /**
+     * Get the sorted player list from PlayerListHud (matches tab list display order)
+     * Uses reflection to access the private collectPlayerEntries() method which applies
+     * the same sorting logic as the tab list (rank/scoreboard first, then alphabetical)
+     * 
+     * This method is the exact same one used by PlayerListHud.render() to display the tab list,
+     * ensuring 100% accuracy in position calculation.
+     * 
+     * Reference: https://maven.fabricmc.net/docs/yarn-1.21.5+build.1/net/minecraft/client/gui/hud/PlayerListHud.html
+     * 
+     * @return Sorted list of PlayerListEntry matching tab list order, or null if unavailable
+     */
+    private static List<PlayerListEntry> getSortedPlayerListFromTabList() {
+        try {
+            InGameHud inGameHud = client.inGameHud;
+            if (inGameHud == null) {
+                PokeAlertClient.LOGGER.error("[PlayerSuspicionMonitor] InGameHud is null - cannot get sorted player list");
+                return null;
+            }
+            
+            // Get PlayerListHud instance
+            PlayerListHud playerListHud = inGameHud.getPlayerListHud();
+            if (playerListHud == null) {
+                PokeAlertClient.LOGGER.error("[PlayerSuspicionMonitor] PlayerListHud is null - cannot get sorted player list");
+                return null;
+            }
+            
+            // Use reflection to access the private collectPlayerEntries() method
+            // This is the exact method used by PlayerListHud.render() to get the sorted list
+            // It uses ENTRY_ORDERING Comparator which sorts by scoreboard/rank first, then alphabetically
+            Method collectMethod = PlayerListHud.class.getDeclaredMethod("collectPlayerEntries");
+            collectMethod.setAccessible(true);
+            
+            @SuppressWarnings("unchecked")
+            List<PlayerListEntry> sortedList = (List<PlayerListEntry>) collectMethod.invoke(playerListHud);
+            
+            if (sortedList == null) {
+                PokeAlertClient.LOGGER.error("[PlayerSuspicionMonitor] collectPlayerEntries() returned null");
+                return null;
+            }
+            
+            return sortedList;
+        } catch (NoSuchMethodException e) {
+            PokeAlertClient.LOGGER.error("[PlayerSuspicionMonitor] collectPlayerEntries() method not found - Minecraft version mismatch? {}", e.getMessage());
+            return null;
+        } catch (IllegalAccessException e) {
+            PokeAlertClient.LOGGER.error("[PlayerSuspicionMonitor] Cannot access collectPlayerEntries() - reflection access denied: {}", e.getMessage());
+            return null;
+        } catch (Exception e) {
+            PokeAlertClient.LOGGER.error("[PlayerSuspicionMonitor] Failed to get sorted list from PlayerListHud: {}", e.getMessage(), e);
+            return null;
+        }
     }
     
     /**
