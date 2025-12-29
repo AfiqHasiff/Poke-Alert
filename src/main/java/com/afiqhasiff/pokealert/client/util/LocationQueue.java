@@ -34,6 +34,7 @@ public class LocationQueue {
     private int replenishCount = 3;
     private int locationsForStep5 = 3;
     private int maxConsecutiveTimeouts = 3;
+    private int arrivalThreshold = 3; // Minimum distance between coordinates
     
     /**
      * Default constructor.
@@ -55,6 +56,7 @@ public class LocationQueue {
         this.replenishCount = config.replenishCount;
         this.locationsForStep5 = config.locationsForStep5; // Config uses locationsForStep5 for v2 compat
         this.maxConsecutiveTimeouts = config.maxConsecutiveTimeouts;
+        this.arrivalThreshold = config.arrivalThreshold;
         
         // Clear and repopulate
         locations.clear();
@@ -63,13 +65,13 @@ public class LocationQueue {
         consecutiveTimeouts = 0;
         step5Completed = false;
         
-        // Generate initial locations
+        // Generate initial locations (ensuring minimum distance between them)
         for (int i = 0; i < initialQueueSize; i++) {
-            locations.add(region.getRandomPosition());
+            locations.add(getRandomPositionWithMinimumDistance());
         }
         
-        PokeAlertClient.LOGGER.info("LocationQueue: Initialized with {} locations (need {} for Step 5)",
-            initialQueueSize, locationsForStep5);
+        PokeAlertClient.LOGGER.info("LocationQueue: Initialized with {} locations (need {} for Step 5, min distance: {} blocks)",
+            initialQueueSize, locationsForStep5, arrivalThreshold);
     }
     
     /**
@@ -216,6 +218,7 @@ public class LocationQueue {
             config.replenishCount = this.replenishCount;
             config.locationsForStep5 = this.locationsForStep5;
             config.maxConsecutiveTimeouts = this.maxConsecutiveTimeouts;
+            config.arrivalThreshold = this.arrivalThreshold; // Preserve arrival threshold
             initialize(region, config);
         }
     }
@@ -230,12 +233,59 @@ public class LocationQueue {
         // Replenish when at second-to-last (or less)
         if (remaining <= 2 && region != null) {
             for (int i = 0; i < replenishCount; i++) {
-                locations.add(region.getRandomPosition());
+                locations.add(getRandomPositionWithMinimumDistance());
             }
             
             PokeAlertClient.LOGGER.info("LocationQueue: Replenished with {} new locations (total: {})",
                 replenishCount, locations.size());
         }
+    }
+    
+    /**
+     * Generate a random position that is NOT within arrivalThreshold distance of any existing coordinate.
+     * This prevents coordinates from being considered "arrived" immediately when generated.
+     * 
+     * @return int[] with [x, z] coordinates that meet minimum distance requirement
+     */
+    private int[] getRandomPositionWithMinimumDistance() {
+        if (region == null) {
+            PokeAlertClient.LOGGER.error("LocationQueue: Cannot generate position - region is null");
+            return new int[] { 0, 0 };
+        }
+        
+        int maxAttempts = 100; // Prevent infinite loops
+        int attempts = 0;
+        
+        while (attempts < maxAttempts) {
+            int[] candidate = region.getRandomPosition();
+            boolean isValid = true;
+            
+            // Check distance to all existing locations
+            for (int[] existing : locations) {
+                double distance = Math.sqrt(
+                    Math.pow(candidate[0] - existing[0], 2) + 
+                    Math.pow(candidate[1] - existing[1], 2)
+                );
+                
+                // If too close to an existing location, reject this candidate
+                if (distance <= arrivalThreshold) {
+                    isValid = false;
+                    break;
+                }
+            }
+            
+            if (isValid) {
+                return candidate;
+            }
+            
+            attempts++;
+        }
+        
+        // If we couldn't find a valid position after max attempts, log warning and return a position anyway
+        // This can happen if the region is very small or arrivalThreshold is very large
+        PokeAlertClient.LOGGER.warn("LocationQueue: Could not find position with minimum distance {} after {} attempts, using random position anyway",
+            arrivalThreshold, maxAttempts);
+        return region.getRandomPosition();
     }
     
     /**
