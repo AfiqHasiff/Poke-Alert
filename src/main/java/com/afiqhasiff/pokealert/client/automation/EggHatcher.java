@@ -380,6 +380,9 @@ public class EggHatcher {
             }
         } else {
             // AUTO -> DISABLED (simplified: removed MANUAL mode)
+            // Check if automation was running before stopping
+            boolean wasRunning = isAutomationRunning || antiAfkActive || currentState != State.IDLE || spawnDetectionTime > 0;
+            
             mode = AutomationMode.DISABLED;
             config.eggHatcherEnabled = false;
             ConfigManager.saveSettings(config);
@@ -389,8 +392,15 @@ public class EggHatcher {
             spawnDetectionTime = 0;
             
             PokeAlertClient.LOGGER.info("Mode changed to DISABLED - all session flags reset");
-            sendNotification("Egg Hatcher", "Disabled", Formatting.RED);
+            
+            // Stop automation (will show "stopped and disabled" if was running)
             stopAutomation();
+            
+            // Only show "Disabled" notification if automation wasn't running
+            // (if it was running, stopAutomation() already showed "stopped and disabled")
+            if (!wasRunning) {
+                sendNotification("Egg Hatcher", "Disabled", Formatting.RED);
+            }
             
             // Stop PlayerSuspicionMonitor when disabling automation
             stopPlayerSuspicionMonitor();
@@ -403,16 +413,27 @@ public class EggHatcher {
     public void disableCompletely() {
         PokeAlertConfig config = PokeAlertClient.getInstance().config;
         
-        // Stop all automation first
+        // Check if automation was running before stopping
+        boolean wasRunning = isAutomationRunning || antiAfkActive || currentState != State.IDLE || spawnDetectionTime > 0;
+        
+        // Set mode to DISABLED first so stopAutomation() knows it's being disabled
+        mode = AutomationMode.DISABLED;
+        
+        // Stop all automation (will show "stopped and disabled" if was running)
         stopAutomation();
         
         // Stop PlayerSuspicionMonitor when completely disabling
         stopPlayerSuspicionMonitor();
         
-        // Set mode to DISABLED
-        mode = AutomationMode.DISABLED;
+        // Save config
         config.eggHatcherEnabled = false;
         ConfigManager.saveSettings(config);
+        
+        // Only show "Disabled" notification if automation wasn't running
+        // (if it was running, stopAutomation() already showed "stopped and disabled")
+        if (!wasRunning) {
+            sendNotification("Egg Hatcher", "Disabled", Formatting.RED);
+        }
         
         PokeAlertClient.LOGGER.info("Egg Hatcher: Completely disabled");
     }
@@ -1739,7 +1760,9 @@ public class EggHatcher {
                 boolean inTopN = PlayerMonitor.isPlayerInTopN(topNThreshold);
                 if (inTopN) {
                     PokeAlertClient.LOGGER.warn("[PlayerSuspicionMonitor] 🚨 CRITICAL: Player detected in TOP {} of tab list - Disabling Egg Hatcher and force closing game!", topNThreshold);
-                    sendNotification("Egg Hatcher", "⚠️ Disabled: Detected in top " + topNThreshold + " of tab list", Formatting.RED);
+                    
+                    // Check if automation was running before stopping
+                    boolean wasRunning = isAutomationRunning || antiAfkActive || currentState != State.IDLE || spawnDetectionTime > 0;
                     
                     // Disable automation completely
                     mode = AutomationMode.DISABLED;
@@ -1747,9 +1770,15 @@ public class EggHatcher {
                     currentConfig.eggHatcherEnabled = false;
                     ConfigManager.saveSettings(currentConfig);
                     
-                    // Stop all automation (cancels any running instance)
+                    // Stop all automation (will show "stopped and disabled" if was running)
                     PokeAlertClient.LOGGER.info("[PlayerSuspicionMonitor] Stopping all Egg Hatcher automation...");
                     stopAutomation();
+                    
+                    // Only show separate notification if automation wasn't running
+                    // (if it was running, stopAutomation() already showed "stopped and disabled")
+                    if (!wasRunning) {
+                        sendNotification("Egg Hatcher", "⚠️ Disabled: Detected in top " + topNThreshold + " of tab list", Formatting.RED);
+                    }
                     
                     // Send Telegram notification
                     PokeAlertConfig telegramConfig = ConfigManager.getConfig();
@@ -2061,7 +2090,13 @@ public class EggHatcher {
         
         // Send notification if we actually cancelled something
         if (wasRunning) {
-            sendNotification("Egg Hatcher", "Automation stopped", Formatting.YELLOW);
+            // Check if mode is DISABLED - if so, show "stopped and disabled" in one line
+            if (mode == AutomationMode.DISABLED) {
+                sendNotification("Egg Hatcher", "Stopped and disabled", Formatting.RED);
+            } else {
+                // Automation stopped but not disabled (e.g., error recovery, manual cancel)
+                sendNotification("Egg Hatcher", "Automation stopped", Formatting.YELLOW);
+            }
         }
     }
     
