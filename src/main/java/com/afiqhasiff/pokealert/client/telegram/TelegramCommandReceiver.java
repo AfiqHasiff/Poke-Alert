@@ -1059,14 +1059,10 @@ public class TelegramCommandReceiver {
             sb.append("• <b>Pokémon:</b> <i>Empty list</i>");
         } else {
             sb.append("• <b>Pokémon:</b> ");
-            // Show first 10 Pokémon, then "... and X more" if there are more
-            int maxShow = 10;
-            for (int i = 0; i < Math.min(pokemonList.length, maxShow); i++) {
+            // Show all Pokémon in the list
+            for (int i = 0; i < pokemonList.length; i++) {
                 if (i > 0) sb.append(", ");
                 sb.append(formatPokemonName(pokemonList[i]));
-            }
-            if (pokemonList.length > maxShow) {
-                sb.append("... and <code>").append(pokemonList.length - maxShow).append("</code> more");
             }
         }
         
