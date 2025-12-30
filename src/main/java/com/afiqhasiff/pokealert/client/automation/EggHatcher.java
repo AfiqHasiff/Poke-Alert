@@ -306,8 +306,10 @@ public class EggHatcher {
             return;
         }
         
+        // Check if automation was running before any changes
+        boolean wasRunning = isAutomationRunning || antiAfkActive || currentState != State.IDLE || spawnDetectionTime > 0;
+        
         // If automation is running, stop it first
-        boolean wasRunning = isAutomationRunning || antiAfkActive;
         if (wasRunning) {
             stopAutomation();
         }
@@ -387,8 +389,7 @@ public class EggHatcher {
             }
         } else {
             // AUTO -> DISABLED (simplified: removed MANUAL mode)
-            // Check if automation was running before stopping
-            boolean wasRunning = isAutomationRunning || antiAfkActive || currentState != State.IDLE || spawnDetectionTime > 0;
+            // wasRunning already checked at the start of the method
             
             mode = AutomationMode.DISABLED;
             config.eggHatcherEnabled = false;
