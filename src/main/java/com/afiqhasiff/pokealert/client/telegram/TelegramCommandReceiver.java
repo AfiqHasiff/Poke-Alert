@@ -298,14 +298,14 @@ public class TelegramCommandReceiver {
             // Check authorization
             if (!isAuthorizedUser(userId)) {
                 PokeAlertClient.LOGGER.warn("TelegramCommandReceiver: Unauthorized user {} attempted command: {}", userId, text);
-                sendTelegramResponse(chatId, "❌ Unauthorized: You are not authorized to execute commands", messageId);
+                sendTelegramResponse(chatId, "❌ <b>Command</b>\n• <b>Status:</b> <i>Unauthorized</i>\n• <b>Reason:</b> You are not authorized to execute commands", messageId);
                 return;
             }
             
             // Check rate limit (per-user)
             if (!checkRateLimit(userId)) {
                 PokeAlertClient.LOGGER.warn("TelegramCommandReceiver: Rate limit exceeded for user {}", userId);
-                sendTelegramResponse(chatId, "⏳ Rate limit: Please wait before sending another command", messageId);
+                sendTelegramResponse(chatId, "⏳ <b>Command</b>\n• <b>Status:</b> <i>Rate Limited</i>\n• <b>Reason:</b> Please wait before sending another command", messageId);
                 return;
             }
             
@@ -405,9 +405,7 @@ public class TelegramCommandReceiver {
         if (isGroupChat && !hasBotMention) {
             PokeAlertClient.LOGGER.debug("TelegramCommandReceiver: Group command missing bot mention: {}", text);
             sendTelegramResponse(chatId, 
-                "⚠️ In group chats, commands must mention the bot.\n" +
-                "Use: /pahelp@" + (botUsername != null ? botUsername : "botname") + "\n" +
-                "Or disable Privacy Mode in @BotFather", 
+                "⚠️ <b>Command</b>\n• <b>Status:</b> <i>Warning</i>\n• <b>Reason:</b> In group chats, commands must mention the bot\n• <b>Help:</b> Use: /pahelp@" + (botUsername != null ? botUsername : "botname") + "\n• <b>Alternative:</b> Or disable Privacy Mode in @BotFather", 
                 messageId);
             return null;
         }
@@ -470,27 +468,27 @@ public class TelegramCommandReceiver {
         
         // Check if DM replies are enabled
         if (!config.dmReplyEnabled) {
-            sendTelegramResponse(chatId, "❌ DM replies are disabled", messageId);
+            sendTelegramResponse(chatId, "❌ <b>DM Reply</b>\n• <b>Status:</b> <i>Error</i>\n• <b>Reason:</b> DM replies are disabled", messageId);
             return;
         }
         
         // Check authorization
         if (!isAuthorizedUser(userId)) {
             PokeAlertClient.LOGGER.warn("TelegramCommandReceiver: Unauthorized user {} attempted DM reply", userId);
-            sendTelegramResponse(chatId, "❌ Unauthorized: You are not authorized to reply to DMs", messageId);
+            sendTelegramResponse(chatId, "❌ <b>DM Reply</b>\n• <b>Status:</b> <i>Unauthorized</i>\n• <b>Reason:</b> You are not authorized to reply to DMs", messageId);
             return;
         }
         
         // Check rate limit (per-user)
         if (!checkRateLimit(userId)) {
             PokeAlertClient.LOGGER.warn("TelegramCommandReceiver: Rate limit exceeded for DM reply from user {}", userId);
-            sendTelegramResponse(chatId, "⏳ Rate limit: Please wait before sending another reply", messageId);
+            sendTelegramResponse(chatId, "⏳ <b>DM Reply</b>\n• <b>Status:</b> <i>Rate Limited</i>\n• <b>Reason:</b> Please wait before sending another reply", messageId);
             return;
         }
         
         // Validate reply text
         if (replyText == null || replyText.trim().isEmpty()) {
-            sendTelegramResponse(chatId, "❌ Reply message cannot be empty", messageId);
+            sendTelegramResponse(chatId, "❌ <b>DM Reply</b>\n• <b>Status:</b> <i>Error</i>\n• <b>Reason:</b> Reply message cannot be empty", messageId);
             return;
         }
         
@@ -499,7 +497,7 @@ public class TelegramCommandReceiver {
         String sender = extractSenderFromNotification(originalNotification);
         if (sender == null || sender.isEmpty()) {
             PokeAlertClient.LOGGER.warn("TelegramCommandReceiver: Could not extract sender from DM notification");
-            sendTelegramResponse(chatId, "❌ Could not determine sender. Please reply directly to the DM notification.", messageId);
+            sendTelegramResponse(chatId, "❌ <b>DM Reply</b>\n• <b>Status:</b> <i>Error</i>\n• <b>Reason:</b> Could not determine sender\n• <b>Help:</b> Please reply directly to the DM notification", messageId);
             return;
         }
         
@@ -507,7 +505,7 @@ public class TelegramCommandReceiver {
         if (isPlayerAvoided(sender, config)) {
             PokeAlertClient.LOGGER.warn("TelegramCommandReceiver: Attempted reply to avoided player: {}", sender);
             sendTelegramResponse(chatId, 
-                "⚠️ Warning: This player is in your avoided list. Reply not sent.", 
+                "⚠️ <b>DM Reply</b>\n• <b>Status:</b> <i>Warning</i>\n• <b>Reason:</b> This player is in your avoided list\n• <b>Action:</b> Reply not sent", 
                 messageId);
             return;
         }
@@ -517,7 +515,7 @@ public class TelegramCommandReceiver {
         
         // Send confirmation to Telegram
         sendTelegramResponse(chatId, 
-            "✅ Reply sent to <code>" + escapeHtml(sender) + "</code>: " + escapeHtml(replyText.trim()), 
+            "✅ <b>DM Reply</b>\n• <b>Status:</b> <i>Sent</i>\n• <b>To:</b> <code>" + escapeHtml(sender) + "</code>\n• <b>Message:</b> " + escapeHtml(replyText.trim()), 
             messageId);
         
         PokeAlertClient.LOGGER.info("TelegramCommandReceiver: DM reply sent to {}: {}", sender, replyText);
@@ -653,7 +651,7 @@ public class TelegramCommandReceiver {
         // Execute on client thread to ensure thread safety
         net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
         if (client == null) {
-            sendTelegramResponse(chatId, "❌ Error: Minecraft client not available", messageId);
+            sendTelegramResponse(chatId, "❌ <b>Command</b>\n• <b>Status:</b> <i>Error</i>\n• <b>Reason:</b> Minecraft client not available", messageId);
             return;
         }
         
@@ -664,7 +662,7 @@ public class TelegramCommandReceiver {
                 sendTelegramResponse(finalChatId, response, finalMessageId);
             } catch (Exception e) {
                 PokeAlertClient.LOGGER.error("TelegramCommandReceiver: Error executing command: {}", finalCommand, e);
-                sendTelegramResponse(finalChatId, "❌ Error executing command: " + e.getMessage(), finalMessageId);
+                sendTelegramResponse(finalChatId, "❌ <b>Command</b>\n• <b>Status:</b> <i>Error</i>\n• <b>Reason:</b> " + escapeHtml(e.getMessage()), finalMessageId);
             }
         });
     }
@@ -756,7 +754,7 @@ public class TelegramCommandReceiver {
                             int minutes = Integer.parseInt(parts[2]);
                             return executeEggTimerStart(minutes);
                         } catch (NumberFormatException e) {
-                            return "❌ Invalid minutes: " + parts[2];
+                            return "❌ <b>Egg Timer</b>\n• <b>Status:</b> <i>Error</i>\n• <b>Reason:</b> Invalid minutes: <code>" + escapeHtml(parts[2]) + "</code>";
                         }
                     }
                     return executeEggTimerStart(-1);
@@ -770,23 +768,34 @@ public class TelegramCommandReceiver {
                             int minutes = Integer.parseInt(parts[2]);
                             return executeEggTimerDuration(minutes);
                         } catch (NumberFormatException e) {
-                            return "❌ Invalid minutes: " + parts[2];
+                            return "❌ <b>Egg Timer</b>\n• <b>Status:</b> <i>Error</i>\n• <b>Reason:</b> Invalid minutes: <code>" + escapeHtml(parts[2]) + "</code>";
                         }
                     }
                 }
             }
             
-            // Realm/Egg Hatcher
-            if (cmd.equals("realm") || cmd.equals("hatcher")) {
+            // Egg Hatcher commands
+            if (cmd.equals("egghatcher") || cmd.equals("hatcher")) {
+                if (subCmd.equals("enable") || subCmd.equals("on")) {
+                    return executeEggHatcherEnable();
+                } else if (subCmd.equals("disable") || subCmd.equals("off")) {
+                    return executeEggHatcherDisable();
+                } else if (subCmd.equals("status") || subCmd.equals("stat")) {
+                    return executeEggHatcherStatus();
+                }
+            }
+            
+            // Legacy realm commands (deprecated, redirect to egghatcher)
+            if (cmd.equals("realm")) {
                 if (subCmd.equals("toggle") || subCmd.equals("t")) {
                     return executeRealmToggle();
                 } else if (subCmd.equals("status") || subCmd.equals("stat")) {
-                    return executeRealmStatus();
+                    return executeEggHatcherStatus();
                 }
             }
         }
         
-        return "❌ Unknown command: " + command + "\nUse /pahelp to see available commands";
+        return "❌ <b>Command</b>\n• <b>Status:</b> <i>Error</i>\n• <b>Reason:</b> Unknown command: <code>" + escapeHtml(command) + "</code>\n• <b>Help:</b> Use /pahelp to see available commands";
     }
     
     // Command implementations
@@ -819,8 +828,9 @@ public class TelegramCommandReceiver {
         sb.append("/pa eggtimer duration &lt;minutes&gt;\n\n");
         
         sb.append("<b>Egg Hatcher:</b>\n");
-        sb.append("/pa realm toggle - Toggle Egg Hatcher\n");
-        sb.append("/pa realm status - Show Egg Hatcher status\n");
+        sb.append("/pa egghatcher enable - Enable Egg Hatcher\n");
+        sb.append("/pa egghatcher disable - Disable Egg Hatcher\n");
+        sb.append("/pa egghatcher status - Show Egg Hatcher status\n");
         
         return sb.toString();
     }
@@ -828,34 +838,106 @@ public class TelegramCommandReceiver {
     private String executeStatus() {
         PokeAlertConfig config = ConfigManager.getConfig();
         StringBuilder sb = new StringBuilder();
-        sb.append("<b>PokéAlert Status</b>\n\n");
-        sb.append("Mod: ").append(config.modEnabled ? "✅ ENABLED" : "❌ DISABLED").append("\n\n");
+        sb.append("ℹ️ <b>PokéAlert Status</b>\n\n");
         
-        sb.append("<b>Categories:</b>\n");
-        sb.append(formatStatus("Legendaries", config.broadcastAllLegendaries));
-        sb.append(formatStatus("Mythics", config.broadcastAllMythics));
-        sb.append(formatStatus("Starters", config.broadcastAllStarter));
-        sb.append(formatStatus("Babies", config.broadcastAllBabies));
-        sb.append(formatStatus("Ultra Beasts", config.broadcastAllUltraBeasts));
-        sb.append(formatStatus("Shinies", config.broadcastAllShinies));
-        sb.append(formatStatus("Paradox", config.broadcastAllParadox));
+        // PokéAlert Mod Status
+        sb.append("<b>PokéAlert Mod</b>\n");
+        sb.append("• <b>Status:</b> <i>").append(config.modEnabled ? "Enabled" : "Disabled").append("</i>\n");
+        if (config.modEnabled) {
+            sb.append("• <b>Whitelist:</b> <code>").append(config.broadcastWhitelist.length).append("</code> entries\n");
+            sb.append("• <b>Blacklist:</b> <code>").append(config.broadcastBlacklist.length).append("</code> entries\n");
+            sb.append("• <b>Excluded Worlds:</b> <code>").append(config.excludedWorlds.length).append("</code> entries\n");
+        }
         sb.append("\n");
         
-        sb.append("<b>Notifications:</b>\n");
-        sb.append(formatStatus("In-Game Text", config.inGameTextEnabled));
-        sb.append(formatStatus("In-Game Sound", config.inGameSoundEnabled));
-        sb.append(formatStatus("Telegram", config.telegramEnabled));
+        // Egg Timer Status
+        EggTimerManager timerManager = EggTimerManager.getInstance();
+        sb.append("<b>Egg Timer</b>\n");
+        if (timerManager.isTimerRunning()) {
+            int remaining = timerManager.getRemainingMinutes();
+            sb.append("• <b>Status:</b> <i>Running</i>\n");
+            sb.append("• <b>Remaining:</b> <code>").append(remaining).append("</code> minutes\n");
+            
+            // Calculate elapsed time
+            try {
+                java.lang.reflect.Field timerStartTimeField = EggTimerManager.class.getDeclaredField("timerStartTime");
+                timerStartTimeField.setAccessible(true);
+                long timerStartTime = timerStartTimeField.getLong(timerManager);
+                long elapsedMs = System.currentTimeMillis() - timerStartTime;
+                long elapsedMinutes = elapsedMs / 60000;
+                sb.append("• <b>Elapsed:</b> <code>").append(elapsedMinutes).append("</code> minutes\n");
+            } catch (Exception e) {
+                // If reflection fails, skip elapsed time
+            }
+        } else {
+            sb.append("• <b>Status:</b> <i>Not Running</i>\n");
+            sb.append("• <b>Default Duration:</b> <code>").append(config.eggTimerDuration).append("</code> minutes\n");
+        }
         sb.append("\n");
         
-        sb.append("Whitelist: ").append(config.broadcastWhitelist.length).append(" entries\n");
-        sb.append("Blacklist: ").append(config.broadcastBlacklist.length).append(" entries\n");
-        sb.append("Excluded Worlds: ").append(config.excludedWorlds.length).append(" entries");
+        // Egg Hatcher Status
+        EggHatcher eggHatcher = EggHatcher.getInstance();
+        sb.append("<b>Egg Hatcher</b>\n");
+        String hatcherStatus = eggHatcher.getStatus();
+        boolean isEnabled = eggHatcher.getMode() == EggHatcher.AutomationMode.AUTO;
+        boolean isRunning = eggHatcher.isRunning();
+        boolean isAntiAfkActive = eggHatcher.isAntiAfkActive();
+        
+        sb.append("• <b>Status:</b> <i>").append(isEnabled ? "Enabled" : "Disabled").append("</i>\n");
+        
+        if (isEnabled) {
+            if (isRunning || isAntiAfkActive) {
+                // Calculate elapsed time since automation started
+                try {
+                    java.lang.reflect.Field automationStartTimeField = EggHatcher.class.getDeclaredField("automationStartTime");
+                    automationStartTimeField.setAccessible(true);
+                    long automationStartTime = automationStartTimeField.getLong(eggHatcher);
+                    if (automationStartTime > 0) {
+                        long elapsedMs = System.currentTimeMillis() - automationStartTime;
+                        long elapsedMinutes = elapsedMs / 60000;
+                        long elapsedSeconds = (elapsedMs % 60000) / 1000;
+                        sb.append("• <b>Running Time:</b> <code>").append(elapsedMinutes).append("m ").append(elapsedSeconds).append("s</code>\n");
+                    }
+                } catch (Exception e) {
+                    // If reflection fails, skip elapsed time
+                }
+                
+                // Show current state
+                if (isAntiAfkActive) {
+                    sb.append("• <b>State:</b> <i>Anti-AFK Active</i>\n");
+                } else if (isRunning) {
+                    try {
+                        java.lang.reflect.Field currentStateField = EggHatcher.class.getDeclaredField("currentState");
+                        currentStateField.setAccessible(true);
+                        Object currentState = currentStateField.get(eggHatcher);
+                        String stateName = currentState.toString();
+                        // Format state name (e.g., WAITING_FOR_TELEPORT -> Waiting for Teleport)
+                        stateName = stateName.replace("_", " ").toLowerCase();
+                        stateName = stateName.substring(0, 1).toUpperCase() + stateName.substring(1);
+                        sb.append("• <b>State:</b> <i>").append(stateName).append("</i>\n");
+                    } catch (Exception e) {
+                        sb.append("• <b>State:</b> <i>Running</i>\n");
+                    }
+                }
+            } else {
+                // Check for countdown/buffer
+                if (hatcherStatus.contains("Server Buffer")) {
+                    String bufferTime = hatcherStatus.substring(hatcherStatus.indexOf(":") + 1).trim();
+                    sb.append("• <b>State:</b> <i>Server Buffer</i>\n");
+                    sb.append("• <b>Remaining:</b> <code>").append(bufferTime).append("</code>\n");
+                } else {
+                    sb.append("• <b>State:</b> <i>Monitoring</i>\n");
+                }
+            }
+            
+            // Check if at spawn
+            net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
+            if (eggHatcher.isAtSpawn() && client != null && client.player != null) {
+                sb.append("• <b>Location:</b> <i>Spawn world</i>\n");
+            }
+        }
         
         return sb.toString();
-    }
-    
-    private String formatStatus(String name, boolean enabled) {
-        return "  " + name + ": " + (enabled ? "✅ ON" : "❌ OFF") + "\n";
     }
     
     private String executeEnable(boolean enabled) {
@@ -864,7 +946,7 @@ public class TelegramCommandReceiver {
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
-        return "✅ Mod has been " + (enabled ? "ENABLED" : "DISABLED");
+        return "✅ <b>PokéAlert</b>\n• <b>Status:</b> <i>" + (enabled ? "Enabled" : "Disabled") + "</i>";
     }
     
     private String executeCategory(String category, boolean enable) {
@@ -895,14 +977,14 @@ public class TelegramCommandReceiver {
                 config.broadcastAllParadox = enable;
                 break;
             default:
-                return "❌ Unknown category: " + category;
+                return "❌ <b>Category</b>\n• <b>Status:</b> <i>Error</i>\n• <b>Reason:</b> Unknown category: <code>" + escapeHtml(category) + "</code>";
         }
         
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
         String categoryName = Character.toUpperCase(catLower.charAt(0)) + catLower.substring(1);
-        return "✅ " + categoryName + " has been " + (enable ? "ENABLED" : "DISABLED");
+        return "✅ <b>Category</b>\n• <b>Status:</b> <i>" + (enable ? "Enabled" : "Disabled") + "</i>\n• <b>Category:</b> <code>" + escapeHtml(categoryName) + "</code>";
     }
     
     private String executeNotification(String type, boolean enable) {
@@ -920,14 +1002,14 @@ public class TelegramCommandReceiver {
                 config.telegramEnabled = enable;
                 break;
             default:
-                return "❌ Unknown notification type: " + type;
+                return "❌ <b>Notification</b>\n• <b>Status:</b> <i>Error</i>\n• <b>Reason:</b> Unknown notification type: <code>" + escapeHtml(type) + "</code>";
         }
         
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
         String typeName = Character.toUpperCase(typeLower.charAt(0)) + typeLower.substring(1);
-        return "✅ " + typeName + " notifications " + (enable ? "ENABLED" : "DISABLED");
+        return "✅ <b>Notification</b>\n• <b>Status:</b> <i>" + (enable ? "Enabled" : "Disabled") + "</i>\n• <b>Type:</b> <code>" + escapeHtml(typeName) + "</code>";
     }
     
     private String executeList(String type) {
@@ -959,7 +1041,7 @@ public class TelegramCommandReceiver {
                 break;
             case "shinies":
                 // Shinies are not a predefined list - they're detected dynamically
-                return "❌ Shinies are detected dynamically, not a predefined list";
+                return "❌ <b>List</b>\n• <b>Status:</b> <i>Error</i>\n• <b>Reason:</b> Shinies are detected dynamically, not a predefined list";
             case "paradox":
                 pokemonList = PokemonLists.paradox_mons;
                 listName = "Paradox";
@@ -973,17 +1055,26 @@ public class TelegramCommandReceiver {
                 listName = "Blacklist";
                 break;
             default:
-                return "❌ Unknown list type: " + type;
+                return "❌ <b>List</b>\n• <b>Status:</b> <i>Error</i>\n• <b>Reason:</b> Unknown list type: <code>" + escapeHtml(type) + "</code>";
         }
         
         StringBuilder sb = new StringBuilder();
-        sb.append("<b>").append(listName).append(" (").append(pokemonList.length).append(")</b>\n");
+        sb.append("📋 <b>").append(listName).append("</b>\n");
+        sb.append("• <b>Status:</b> <i>List</i>\n");
+        sb.append("• <b>Count:</b> <code>").append(pokemonList.length).append("</code> Pokémon\n");
         
         if (pokemonList.length == 0) {
-            sb.append("Empty list");
+            sb.append("• <b>Pokémon:</b> <i>Empty list</i>");
         } else {
-            for (String pokemon : pokemonList) {
-                sb.append("  • ").append(formatPokemonName(pokemon)).append("\n");
+            sb.append("• <b>Pokémon:</b> ");
+            // Show first 10 Pokémon, then "... and X more" if there are more
+            int maxShow = 10;
+            for (int i = 0; i < Math.min(pokemonList.length, maxShow); i++) {
+                if (i > 0) sb.append(", ");
+                sb.append(formatPokemonName(pokemonList[i]));
+            }
+            if (pokemonList.length > maxShow) {
+                sb.append("... and <code>").append(pokemonList.length - maxShow).append("</code> more");
             }
         }
         
@@ -1013,7 +1104,7 @@ public class TelegramCommandReceiver {
         String pokemonLower = pokemon.toLowerCase();
         
         if (whitelist.contains(pokemonLower)) {
-            return "⚠️ " + pokemon + " is already in whitelist";
+            return "⚠️ <b>Whitelist</b>\n• <b>Status:</b> <i>Already Exists</i>\n• <b>Pokémon:</b> <code>" + escapeHtml(pokemon) + "</code>";
         }
         
         whitelist.add(pokemonLower);
@@ -1021,7 +1112,7 @@ public class TelegramCommandReceiver {
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
-        return "✅ Added " + pokemon + " to whitelist";
+        return "✅ <b>Whitelist</b>\n• <b>Status:</b> <i>Added</i>\n• <b>Pokémon:</b> <code>" + escapeHtml(pokemon) + "</code>";
     }
     
     private String executeWhitelistRemove(String pokemon) {
@@ -1030,14 +1121,14 @@ public class TelegramCommandReceiver {
         String pokemonLower = pokemon.toLowerCase();
         
         if (!whitelist.remove(pokemonLower)) {
-            return "⚠️ " + pokemon + " is not in whitelist";
+            return "❌ <b>Whitelist</b>\n• <b>Status:</b> <i>Error</i>\n• <b>Reason:</b> Pokémon not found in list\n• <b>Pokémon:</b> <code>" + escapeHtml(pokemon) + "</code>";
         }
         
         config.broadcastWhitelist = whitelist.toArray(new String[0]);
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
-        return "✅ Removed " + pokemon + " from whitelist";
+        return "✅ <b>Whitelist</b>\n• <b>Status:</b> <i>Removed</i>\n• <b>Pokémon:</b> <code>" + escapeHtml(pokemon) + "</code>";
     }
     
     private String executeWhitelistList() {
@@ -1050,7 +1141,7 @@ public class TelegramCommandReceiver {
         String pokemonLower = pokemon.toLowerCase();
         
         if (blacklist.contains(pokemonLower)) {
-            return "⚠️ " + pokemon + " is already in blacklist";
+            return "⚠️ <b>Blacklist</b>\n• <b>Status:</b> <i>Already Exists</i>\n• <b>Pokémon:</b> <code>" + escapeHtml(pokemon) + "</code>";
         }
         
         blacklist.add(pokemonLower);
@@ -1058,7 +1149,7 @@ public class TelegramCommandReceiver {
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
-        return "✅ Added " + pokemon + " to blacklist";
+        return "✅ <b>Blacklist</b>\n• <b>Status:</b> <i>Added</i>\n• <b>Pokémon:</b> <code>" + escapeHtml(pokemon) + "</code>";
     }
     
     private String executeBlacklistRemove(String pokemon) {
@@ -1067,14 +1158,14 @@ public class TelegramCommandReceiver {
         String pokemonLower = pokemon.toLowerCase();
         
         if (!blacklist.remove(pokemonLower)) {
-            return "⚠️ " + pokemon + " is not in blacklist";
+            return "❌ <b>Blacklist</b>\n• <b>Status:</b> <i>Error</i>\n• <b>Reason:</b> Pokémon not found in list\n• <b>Pokémon:</b> <code>" + escapeHtml(pokemon) + "</code>";
         }
         
         config.broadcastBlacklist = blacklist.toArray(new String[0]);
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
-        return "✅ Removed " + pokemon + " from blacklist";
+        return "✅ <b>Blacklist</b>\n• <b>Status:</b> <i>Removed</i>\n• <b>Pokémon:</b> <code>" + escapeHtml(pokemon) + "</code>";
     }
     
     private String executeBlacklistList() {
@@ -1086,15 +1177,16 @@ public class TelegramCommandReceiver {
         
         if (timerManager.isTimerRunning()) {
             int remaining = timerManager.getRemainingMinutes();
-            return "⏰ Egg timer already running: " + remaining + " minutes remaining";
+            return "⚠️ <b>Egg Timer</b>\n• <b>Status:</b> <i>Already Running</i>\n• <b>Remaining:</b> <code>" + remaining + "</code> minutes";
         }
         
         if (minutes > 0) {
             timerManager.startTimer(minutes);
-            return "✅ Egg timer started for " + minutes + " minutes";
+            return "✅ <b>Egg Timer</b>\n• <b>Status:</b> <i>Started</i>\n• <b>Duration:</b> <code>" + minutes + "</code> minutes";
         } else {
             timerManager.startTimer();
-            return "✅ Egg timer started";
+            PokeAlertConfig config = ConfigManager.getConfig();
+            return "✅ <b>Egg Timer</b>\n• <b>Status:</b> <i>Started</i>\n• <b>Duration:</b> <code>" + config.eggTimerDuration + "</code> minutes (default)";
         }
     }
     
@@ -1102,9 +1194,9 @@ public class TelegramCommandReceiver {
         EggTimerManager timerManager = EggTimerManager.getInstance();
         
         if (timerManager.stopTimer()) {
-            return "✅ Egg timer stopped";
+            return "✅ <b>Egg Timer</b>\n• <b>Status:</b> <i>Stopped</i>";
         } else {
-            return "⚠️ No egg timer is running";
+            return "⏰ <b>Egg Timer</b>\n• <b>Status:</b> <i>Not Running</i>";
         }
     }
     
@@ -1113,9 +1205,9 @@ public class TelegramCommandReceiver {
         
         if (timerManager.isTimerRunning()) {
             int remaining = timerManager.getRemainingMinutes();
-            return "⏰ Egg timer: " + remaining + " minutes remaining";
+            return "⏰ <b>Egg Timer</b>\n• <b>Status:</b> <i>Running</i>\n• <b>Remaining:</b> <code>" + remaining + "</code> minutes";
         } else {
-            return "⏰ No egg timer is running";
+            return "⏰ <b>Egg Timer</b>\n• <b>Status:</b> <i>Not Running</i>";
         }
     }
     
@@ -1125,36 +1217,96 @@ public class TelegramCommandReceiver {
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
-        return "✅ Default egg timer duration set to " + minutes + " minutes";
+        return "✅ <b>Egg Timer</b>\n• <b>Status:</b> <i>Duration Set</i>\n• <b>Default:</b> <code>" + minutes + "</code> minutes";
     }
     
+    private String executeEggHatcherEnable() {
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        if (!config.modEnabled) {
+            return "⚠️ <b>Egg Hatcher</b>\n• <b>Status:</b> <i>Error</i>\n• <b>Reason:</b> PokéAlert mod is disabled";
+        }
+        
+        EggHatcher manager = EggHatcher.getInstance();
+        
+        // If automation is running, stop it first
+        if (manager.isRunning() || manager.isAntiAfkActive()) {
+            manager.stopAutomation();
+        }
+        
+        // Enable: set to AUTO mode
+        if (manager.getMode() == EggHatcher.AutomationMode.DISABLED) {
+            manager.toggleAutomation(); // This will enable it
+        }
+        
+        String status = manager.getStatus();
+        return "✅ <b>Egg Hatcher</b>\n• <b>Status:</b> <i>Enabled</i>\n• <b>State:</b> " + status;
+    }
+    
+    private String executeEggHatcherDisable() {
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        if (!config.modEnabled) {
+            return "⚠️ <b>Egg Hatcher</b>\n• <b>Status:</b> <i>Error</i>\n• <b>Reason:</b> PokéAlert mod is disabled";
+        }
+        
+        EggHatcher manager = EggHatcher.getInstance();
+        
+        // If automation is running, stop it first
+        if (manager.isRunning() || manager.isAntiAfkActive()) {
+            manager.stopAutomation();
+        }
+        
+        // Disable: set to DISABLED mode
+        if (manager.getMode() == EggHatcher.AutomationMode.AUTO) {
+            manager.disableCompletely();
+        }
+        
+        return "✅ <b>Egg Hatcher</b>\n• <b>Status:</b> <i>Disabled</i>";
+    }
+    
+    private String executeEggHatcherStatus() {
+        EggHatcher manager = EggHatcher.getInstance();
+        String status = manager.getStatus();
+        
+        StringBuilder sb = new StringBuilder();
+        sb.append("ℹ️ <b>Egg Hatcher</b>\n");
+        sb.append("• <b>Status:</b> <i>").append(status.equals("Disabled") ? "Disabled" : "Enabled").append("</i>\n");
+        
+        if (!status.equals("Disabled")) {
+            sb.append("• <b>State:</b> ").append(status).append("\n");
+        }
+        
+        net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
+        if (manager.isAtSpawn() && client != null && client.player != null) {
+            sb.append("• <b>Location:</b> <i>Spawn world</i>");
+        }
+        
+        return sb.toString();
+    }
+    
+    // Legacy method for backward compatibility
     private String executeRealmToggle() {
         PokeAlertConfig config = ConfigManager.getConfig();
         
         if (!config.modEnabled) {
-            return "⚠️ Egg Hatcher disabled - Enable PokéAlert first";
+            return "⚠️ <b>Egg Hatcher</b>\n• <b>Status:</b> <i>Error</i>\n• <b>Reason:</b> PokéAlert mod is disabled";
         }
         
         EggHatcher manager = EggHatcher.getInstance();
         manager.toggleAutomation();
         
         String status = manager.getStatus();
-        return "✅ Egg Hatcher: " + status;
+        if (status.equals("Disabled")) {
+            return "✅ <b>Egg Hatcher</b>\n• <b>Status:</b> <i>Disabled</i>";
+        } else {
+            return "✅ <b>Egg Hatcher</b>\n• <b>Status:</b> <i>Enabled</i>\n• <b>State:</b> " + status;
+        }
     }
     
+    // Legacy method for backward compatibility
     private String executeRealmStatus() {
-        EggHatcher manager = EggHatcher.getInstance();
-        String status = manager.getStatus();
-        
-        StringBuilder sb = new StringBuilder();
-        sb.append("<b>Egg Hatcher Status:</b> ").append(status).append("\n");
-        
-        net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
-        if (manager.isAtSpawn() && client != null && client.player != null) {
-            sb.append("⚠️ Currently at spawn world");
-        }
-        
-        return sb.toString();
+        return executeEggHatcherStatus();
     }
     
     /**
