@@ -401,16 +401,8 @@ public class TelegramCommandReceiver {
             }
         }
         
-        // In groups, bot mention is REQUIRED (Privacy Mode)
-        if (isGroupChat && !hasBotMention) {
-            PokeAlertClient.LOGGER.debug("TelegramCommandReceiver: Group command missing bot mention: {}", text);
-            sendTelegramResponse(chatId, 
-                "⚠️ <b>Command</b>\n• <b>Status:</b> <i>Warning</i>\n• <b>Reason:</b> In group chats, commands must mention the bot\n• <b>Help:</b> Use: /pahelp@" + (botUsername != null ? botUsername : "botname") + "\n• <b>Alternative:</b> Or disable Privacy Mode in @BotFather", 
-                messageId);
-            return null;
-        }
-        
         // Verify bot mention matches our bot (if present)
+        // Note: Privacy Mode is disabled, so bot mentions are optional in group chats
         if (hasBotMention && botUsername != null) {
             if (!mentionedBot.equalsIgnoreCase(botUsername)) {
                 PokeAlertClient.LOGGER.debug("TelegramCommandReceiver: Command mentions wrong bot: @{} (expected: @{})", 
