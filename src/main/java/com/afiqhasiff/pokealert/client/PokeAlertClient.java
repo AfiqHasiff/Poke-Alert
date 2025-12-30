@@ -345,14 +345,16 @@ public class PokeAlertClient implements ClientModInitializer {
                 
                 EggHatcher eggHatcher = EggHatcher.getInstance();
                 String status = eggHatcher.getStatus();
-                boolean isRunning = eggHatcher.isRunning() || status.contains("Server Buffer") || status.contains("Starting in");
+                // Check if automation is running (from spawn) OR Anti-AFK is active (from overworld) OR countdown active
+                boolean isRunning = eggHatcher.isRunning() || eggHatcher.isAntiAfkActive() || 
+                                   status.contains("Server Buffer") || status.contains("Starting in");
                 
-                // If automation is running OR there's an active countdown, stop and disable completely
+                // If automation is running OR Anti-AFK is active OR there's an active countdown, stop and disable completely
                 if (isRunning) {
                     eggHatcher.stopAutomation();
                     eggHatcher.disableCompletely();
                 } else {
-                    // Not running - just toggle modes normally
+                    // Not running - just toggle enable/disabled normally
                     eggHatcher.toggleAutomation();
                 }
             }

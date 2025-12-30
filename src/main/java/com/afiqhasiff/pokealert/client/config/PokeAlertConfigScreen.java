@@ -1398,8 +1398,8 @@ public class PokeAlertConfigScreen extends Screen {
         drawCategoryWithDescription(context, "Egg Hatcher", "Auto-return from spawn", currentY);
         currentY += ROW_HEIGHT;
         
-        // Egg hatcher mode toggle keybind label
-        drawCategoryWithDescription(context, "Mode Toggle Key", "Enable/disable Egg Hatcher automation", currentY);
+        // Egg hatcher enable/disable toggle keybind label
+        drawCategoryWithDescription(context, "Toggle Key", "Enable/disable Egg Hatcher automation", currentY);
         currentY += ROW_HEIGHT;
         
         // v3.0.0: Anti-AFK keybind REMOVED

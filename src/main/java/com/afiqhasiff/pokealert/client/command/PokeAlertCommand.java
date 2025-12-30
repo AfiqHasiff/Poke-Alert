@@ -654,18 +654,6 @@ public class PokeAlertCommand {
             );
             source.sendFeedback(Text.empty()); // Empty line
             
-            // Modes
-            source.sendFeedback(Text.literal("  Modes:").formatted(Formatting.AQUA));
-            source.sendFeedback(
-                Text.literal("    • ").formatted(Formatting.DARK_GRAY)
-                    .append(Text.literal("AUTO").formatted(Formatting.GREEN))
-                    .append(Text.literal(" - Automatically triggers on spawn detection").formatted(Formatting.WHITE))
-            );
-            source.sendFeedback(
-                Text.literal("    • ").formatted(Formatting.DARK_GRAY)
-                    .append(Text.literal("DISABLED").formatted(Formatting.RED))
-                    .append(Text.literal(" - Completely disabled").formatted(Formatting.WHITE))
-            );
             source.sendFeedback(Text.empty()); // Empty line
             
             // Commands

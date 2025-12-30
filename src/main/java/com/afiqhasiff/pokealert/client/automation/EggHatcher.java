@@ -78,6 +78,13 @@ public class EggHatcher {
     private boolean antiAfkActive = false;
     private ScheduledFuture<?> locationTimeoutTask;
     
+    // Movement progress monitoring (for stuck detection)
+    private int[] lastProgressCheckPosition = null;
+    private long lastProgressCheckTime = 0;
+    private ScheduledFuture<?> progressCheckTask = null;
+    private static final long PROGRESS_CHECK_INTERVAL = 15000; // 15 seconds
+    private static final double MIN_PROGRESS_THRESHOLD = 1.0; // Must move at least 1 block toward destination
+    
     // Human-like behavior state
     private volatile boolean isInBreakState = false; // Flag to prevent false anti-AFK detection during breaks
     private volatile boolean isCameraRotating = false; // Flag to prevent false anti-AFK detection during camera rotation
@@ -299,13 +306,13 @@ public class EggHatcher {
             return;
         }
         
-        // Prevent mode change during active automation
-        if (isAutomationRunning) {
-            sendNotification("Egg Hatcher", "Cannot change mode during automation", Formatting.RED);
-            PokeAlertClient.LOGGER.warn("Mode change blocked - automation is running");
-            return;
+        // If automation is running, stop it first
+        boolean wasRunning = isAutomationRunning || antiAfkActive;
+        if (wasRunning) {
+            stopAutomation();
         }
         
+        // Toggle enable/disabled state regardless of whether automation was running
         if (mode == AutomationMode.DISABLED) {
             // Cycle to AUTO mode
             mode = AutomationMode.AUTO;
@@ -330,9 +337,9 @@ public class EggHatcher {
             // CRITICAL: Ensure Anti-AFK state monitoring is running
             // Without this, state detector has no data and returns "unknown"
             AntiAfkManager.startStateMonitoring();
-            PokeAlertClient.LOGGER.info("🔍 Anti-AFK state monitoring restarted for mode toggle");
+            PokeAlertClient.LOGGER.info("🔍 Anti-AFK state monitoring restarted for enable toggle");
             
-            PokeAlertClient.LOGGER.info("Mode changed to AUTO - all session flags reset (fresh start)");
+            PokeAlertClient.LOGGER.info("Egg Hatcher enabled - all session flags reset (fresh start)");
             
             sendNotification("Egg Hatcher", "Enabled", Formatting.GREEN);
             startMonitoring();
@@ -391,7 +398,7 @@ public class EggHatcher {
             manuallyCancelled = false;
             spawnDetectionTime = 0;
             
-            PokeAlertClient.LOGGER.info("Mode changed to DISABLED - all session flags reset");
+            PokeAlertClient.LOGGER.info("Egg Hatcher disabled - all session flags reset");
             
             // Stop automation (will show "stopped and disabled" if was running)
             stopAutomation();
@@ -799,6 +806,14 @@ public class EggHatcher {
                 locationTimeoutTask = null;
                 PokeAlertClient.LOGGER.debug("Arrival callback: Timeout cancelled");
             }
+            
+            // Cancel progress check task (arrival successful, no need to monitor progress)
+            if (progressCheckTask != null) {
+                progressCheckTask.cancel(false);
+                progressCheckTask = null;
+            }
+            lastProgressCheckPosition = null;
+            lastProgressCheckTime = 0;
             
             // Clear stored navigation action (arrival successful, action was applied)
             currentNavigationAction = null;
@@ -1301,6 +1316,25 @@ public class EggHatcher {
             locationQueue.getStatus(), 
             String.format("(%d, %d)", destination[0], destination[1]));
         
+        // Start movement progress monitoring (for stuck detection)
+        // Cancel any existing progress check task
+        if (progressCheckTask != null) {
+            progressCheckTask.cancel(false);
+            progressCheckTask = null;
+        }
+        
+        // Initialize progress tracking
+        if (client.player != null) {
+            lastProgressCheckPosition = new int[] { (int) client.player.getX(), (int) client.player.getZ() };
+            lastProgressCheckTime = System.currentTimeMillis();
+            
+            // Start progress check task (check every 15 seconds)
+            final int[] finalDestination = destination; // Final reference for lambda
+            progressCheckTask = scheduler.scheduleAtFixedRate(() -> {
+                checkMovementProgress(finalDestination);
+            }, PROGRESS_CHECK_INTERVAL, PROGRESS_CHECK_INTERVAL, TimeUnit.MILLISECONDS);
+        }
+        
         // Human-like behavior: Jumping while moving - ONLY when sprinting, not walking
         // IMPORTANT: Only execute jump if it was explicitly selected as the action
         // This ensures only ONE action executes per navigation (backtrack OR walk OR hotbar OR jump, not multiple)
@@ -1321,6 +1355,101 @@ public class EggHatcher {
     }
     
     /**
+     * v3.0.0: Handle path broken (Baritone stopped pathing or player stuck)
+     */
+    private void handlePathBroken() {
+        if (!antiAfkActive) return;
+        
+        PokeAlertClient.LOGGER.warn("Baritone path broke or player stuck - moving to next location immediately");
+        
+        // Cancel timeout (no need to wait)
+        if (locationTimeoutTask != null) {
+            locationTimeoutTask.cancel(false);
+            locationTimeoutTask = null;
+        }
+        
+        // Cancel progress check task
+        if (progressCheckTask != null) {
+            progressCheckTask.cancel(false);
+            progressCheckTask = null;
+        }
+        
+        // Mark path complete (Baritone already stopped or player stuck)
+        BaritoneController.markPathComplete();
+        CoordinateMonitor.clearDestination();
+        arrivalProcessed.set(false);
+        stopJumping();
+        
+        // Mark timeout and advance (but this is acceptable - path broke or player stuck)
+        boolean shouldContinue = locationQueue.markTimeoutAndAdvance();
+        
+        if (!shouldContinue) {
+            // Too many consecutive timeouts (even from path breaks/stuck)
+            SafetyManager.triggerSafetyStop(SafetyManager.REASON_TIMEOUT, true);
+            stopBaritoneAntiAfk();
+            return;
+        }
+        
+        // Move to next location immediately (use stored action if available)
+        final String storedAction = currentNavigationAction;
+        scheduler.schedule(() -> {
+            if (antiAfkActive && !SafetyManager.isSafetyTriggered() && !BaritoneController.isPathing()) {
+                navigateToNextLocation(storedAction);
+            }
+        }, 100, TimeUnit.MILLISECONDS); // Small delay to ensure Baritone stopped
+    }
+    
+    /**
+     * v3.0.0: Check if player is making progress toward destination
+     * Detects when player is stuck (Baritone pathing but player not moving)
+     */
+    private void checkMovementProgress(int[] destination) {
+        if (!antiAfkActive || !BaritoneController.isPathing() || destination == null) {
+            return;
+        }
+        
+        if (client.player == null || lastProgressCheckPosition == null) {
+            return;
+        }
+        
+        int currentX = (int) client.player.getX();
+        int currentZ = (int) client.player.getZ();
+        
+        // Calculate distance to destination from last check position
+        double lastDistance = Math.sqrt(
+            Math.pow(lastProgressCheckPosition[0] - destination[0], 2) +
+            Math.pow(lastProgressCheckPosition[1] - destination[1], 2)
+        );
+        
+        // Calculate current distance to destination
+        double currentDistance = Math.sqrt(
+            Math.pow(currentX - destination[0], 2) +
+            Math.pow(currentZ - destination[1], 2)
+        );
+        
+        // If no progress made (distance didn't decrease significantly)
+        if (currentDistance >= lastDistance - MIN_PROGRESS_THRESHOLD) {
+            // Player is stuck - Baritone is pathing but player isn't moving
+            PokeAlertClient.LOGGER.warn("Player stuck - no progress toward destination (Baritone pathing but player not moving)");
+            
+            // Cancel progress check task
+            if (progressCheckTask != null) {
+                progressCheckTask.cancel(false);
+                progressCheckTask = null;
+            }
+            
+            // Handle as path broken (player stuck)
+            handlePathBroken();
+            return;
+        }
+        
+        // Update last check position
+        lastProgressCheckPosition[0] = currentX;
+        lastProgressCheckPosition[1] = currentZ;
+        lastProgressCheckTime = System.currentTimeMillis();
+    }
+    
+    /**
      * v3.0.0: Handle location timeout
      */
     private void handleLocationTimeout() {
@@ -1333,24 +1462,50 @@ public class EggHatcher {
             return;
         }
         
-        // CRITICAL: Check if we're actually at the destination (arrival detection might have failed)
-        // This handles cases where arrival detection fails but we're actually at destination
+        // CRITICAL: Check if we're actually at the destination (calculate distance directly)
+        // Don't rely on hasArrived() which requires hasDestination to be true
         int[] currentDest = locationQueue.getCurrentDestination();
-        if (currentDest != null && CoordinateMonitor.hasArrived()) {
-            PokeAlertClient.LOGGER.warn("Location timeout: Actually at destination but arrival callback didn't fire - treating as arrival");
-            // Mark as arrived and continue to next location
-            BaritoneController.markPathComplete();
-            CoordinateMonitor.clearDestination();
-            arrivalProcessed.set(false);
-            stopJumping();
-            currentNavigationAction = null;
-            locationQueue.markVisitedAndAdvance();
-            if (locationQueue.shouldTriggerStep5()) {
-                locationQueue.markStep5Completed();
-                completeAutomation();
+        if (currentDest != null && client.player != null) {
+            int currentX = (int) client.player.getX();
+            int currentZ = (int) client.player.getZ();
+            double distance = Math.sqrt(
+                Math.pow(currentX - currentDest[0], 2) + 
+                Math.pow(currentZ - currentDest[1], 2)
+            );
+            
+            // Get arrival threshold from config
+            PokeAlertConfig config = ConfigManager.getConfig();
+            if (distance <= config.arrivalThreshold) {
+                PokeAlertClient.LOGGER.warn("Location timeout: Actually at destination but arrival callback didn't fire - treating as arrival");
+                // Mark as arrived and continue to next location
+                BaritoneController.markPathComplete();
+                CoordinateMonitor.clearDestination();
+                arrivalProcessed.set(false);
+                stopJumping();
+                currentNavigationAction = null;
+                
+                // Cancel progress check task
+                if (progressCheckTask != null) {
+                    progressCheckTask.cancel(false);
+                    progressCheckTask = null;
+                }
+                
+                locationQueue.markVisitedAndAdvance();
+                if (locationQueue.shouldTriggerStep5()) {
+                    locationQueue.markStep5Completed();
+                    completeAutomation();
+                }
+                // Continue to next location
+                navigateToNextLocation(null);
+                return;
             }
-            // Continue to next location
-            navigateToNextLocation(null);
+        }
+        
+        // Check if Baritone stopped pathing (path broke)
+        Boolean antiAfkState = AntiAfkManager.getAntiAfkState();
+        if (antiAfkState != null && !antiAfkState && BaritoneController.isPathing()) {
+            PokeAlertClient.LOGGER.warn("Location timeout: Anti-AFK state shows Baritone stopped - path broke");
+            handlePathBroken();
             return;
         }
         
@@ -1418,6 +1573,14 @@ public class EggHatcher {
             locationTimeoutTask.cancel(false);
             locationTimeoutTask = null;
         }
+        
+        // Cancel progress check task
+        if (progressCheckTask != null) {
+            progressCheckTask.cancel(false);
+            progressCheckTask = null;
+        }
+        lastProgressCheckPosition = null;
+        lastProgressCheckTime = 0;
         
         // Stop all systems
         BaritoneController.stop();
@@ -2245,15 +2408,15 @@ public class EggHatcher {
             return "Disabled";
         }
         
-        String modeStr = "Mode: " + mode.name();
+        String statusStr = "Enabled";
         
         // v3.0.0: Show Anti-AFK status if active
         if (antiAfkActive) {
-            return modeStr + " | Anti-AFK: " + locationQueue.getStatus();
+            return statusStr + " | Anti-AFK: " + locationQueue.getStatus();
         }
         
         if (isAutomationRunning) {
-            return modeStr + " | Running: " + currentState.name();
+            return statusStr + " | Running: " + currentState.name();
         }
         
         // Check for active countdown
@@ -2261,11 +2424,11 @@ public class EggHatcher {
         if (mode == AutomationMode.AUTO && spawnDetectionTime > 0) {
             long remaining = (REALM_SWITCH_BUFFER - (currentTime - spawnDetectionTime)) / 1000;
             if (remaining > 0) {
-                return modeStr + " | Server Buffer: " + remaining + "s";
+                return statusStr + " | Server Buffer: " + remaining + "s";
             }
         }
         
-        return modeStr + " | Monitoring";
+        return statusStr + " | Monitoring";
     }
     
     /**
