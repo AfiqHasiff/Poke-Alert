@@ -650,6 +650,24 @@ public class TelegramCommandReceiver {
         // Execute command on client thread
         client.execute(() -> {
             try {
+                // Check if this is a list command that might need multiple messages
+                String[] parts = finalCommand.trim().split("\\s+");
+                if (parts.length >= 2 && (parts[0].equalsIgnoreCase("list") || parts[0].equalsIgnoreCase("ls") || 
+                    (parts[0].equalsIgnoreCase("whitelist") && parts[1].equalsIgnoreCase("list")) ||
+                    (parts[0].equalsIgnoreCase("blacklist") && parts[1].equalsIgnoreCase("list")))) {
+                    // Handle list commands specially to support multiple messages
+                    List<String> messages = executeListMultipleMessages(finalCommand);
+                    if (messages != null && !messages.isEmpty()) {
+                        // Send first message as reply
+                        sendTelegramResponse(finalChatId, messages.get(0), finalMessageId);
+                        // Send remaining messages without reply
+                        for (int i = 1; i < messages.size(); i++) {
+                            sendTelegramResponse(finalChatId, messages.get(i), 0);
+                        }
+                        return;
+                    }
+                }
+                
                 String response = executeCommandInternal(finalCommand);
                 sendTelegramResponse(finalChatId, response, finalMessageId);
             } catch (Exception e) {
@@ -1004,6 +1022,143 @@ public class TelegramCommandReceiver {
         return "✅ <b>Notification</b>\n• <b>Status:</b> <i>" + (enable ? "Enabled" : "Disabled") + "</i>\n• <b>Type:</b> <code>" + escapeHtml(typeName) + "</code>";
     }
     
+    /**
+     * Execute list command and return multiple messages if needed (for long lists)
+     * Returns null if single message is sufficient (use executeList instead)
+     */
+    private List<String> executeListMultipleMessages(String command) {
+        String[] parts = command.trim().split("\\s+");
+        String type;
+        
+        // Parse command to get list type
+        if (parts.length >= 2 && parts[0].equalsIgnoreCase("list")) {
+            type = parts[1];
+        } else if (parts.length >= 2 && parts[0].equalsIgnoreCase("whitelist") && parts[1].equalsIgnoreCase("list")) {
+            type = "whitelist";
+        } else if (parts.length >= 2 && parts[0].equalsIgnoreCase("blacklist") && parts[1].equalsIgnoreCase("list")) {
+            type = "blacklist";
+        } else {
+            return null; // Not a list command, use regular execution
+        }
+        
+        String typeLower = type.toLowerCase();
+        PokeAlertConfig config = ConfigManager.getConfig();
+        String[] pokemonList;
+        String listName;
+        
+        switch (typeLower) {
+            case "legendaries":
+                pokemonList = PokemonLists.legendaries;
+                listName = "Legendaries";
+                break;
+            case "mythics":
+                pokemonList = PokemonLists.mythics;
+                listName = "Mythics";
+                break;
+            case "starters":
+                pokemonList = PokemonLists.starter;
+                listName = "Starters";
+                break;
+            case "babies":
+                pokemonList = PokemonLists.babies;
+                listName = "Babies";
+                break;
+            case "ultrabeasts":
+                pokemonList = PokemonLists.ultra_beasts;
+                listName = "Ultra Beasts";
+                break;
+            case "shinies":
+                return Arrays.asList("❌ <b>List</b>\n• <b>Status:</b> <i>Error</i>\n• <b>Reason:</b> Shinies are detected dynamically, not a predefined list");
+            case "paradox":
+                pokemonList = PokemonLists.paradox_mons;
+                listName = "Paradox";
+                break;
+            case "whitelist":
+                pokemonList = config.broadcastWhitelist;
+                listName = "Whitelist";
+                break;
+            case "blacklist":
+                pokemonList = config.broadcastBlacklist;
+                listName = "Blacklist";
+                break;
+            default:
+                return Arrays.asList("❌ <b>List</b>\n• <b>Status:</b> <i>Error</i>\n• <b>Reason:</b> Unknown list type: <code>" + escapeHtml(type) + "</code>");
+        }
+        
+        // Build header
+        StringBuilder header = new StringBuilder();
+        header.append("📋 <b>").append(listName).append("</b>\n");
+        header.append("• <b>Status:</b> <i>List</i>\n");
+        header.append("• <b>Count:</b> <code>").append(pokemonList.length).append("</code> Pokémon\n");
+        
+        if (pokemonList.length == 0) {
+            header.append("• <b>Pokémon:</b> <i>Empty list</i>");
+            return Arrays.asList(header.toString());
+        }
+        
+        // Format all Pokemon names
+        List<String> formattedNames = new ArrayList<>();
+        for (String pokemon : pokemonList) {
+            formattedNames.add(formatPokemonName(pokemon));
+        }
+        
+        // Build list string
+        StringBuilder listBuilder = new StringBuilder();
+        listBuilder.append("• <b>Pokémon:</b> ");
+        for (int i = 0; i < formattedNames.size(); i++) {
+            if (i > 0) listBuilder.append(", ");
+            listBuilder.append(formattedNames.get(i));
+        }
+        
+        String fullMessage = header.toString() + "\n" + listBuilder.toString();
+        
+        // Telegram has a 4096 character limit per message
+        // If message fits in one message, return null to use regular execution
+        if (fullMessage.length() <= 4096) {
+            return null; // Use regular executeList
+        }
+        
+        // Split into multiple messages
+        List<String> messages = new ArrayList<>();
+        StringBuilder currentMessage = new StringBuilder(header);
+        currentMessage.append("\n• <b>Pokémon:</b> ");
+        int currentLength = currentMessage.length();
+        boolean isFirstPokemonInMessage = true;
+        
+        for (int i = 0; i < formattedNames.size(); i++) {
+            String pokemonName = formattedNames.get(i);
+            String addition = (isFirstPokemonInMessage ? "" : ", ") + pokemonName;
+            
+            // Check if adding this Pokemon would exceed limit (reserve 100 chars for continuation header)
+            if (currentLength + addition.length() > 4000) {
+                // Save current message
+                messages.add(currentMessage.toString());
+                
+                // Start new message with continuation header
+                currentMessage = new StringBuilder();
+                currentMessage.append("📋 <b>").append(listName).append("</b> (continued)\n");
+                currentMessage.append("• <b>Pokémon:</b> ");
+                currentLength = currentMessage.length();
+                isFirstPokemonInMessage = true;
+            }
+            
+            if (!isFirstPokemonInMessage) {
+                currentMessage.append(", ");
+                currentLength += 2;
+            }
+            currentMessage.append(pokemonName);
+            currentLength += pokemonName.length();
+            isFirstPokemonInMessage = false;
+        }
+        
+        // Add final message
+        if (currentMessage.length() > 0) {
+            messages.add(currentMessage.toString());
+        }
+        
+        return messages;
+    }
+    
     private String executeList(String type) {
         String typeLower = type.toLowerCase();
         PokeAlertConfig config = ConfigManager.getConfig();
@@ -1091,11 +1246,31 @@ public class TelegramCommandReceiver {
         List<String> whitelist = new ArrayList<>(Arrays.asList(config.broadcastWhitelist));
         String pokemonLower = pokemon.toLowerCase();
         
-        if (whitelist.contains(pokemonLower)) {
+        // Check if already exists (case-insensitive)
+        boolean exists = false;
+        int existingIndex = -1;
+        for (int i = 0; i < whitelist.size(); i++) {
+            if (whitelist.get(i).toLowerCase().equals(pokemonLower)) {
+                exists = true;
+                existingIndex = i;
+                break;
+            }
+        }
+        
+        if (exists) {
+            // Update capitalization if different
+            if (!whitelist.get(existingIndex).equals(pokemon)) {
+                whitelist.set(existingIndex, pokemon);
+                config.broadcastWhitelist = whitelist.toArray(new String[0]);
+                ConfigManager.updateConfig(config);
+                PokeAlertClient.getInstance().reloadConfig();
+                return "✅ <b>Whitelist</b>\n• <b>Status:</b> <i>Updated</i>\n• <b>Pokémon:</b> <code>" + escapeHtml(pokemon) + "</code>";
+            }
             return "⚠️ <b>Whitelist</b>\n• <b>Status:</b> <i>Already Exists</i>\n• <b>Pokémon:</b> <code>" + escapeHtml(pokemon) + "</code>";
         }
         
-        whitelist.add(pokemonLower);
+        // Add with original capitalization
+        whitelist.add(pokemon);
         config.broadcastWhitelist = whitelist.toArray(new String[0]);
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
@@ -1108,7 +1283,18 @@ public class TelegramCommandReceiver {
         List<String> whitelist = new ArrayList<>(Arrays.asList(config.broadcastWhitelist));
         String pokemonLower = pokemon.toLowerCase();
         
-        if (!whitelist.remove(pokemonLower)) {
+        // Find and remove (case-insensitive)
+        boolean removed = false;
+        String removedPokemon = null;
+        for (int i = 0; i < whitelist.size(); i++) {
+            if (whitelist.get(i).toLowerCase().equals(pokemonLower)) {
+                removedPokemon = whitelist.remove(i);
+                removed = true;
+                break;
+            }
+        }
+        
+        if (!removed) {
             return "❌ <b>Whitelist</b>\n• <b>Status:</b> <i>Error</i>\n• <b>Reason:</b> Pokémon not found in list\n• <b>Pokémon:</b> <code>" + escapeHtml(pokemon) + "</code>";
         }
         
@@ -1116,7 +1302,7 @@ public class TelegramCommandReceiver {
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
-        return "✅ <b>Whitelist</b>\n• <b>Status:</b> <i>Removed</i>\n• <b>Pokémon:</b> <code>" + escapeHtml(pokemon) + "</code>";
+        return "✅ <b>Whitelist</b>\n• <b>Status:</b> <i>Removed</i>\n• <b>Pokémon:</b> <code>" + escapeHtml(removedPokemon != null ? removedPokemon : pokemon) + "</code>";
     }
     
     private String executeWhitelistList() {
@@ -1128,11 +1314,31 @@ public class TelegramCommandReceiver {
         List<String> blacklist = new ArrayList<>(Arrays.asList(config.broadcastBlacklist));
         String pokemonLower = pokemon.toLowerCase();
         
-        if (blacklist.contains(pokemonLower)) {
+        // Check if already exists (case-insensitive)
+        boolean exists = false;
+        int existingIndex = -1;
+        for (int i = 0; i < blacklist.size(); i++) {
+            if (blacklist.get(i).toLowerCase().equals(pokemonLower)) {
+                exists = true;
+                existingIndex = i;
+                break;
+            }
+        }
+        
+        if (exists) {
+            // Update capitalization if different
+            if (!blacklist.get(existingIndex).equals(pokemon)) {
+                blacklist.set(existingIndex, pokemon);
+                config.broadcastBlacklist = blacklist.toArray(new String[0]);
+                ConfigManager.updateConfig(config);
+                PokeAlertClient.getInstance().reloadConfig();
+                return "✅ <b>Blacklist</b>\n• <b>Status:</b> <i>Updated</i>\n• <b>Pokémon:</b> <code>" + escapeHtml(pokemon) + "</code>";
+            }
             return "⚠️ <b>Blacklist</b>\n• <b>Status:</b> <i>Already Exists</i>\n• <b>Pokémon:</b> <code>" + escapeHtml(pokemon) + "</code>";
         }
         
-        blacklist.add(pokemonLower);
+        // Add with original capitalization
+        blacklist.add(pokemon);
         config.broadcastBlacklist = blacklist.toArray(new String[0]);
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
@@ -1145,7 +1351,18 @@ public class TelegramCommandReceiver {
         List<String> blacklist = new ArrayList<>(Arrays.asList(config.broadcastBlacklist));
         String pokemonLower = pokemon.toLowerCase();
         
-        if (!blacklist.remove(pokemonLower)) {
+        // Find and remove (case-insensitive)
+        boolean removed = false;
+        String removedPokemon = null;
+        for (int i = 0; i < blacklist.size(); i++) {
+            if (blacklist.get(i).toLowerCase().equals(pokemonLower)) {
+                removedPokemon = blacklist.remove(i);
+                removed = true;
+                break;
+            }
+        }
+        
+        if (!removed) {
             return "❌ <b>Blacklist</b>\n• <b>Status:</b> <i>Error</i>\n• <b>Reason:</b> Pokémon not found in list\n• <b>Pokémon:</b> <code>" + escapeHtml(pokemon) + "</code>";
         }
         
@@ -1153,7 +1370,7 @@ public class TelegramCommandReceiver {
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
-        return "✅ <b>Blacklist</b>\n• <b>Status:</b> <i>Removed</i>\n• <b>Pokémon:</b> <code>" + escapeHtml(pokemon) + "</code>";
+        return "✅ <b>Blacklist</b>\n• <b>Status:</b> <i>Removed</i>\n• <b>Pokémon:</b> <code>" + escapeHtml(removedPokemon != null ? removedPokemon : pokemon) + "</code>";
     }
     
     private String executeBlacklistList() {
