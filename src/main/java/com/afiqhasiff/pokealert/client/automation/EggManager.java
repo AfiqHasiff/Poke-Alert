@@ -6492,13 +6492,25 @@ public class EggManager {
         
         EggHatcher eggHatcher = EggHatcher.getInstance();
         if (eggHatcher != null) {
-            // Re-enable egg hatcher via command to ensure it restarts properly
-            sendChatCommand("pokealert egghatcher enable");
-            PokeAlertClient.LOGGER.info("[Egg Manager] Sent /pokealert egghatcher enable command");
+            // CRITICAL FIX: Call toggleAutomation() directly instead of using command + setMode()
+            // The previous approach had a race condition:
+            // 1. sendChatCommand() queues async command execution
+            // 2. setMode(AUTO) runs immediately as "backup"
+            // 3. When command executes, it checks if mode == DISABLED, but it's already AUTO
+            // 4. Command skips toggleAutomation() call → Egg Hatcher never actually starts!
+            //
+            // toggleAutomation() properly handles the enable logic when mode is DISABLED
+            if (eggHatcher.getMode() == EggHatcher.AutomationMode.DISABLED) {
+                eggHatcher.toggleAutomation();
+                PokeAlertClient.LOGGER.info("[Egg Manager] Egg Hatcher resumed via toggleAutomation()");
+            } else {
+                // If already in AUTO mode (shouldn't happen normally), log warning
+                PokeAlertClient.LOGGER.warn("[Egg Manager] Egg Hatcher already in {} mode, skipping toggle", 
+                    eggHatcher.getMode());
+            }
             
-            // Also set mode to AUTO as backup
-            eggHatcher.setMode(EggHatcher.AutomationMode.AUTO);
-            PokeAlertClient.LOGGER.info("[Egg Manager] Egg Hatcher resumed");
+            // Also send notification command for user feedback
+            sendChatCommand("pokealert egghatcher status");
         } else {
             PokeAlertClient.LOGGER.warn("[Egg Manager] Egg Hatcher instance not available");
         }
@@ -6570,7 +6582,12 @@ public class EggManager {
         // Try to resume Egg Hatcher anyway (in case player can handle manually)
         EggHatcher eggHatcher = EggHatcher.getInstance();
         if (eggHatcher != null) {
-            eggHatcher.setMode(EggHatcher.AutomationMode.AUTO);
+            // CRITICAL FIX: Use toggleAutomation() instead of setMode(AUTO)
+            // setMode(AUTO) only sets the mode variable but doesn't actually start anything
+            if (eggHatcher.getMode() == EggHatcher.AutomationMode.DISABLED) {
+                eggHatcher.toggleAutomation();
+                PokeAlertClient.LOGGER.info("[Egg Manager] Egg Hatcher resumed after failure via toggleAutomation()");
+            }
         }
     }
     
