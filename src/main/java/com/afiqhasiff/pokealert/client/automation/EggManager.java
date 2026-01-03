@@ -1107,6 +1107,35 @@ public class EggManager {
                                 PokeAlertClient.LOGGER.warn("🔍 [TRANSFER] transferHatchedPokemonToPC: ⚠️ Box navigation may have failed, continuing anyway");
                             }
                             
+                            // CRITICAL: Wait for GUI to stabilize after navigation before starting transfer
+                            // This prevents the box from being in a transition state during the transfer
+                            try {
+                                Thread.sleep(300); // 300ms delay for GUI stabilization
+                                PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: Waited 300ms for GUI stabilization");
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                            }
+                            
+                            // Verify we're still on the correct box after stabilization
+                            int verifyBox = getCurrentVisibleBox(storageWidget);
+                            if (verifyBox != targetBoxIndex) {
+                                PokeAlertClient.LOGGER.warn("🔍 [TRANSFER] transferHatchedPokemonToPC: ⚠️ Box changed after stabilization! Expected {}, got {}", 
+                                    targetBoxIndex, verifyBox);
+                                // Re-navigate if the box changed
+                                if (verifyBox != -1) {
+                                    PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: Re-navigating to target box...");
+                                    navigationSuccess = navigateToBox(storageWidget, targetBoxIndex);
+                                    // Wait again after re-navigation
+                                    try {
+                                        Thread.sleep(300);
+                                    } catch (InterruptedException e) {
+                                        Thread.currentThread().interrupt();
+                                    }
+                                }
+                            } else {
+                                PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: ✅ Box verified at {} after stabilization", targetBoxIndex);
+                            }
+                            
                             // Get configured coordinates (we don't use widgets - only configured coordinates)
                             PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: Step 2 - Getting configured coordinates");
                             
@@ -1623,8 +1652,15 @@ public class EggManager {
                                 PokeAlertClient.LOGGER.info("EggManager: ✅ Transferred egg {} to party slot {} (total transferred: {})", 
                                     eggUuid, partySlot + 1, transferred);
                                 
-                                // CRITICAL: Don't block render thread - delay happens naturally
-                                // Small delay between transfers happens naturally (no blocking sleep)
+                                // CRITICAL: Delay between transfers to allow server sync
+                                // Without this delay, the next transfer starts before the server processes the previous one
+                                try {
+                                    Thread.sleep(1000); // 1 second delay between transfers for proper server sync
+                                    PokeAlertClient.LOGGER.info("EggManager: Waiting 1s for server sync before next transfer...");
+                                } catch (InterruptedException e) {
+                                    Thread.currentThread().interrupt();
+                                    PokeAlertClient.LOGGER.warn("EggManager: Batch transfer delay interrupted");
+                                }
                             }
                         }
                     }
@@ -2284,14 +2320,33 @@ public class EggManager {
                                     boolean navigationSuccess = navigateToBox(storageWidget, targetBoxIndex);
                                     
                                     if (!navigationSuccess) {
-                                    PokeAlertClient.LOGGER.warn("🔍 [TRANSFER] ⚠️ Box navigation may have failed, continuing anyway");
-                                } else {
+                                        PokeAlertClient.LOGGER.warn("🔍 [TRANSFER] ⚠️ Box navigation may have failed, continuing anyway");
+                                    }
+                                    
+                                    // CRITICAL: Wait for GUI to stabilize after navigation
+                                    try {
+                                        Thread.sleep(300); // 300ms for GUI stabilization
+                                        PokeAlertClient.LOGGER.info("🔍 [TRANSFER] Waited 300ms for GUI stabilization");
+                                    } catch (InterruptedException e) {
+                                        Thread.currentThread().interrupt();
+                                    }
+                                    
+                                    // Verify box after stabilization
                                     int currentBoxAfterNav = getCurrentVisibleBox(storageWidget);
                                     PokeAlertClient.LOGGER.info("🔍 [TRANSFER] Current box after navigation: {} (0-based)", currentBoxAfterNav);
                                     if (currentBoxAfterNav != targetBoxIndex) {
-                                        PokeAlertClient.LOGGER.warn("🔍 [TRANSFER] ⚠️ Box navigation failed - expected {}, got {}", targetBoxIndex, currentBoxAfterNav);
+                                        PokeAlertClient.LOGGER.warn("🔍 [TRANSFER] ⚠️ Box mismatch after stabilization - expected {}, got {}", targetBoxIndex, currentBoxAfterNav);
+                                        // Re-navigate if needed
+                                        if (currentBoxAfterNav != -1) {
+                                            PokeAlertClient.LOGGER.info("🔍 [TRANSFER] Re-navigating to target box...");
+                                            navigateToBox(storageWidget, targetBoxIndex);
+                                            try {
+                                                Thread.sleep(300);
+                                            } catch (InterruptedException e) {
+                                                Thread.currentThread().interrupt();
+                                            }
+                                        }
                                     }
-                                }
                                 
                                 // Step 2: Calculate slot positions
                                 PokeAlertClient.LOGGER.info("🔍 [TRANSFER] ========== STEP 2: POSITION CALCULATION ==========");
@@ -2990,6 +3045,15 @@ public class EggManager {
                 click1Success = clicked;
             }
             
+            // CRITICAL: Add delay between PRESS and MOVE to allow the grab to register
+            // Without this delay, the grab state may not be properly set before we move
+            try {
+                Thread.sleep(delayBetweenClicks / 2); // Use half the delay for grab registration
+                PokeAlertClient.LOGGER.info("🔍 [PRIMARY]   Waited {}ms for grab to register", delayBetweenClicks / 2);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            
             // =====================================================
             // Move cursor to destination (while button is held)
             // =====================================================
@@ -3007,6 +3071,15 @@ public class EggManager {
                 } catch (Exception e) {
                     PokeAlertClient.LOGGER.warn("🔍 [PRIMARY]   ⚠️ onCursorPos() failed: {}", e.getMessage());
                 }
+            }
+            
+            // CRITICAL: Add delay before RELEASE to allow the move to be processed
+            // Without this delay, the release happens before the GUI updates the cursor position
+            try {
+                Thread.sleep(delayBetweenClicks / 2); // Use half the delay for move processing
+                PokeAlertClient.LOGGER.info("🔍 [PRIMARY]   Waited {}ms for move to process", delayBetweenClicks / 2);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
             }
             
             // =====================================================
@@ -3285,12 +3358,30 @@ public class EggManager {
                 PokeAlertClient.LOGGER.debug("[WIDGET-TRANSFER] Could not check grabbedSlot after grab: {}", e.getMessage());
             }
             
-            // STEP 7: Click destination slot (DROP)
+            // STEP 7: Wait for grab to register before dropping
+            // CRITICAL: Without this delay, the grab state doesn't register properly in the UI
+            try {
+                Thread.sleep(150); // 150ms delay for UI to process grab state
+                PokeAlertClient.LOGGER.debug("[WIDGET-TRANSFER] Waited 150ms for grab to register");
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            
+            // STEP 8: Click destination slot (DROP)
             try {
                 finalMethod.invoke(storageWidget, finalPartySlotWidget);
             } catch (Exception e) {
                 PokeAlertClient.LOGGER.error("[WIDGET-TRANSFER] Failed to click destination slot: {}", e.getMessage());
                 return false;
+            }
+            
+            // STEP 9: Wait for drop to complete and server to sync
+            // CRITICAL: Without this delay, verification happens before server processes the transfer
+            try {
+                Thread.sleep(200); // 200ms delay for server sync
+                PokeAlertClient.LOGGER.debug("[WIDGET-TRANSFER] Waited 200ms for server sync");
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
             }
             
             PokeAlertClient.LOGGER.info("[WIDGET-TRANSFER] Transfer completed: PC Slot {} → Party Slot {}", pcSlotIndex, partySlotIndex + 1);
@@ -3430,7 +3521,7 @@ public class EggManager {
         
         // Click arrows to navigate
         // NOTE: Arrow clicking uses Screen.mouseClicked() which WORKS for arrows (direct Screen children)
-        // NO Thread.sleep() on render thread - just immediate clicks
+        // CRITICAL: Add delays between clicks to prevent over-clicking and allow GUI to update
         for (int i = 0; i < absClicks; i++) {
             int[] arrowPos = clickRight ? rightArrowPos : leftArrowPos;
             
@@ -3440,7 +3531,14 @@ public class EggManager {
                 PokeAlertClient.LOGGER.info("[BOX-NAV] navigateToBox: Clicked {} arrow at ({}, {}) - returned: {}", 
                     clickRight ? "right" : "left", arrowPos[0], arrowPos[1], clicked);
                 
-                // NO Thread.sleep! - Box change happens immediately
+                // CRITICAL: Add delay between arrow clicks to allow GUI to update
+                // Without this, the clicks happen too fast and the box field doesn't update in time
+                try {
+                    Thread.sleep(100); // 100ms delay per arrow click
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                
                 // Verify box changed
                 int newCurrentBox = getCurrentVisibleBox(storageWidget);
                 if (newCurrentBox != currentBox) {
@@ -3449,7 +3547,18 @@ public class EggManager {
                     
                     if (currentBox == targetBoxIndex) {
                         PokeAlertClient.LOGGER.info("[BOX-NAV] navigateToBox: ✅ Successfully navigated to target box {}", targetBoxIndex);
-                    return true;
+                        return true;
+                    }
+                    
+                    // CRITICAL: Check for wrap-around - if we passed the target, stop immediately
+                    // This prevents the box from cycling all the way around
+                    if (clickRight && currentBox < targetBoxIndex && currentBox < currentBox - 1) {
+                        PokeAlertClient.LOGGER.warn("[BOX-NAV] navigateToBox: ⚠️ Box wrapped around, stopping navigation");
+                        break;
+                    }
+                    if (!clickRight && currentBox > targetBoxIndex && currentBox > currentBox + 1) {
+                        PokeAlertClient.LOGGER.warn("[BOX-NAV] navigateToBox: ⚠️ Box wrapped around, stopping navigation");
+                        break;
                     }
                 } else {
                     PokeAlertClient.LOGGER.warn("[BOX-NAV] navigateToBox: ⚠️ Box did not change after click");
