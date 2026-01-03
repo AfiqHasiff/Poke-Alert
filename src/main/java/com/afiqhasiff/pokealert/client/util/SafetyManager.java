@@ -140,7 +140,7 @@ public class SafetyManager {
         if (client.player == null) return;
         
         PokeAlertConfig config = ConfigManager.getConfig();
-        if (!config.inGameTextEnabled) return;
+        if (!config.notifications.textEnabled) return;
         
         client.execute(() -> {
             if (client.player != null) {
@@ -160,7 +160,7 @@ public class SafetyManager {
      */
     private static void sendTelegramNotification(String reason) {
         PokeAlertConfig config = ConfigManager.getConfig();
-        if (!config.telegramEnabled || !config.isTelegramValid()) {
+        if (!config.telegram.enabled || !config.isTelegramValid()) {
             return;
         }
         

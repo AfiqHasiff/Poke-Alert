@@ -50,7 +50,7 @@ public class TelegramNotification extends NotificationService {
         config = PokeAlertClient.getInstance().config;
         
         // Check if Telegram is enabled and configured
-        if (!config.telegramEnabled || !config.isTelegramValid()) {
+        if (!config.telegram.enabled || !config.isTelegramValid()) {
             return;
         }
 
@@ -66,7 +66,7 @@ public class TelegramNotification extends NotificationService {
         // Build request
         String jsonBody = String.format(
             "{\"chat_id\":\"%s\",\"text\":\"%s\",\"parse_mode\":\"HTML\"}",
-            escapeJson(config.telegramChatId),
+            escapeJson(config.telegram.chatId),
             escapeJson(message)
         );
 
@@ -102,7 +102,7 @@ public class TelegramNotification extends NotificationService {
     @Override
     public boolean isEnabled() {
         config = PokeAlertClient.getInstance().config;
-        return config.telegramEnabled && config.isTelegramValid();
+        return config.telegram.enabled && config.isTelegramValid();
     }
 
     @Override
@@ -132,7 +132,7 @@ public class TelegramNotification extends NotificationService {
         
         try {
             JsonObject jsonPayload = new JsonObject();
-            jsonPayload.addProperty("chat_id", config.telegramChatId);
+            jsonPayload.addProperty("chat_id", config.telegram.chatId);
             jsonPayload.addProperty("text", message);
             jsonPayload.addProperty("parse_mode", "HTML");
             
@@ -201,12 +201,12 @@ public class TelegramNotification extends NotificationService {
             }
             
             // Add reply hint if DM replies are enabled
-            if (config.dmReplyEnabled) {
+            if (config.eggHatcher.dmDetection.replyEnabled) {
                 messageText.append("\n\n💬 <i>Reply to this message to respond</i>");
             }
             
             JsonObject jsonPayload = new JsonObject();
-            jsonPayload.addProperty("chat_id", config.telegramChatId);
+            jsonPayload.addProperty("chat_id", config.telegram.chatId);
             jsonPayload.addProperty("text", messageText.toString());
             jsonPayload.addProperty("parse_mode", "HTML");
             
@@ -311,7 +311,7 @@ public class TelegramNotification extends NotificationService {
         }
 
         // Check if we've exceeded the limit
-        if (notificationCount >= config.telegramMaxNotificationsPerMinute) {
+        if (notificationCount >= config.telegram.maxNotificationsPerMinute) {
             return false;
         }
 

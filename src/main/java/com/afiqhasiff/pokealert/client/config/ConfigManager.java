@@ -14,6 +14,8 @@ import java.nio.file.StandardCopyOption;
 /**
  * Manages configuration files for PokéAlert.
  * Handles loading, saving, and migration of config files.
+ * 
+ * v4.0.0: Added migration from flat config to nested config structure.
  */
 public class ConfigManager {
     private static final Gson GSON = new GsonBuilder()
@@ -41,14 +43,20 @@ public class ConfigManager {
         // Load main configuration (pokealert-settings.json)
         currentConfig = loadSettings();
         
-        // Smart telegram config migration:
+        // v4.0.0: Migrate from legacy flat config to nested config
+        if (currentConfig.migrateFromLegacy()) {
+            PokeAlertClient.LOGGER.info("✓ Migrated config from flat format to nested format");
+            saveSettings(currentConfig);
+        }
+        
+        // Smart telegram config migration (legacy pokealert-telegram.json):
         // - If old telegram file exists AND main config telegram is empty: migrate from old file
         // - If old telegram file exists AND main config telegram is populated: skip migration (manual config)
         // - If old telegram file doesn't exist: use main config values (even if empty)
         if (TELEGRAM_FILE.exists()) {
             // Check if main config telegram values are empty (need migration)
-            boolean telegramIsEmpty = (currentConfig.telegramBotToken == null || currentConfig.telegramBotToken.trim().isEmpty()) &&
-                                     (currentConfig.telegramChatId == null || currentConfig.telegramChatId.trim().isEmpty());
+            boolean telegramIsEmpty = (currentConfig.telegram.botToken == null || currentConfig.telegram.botToken.trim().isEmpty()) &&
+                                     (currentConfig.telegram.chatId == null || currentConfig.telegram.chatId.trim().isEmpty());
             
             if (telegramIsEmpty) {
                 // Main config telegram is empty, migrate from old file
@@ -82,6 +90,10 @@ public class ConfigManager {
                 
                 // Parse JSON (Gson will use default values for missing fields)
                 config = GSON.fromJson(fileContent, PokeAlertConfig.class);
+                
+                // Ensure nested objects are not null (can happen if config was partially saved)
+                ensureNestedObjectsNotNull(config);
+                
                 PokeAlertClient.LOGGER.info("Loaded settings from {}", SETTINGS_FILE.getName());
                 
                 // Check if config file is missing any fields (general migration for all new fields)
@@ -116,6 +128,31 @@ public class ConfigManager {
         
         return config;
     }
+    
+    /**
+     * Ensure all nested config objects are not null.
+     * This handles cases where the config file was partially saved or corrupted.
+     */
+    private static void ensureNestedObjectsNotNull(PokeAlertConfig config) {
+        if (config.detection == null) config.detection = new PokeAlertConfig.PokemonDetectionConfig();
+        if (config.notifications == null) config.notifications = new PokeAlertConfig.NotificationConfig();
+        if (config.telegram == null) config.telegram = new PokeAlertConfig.TelegramConfig();
+        if (config.telegram.commands == null) config.telegram.commands = new PokeAlertConfig.TelegramConfig.CommandExecutionConfig();
+        if (config.eggTimer == null) config.eggTimer = new PokeAlertConfig.EggTimerConfig();
+        if (config.eggHatcher == null) config.eggHatcher = new PokeAlertConfig.EggHatcherConfig();
+        if (config.eggHatcher.dmDetection == null) config.eggHatcher.dmDetection = new PokeAlertConfig.EggHatcherConfig.DmDetectionConfig();
+        if (config.eggManager == null) config.eggManager = new PokeAlertConfig.EggManagerConfig();
+        if (config.eggManager.phase2 == null) config.eggManager.phase2 = new PokeAlertConfig.EggManagerConfig.Phase2Config();
+        if (config.eggManager.daycare == null) config.eggManager.daycare = new PokeAlertConfig.EggManagerConfig.DaycareConfig();
+        if (config.antiAfk == null) config.antiAfk = new PokeAlertConfig.AntiAfkConfig();
+        if (config.antiAfk.thresholds == null) config.antiAfk.thresholds = new PokeAlertConfig.AntiAfkConfig.ThresholdsConfig();
+        if (config.antiAfk.timing == null) config.antiAfk.timing = new PokeAlertConfig.AntiAfkConfig.TimingConfig();
+        if (config.antiAfk.playerSafety == null) config.antiAfk.playerSafety = new PokeAlertConfig.AntiAfkConfig.PlayerSafetyConfig();
+        if (config.antiAfk.queue == null) config.antiAfk.queue = new PokeAlertConfig.AntiAfkConfig.QueueConfig();
+        if (config.antiAfk.humanBehavior == null) config.antiAfk.humanBehavior = new PokeAlertConfig.AntiAfkConfig.HumanBehaviorConfig();
+        if (config.mappingLines == null) config.mappingLines = new PokeAlertConfig.MappingLinesConfig();
+        if (config.mappingLines.slotMapping == null) config.mappingLines.slotMapping = new SlotCoordinateMapping();
+    }
 
     /**
      * Save main settings to file
@@ -147,26 +184,26 @@ public class ConfigManager {
             com.google.gson.JsonObject telegramJson = GSON.fromJson(reader, com.google.gson.JsonObject.class);
             reader.close();
             
-            // Merge into main config (only overwrites empty values)
+            // Merge into main config (only overwrites empty values) - using new nested paths
             if (telegramJson.has("enabled")) {
-                currentConfig.telegramEnabled = telegramJson.get("enabled").getAsBoolean();
+                currentConfig.telegram.enabled = telegramJson.get("enabled").getAsBoolean();
             }
             if (telegramJson.has("botToken") && !telegramJson.get("botToken").getAsString().trim().isEmpty()) {
-                currentConfig.telegramBotToken = telegramJson.get("botToken").getAsString();
+                currentConfig.telegram.botToken = telegramJson.get("botToken").getAsString();
                 PokeAlertClient.LOGGER.info("✓ Migrated telegram bot token");
             }
             if (telegramJson.has("chatId") && !telegramJson.get("chatId").getAsString().trim().isEmpty()) {
-                currentConfig.telegramChatId = telegramJson.get("chatId").getAsString();
+                currentConfig.telegram.chatId = telegramJson.get("chatId").getAsString();
                 PokeAlertClient.LOGGER.info("✓ Migrated telegram chat ID");
             }
             if (telegramJson.has("apiUrl")) {
-                currentConfig.telegramApiUrl = telegramJson.get("apiUrl").getAsString();
+                currentConfig.telegram.apiUrl = telegramJson.get("apiUrl").getAsString();
             }
             if (telegramJson.has("maxNotificationsPerMinute")) {
-                currentConfig.telegramMaxNotificationsPerMinute = telegramJson.get("maxNotificationsPerMinute").getAsInt();
+                currentConfig.telegram.maxNotificationsPerMinute = telegramJson.get("maxNotificationsPerMinute").getAsInt();
             }
             if (telegramJson.has("cooldownSeconds")) {
-                currentConfig.telegramCooldownSeconds = telegramJson.get("cooldownSeconds").getAsInt();
+                currentConfig.telegram.cooldownSeconds = telegramJson.get("cooldownSeconds").getAsInt();
             }
             
             // Save merged config to pokealert-settings.json
@@ -206,7 +243,13 @@ public class ConfigManager {
      */
     public static void reload() {
         currentConfig = loadSettings();
+        
+        // v4.0.0: Migrate from legacy flat config to nested config
+        if (currentConfig.migrateFromLegacy()) {
+            PokeAlertClient.LOGGER.info("✓ Migrated config from flat format to nested format");
+            saveSettings(currentConfig);
+        }
+        
         PokeAlertClient.LOGGER.info("Reloaded configuration");
     }
 }
-

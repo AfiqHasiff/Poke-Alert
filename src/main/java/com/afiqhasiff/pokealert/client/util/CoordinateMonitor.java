@@ -58,9 +58,9 @@ public class CoordinateMonitor {
             stopMonitoring();
         }
         
-        arrivalThreshold = config.arrivalThreshold;
-        teleportDetectionOffset = config.teleportDetectionOffset;
-        checkIntervalMs = config.coordinateCheckInterval;
+        arrivalThreshold = config.antiAfk.thresholds.arrivalThreshold;
+        teleportDetectionOffset = config.antiAfk.thresholds.teleportDetectionOffset;
+        checkIntervalMs = config.antiAfk.timing.coordinateCheckInterval;
         
         if (scheduler == null || scheduler.isShutdown()) {
             scheduler = Executors.newSingleThreadScheduledExecutor(r -> {

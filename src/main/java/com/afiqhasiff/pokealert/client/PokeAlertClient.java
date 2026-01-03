@@ -191,13 +191,13 @@ public class PokeAlertClient implements ClientModInitializer {
         
         // Initialize Telegram Command Receiver
         LOGGER.info("Telegram Command Execution - Enabled: {}, Valid: {}", 
-            config.telegramCommandExecutionEnabled, config.isTelegramValid());
-        if (config.telegramCommandExecutionEnabled && config.isTelegramValid()) {
+            config.telegram.commands.enabled, config.isTelegramValid());
+        if (config.telegram.commands.enabled && config.isTelegramValid()) {
             LOGGER.info("Starting Telegram Command Receiver polling...");
             TelegramCommandReceiver.getInstance().startPolling();
         } else {
             LOGGER.warn("Telegram Command Receiver NOT starting - CommandExecutionEnabled: {}, IsTelegramValid: {}", 
-                config.telegramCommandExecutionEnabled, config.isTelegramValid());
+                config.telegram.commands.enabled, config.isTelegramValid());
         }
         
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
@@ -218,7 +218,7 @@ public class PokeAlertClient implements ClientModInitializer {
                             // First attempt - show warning with details
                             lastDisableAttemptTime = currentTime;
                             
-                            if (client.player != null && config.inGameTextEnabled) {
+                            if (client.player != null && config.notifications.textEnabled) {
                                 MutableText message = Text.literal("[")
                                     .formatted(Formatting.GRAY)
                                     .append(Text.literal("PokeAlert").formatted(Formatting.RED))
@@ -263,7 +263,7 @@ public class PokeAlertClient implements ClientModInitializer {
                         ConfigManager.saveSettings(config);
                         
                         // Send feedback message with what was cancelled
-                        if (client.player != null && config.inGameTextEnabled) {
+                        if (client.player != null && config.notifications.textEnabled) {
                             MutableText message = Text.literal("[")
                                 .formatted(Formatting.GRAY)
                                 .append(Text.literal("PokeAlert").formatted(Formatting.RED))
@@ -288,7 +288,7 @@ public class PokeAlertClient implements ClientModInitializer {
                         ConfigManager.saveSettings(config);
                         lastDisableAttemptTime = 0; // Reset confirmation
                         
-                        if (client.player != null && config.inGameTextEnabled) {
+                        if (client.player != null && config.notifications.textEnabled) {
                             MutableText message = Text.literal("[")
                                 .formatted(Formatting.GRAY)
                                 .append(Text.literal("PokeAlert").formatted(Formatting.RED))
@@ -305,7 +305,7 @@ public class PokeAlertClient implements ClientModInitializer {
                     ConfigManager.saveSettings(config);
                     lastDisableAttemptTime = 0; // Reset confirmation
                     
-                    if (client.player != null && config.inGameTextEnabled) {
+                    if (client.player != null && config.notifications.textEnabled) {
                         MutableText message = Text.literal("[")
                             .formatted(Formatting.GRAY)
                             .append(Text.literal("PokeAlert").formatted(Formatting.RED))
@@ -322,7 +322,7 @@ public class PokeAlertClient implements ClientModInitializer {
             while (startEggTimerKey.wasPressed()) {
                 // Check if mod is disabled
                 if (!config.modEnabled) {
-                    if (client.player != null && config.inGameTextEnabled) {
+                    if (client.player != null && config.notifications.textEnabled) {
                         Text message = Text.literal("[")
                             .formatted(Formatting.GRAY)
                             .append(Text.literal("PokeAlert").formatted(Formatting.RED))
@@ -341,7 +341,7 @@ public class PokeAlertClient implements ClientModInitializer {
             while (eggHatcherKey.wasPressed()) {
                 // Check if mod is disabled
                 if (!config.modEnabled) {
-                    if (client.player != null && config.inGameTextEnabled) {
+                    if (client.player != null && config.notifications.textEnabled) {
                         Text message = Text.literal("[")
                             .formatted(Formatting.GRAY)
                             .append(Text.literal("PokeAlert").formatted(Formatting.RED))
@@ -372,7 +372,7 @@ public class PokeAlertClient implements ClientModInitializer {
             while (eggManagerKey.wasPressed()) {
                 // Check if mod is disabled
                 if (!config.modEnabled) {
-                    if (client.player != null && config.inGameTextEnabled) {
+                    if (client.player != null && config.notifications.textEnabled) {
                         Text message = Text.literal("[")
                             .formatted(Formatting.GRAY)
                             .append(Text.literal("PokeAlert").formatted(Formatting.RED))
@@ -384,13 +384,13 @@ public class PokeAlertClient implements ClientModInitializer {
                 }
                 
                 // Toggle Egg Manager
-                config.eggManagerEnabled = !config.eggManagerEnabled;
+                config.eggManager.enabled = !config.eggManager.enabled;
                 ConfigManager.updateConfig(config);
                 reloadConfig();
                 
                 EggManager eggManager = EggManager.getInstance();
                 
-                if (config.eggManagerEnabled) {
+                if (config.eggManager.enabled) {
                     // Start monitoring if Egg Hatcher is running
                     EggHatcher eggHatcher = EggHatcher.getInstance();
                     if (eggHatcher.getMode() == EggHatcher.AutomationMode.AUTO) {
@@ -398,7 +398,7 @@ public class PokeAlertClient implements ClientModInitializer {
                         eggManager.startMonitoring();
                     }
                     
-                    if (client.player != null && config.inGameTextEnabled) {
+                    if (client.player != null && config.notifications.textEnabled) {
                         Text message = Text.literal("[")
                             .formatted(Formatting.GRAY)
                             .append(Text.literal("PokeAlert").formatted(Formatting.RED))
@@ -411,7 +411,7 @@ public class PokeAlertClient implements ClientModInitializer {
                     // Stop monitoring
                     eggManager.stopMonitoring();
                     
-                    if (client.player != null && config.inGameTextEnabled) {
+                    if (client.player != null && config.notifications.textEnabled) {
                         Text message = Text.literal("[")
                             .formatted(Formatting.GRAY)
                             .append(Text.literal("PokeAlert").formatted(Formatting.RED))
@@ -452,11 +452,11 @@ public class PokeAlertClient implements ClientModInitializer {
                 
                 // Primary filter: Check for blacklist character in name (works everywhere)
                 // Users rename their Pokémon with this character (e.g., "Charizard-") to prevent notifications
-                if (config.blacklistCharacter != null && 
-                    !config.blacklistCharacter.isEmpty() && 
-                    fullName.contains(config.blacklistCharacter)) {
+                if (config.detection.blacklistCharacter != null && 
+                    !config.detection.blacklistCharacter.isEmpty() && 
+                    fullName.contains(config.detection.blacklistCharacter)) {
                     LOGGER.debug("Skipping Pokemon with blacklist character '{}': {}", 
-                        config.blacklistCharacter, fullName);
+                        config.detection.blacklistCharacter, fullName);
                     continue;
                 }
                 
@@ -481,7 +481,7 @@ public class PokeAlertClient implements ClientModInitializer {
                 
                 // Use the new shouldNotify method which checks both whitelist and blacklist
                 boolean isShiny = pokemon.getShiny();
-                if (config.shouldNotify(pokemonName) || (isShiny && config.broadcastAllShinies)) {
+                if (config.shouldNotify(pokemonName) || (isShiny && config.detection.shinies)) {
                     // Create spawn data with clean Pokemon name (without "Shiny" prefix)
                     PokemonSpawnData spawnData = PokemonSpawnData.fromEntity(
                         entity,
@@ -510,7 +510,7 @@ public class PokeAlertClient implements ClientModInitializer {
         TelegramCommandReceiver.getInstance().reloadConfig();
         
         // Start/stop polling based on new config
-        if (config.telegramCommandExecutionEnabled && config.isTelegramValid()) {
+        if (config.telegram.commands.enabled && config.isTelegramValid()) {
             if (!TelegramCommandReceiver.getInstance().isPolling()) {
                 TelegramCommandReceiver.getInstance().startPolling();
             }

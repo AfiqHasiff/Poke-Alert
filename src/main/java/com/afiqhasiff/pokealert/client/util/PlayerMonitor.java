@@ -69,15 +69,15 @@ public class PlayerMonitor {
         }
         
         // Parse players to avoid (lowercase for case-insensitive matching)
-        playersToAvoid = Arrays.stream(config.playersToAvoid)
+        playersToAvoid = Arrays.stream(config.antiAfk.playerSafety.playersToAvoid)
             .filter(s -> s != null && !s.trim().isEmpty())
             .map(String::toLowerCase)
             .collect(Collectors.toList());
         
-        nearbyDetectionRadius = config.nearbyPlayerDetectionRadius;
-        checkIntervalMs = config.playerMonitorInterval;
-        enablePlayerList = config.enablePlayerListMonitoring;
-        enableNearbyDetection = config.enableNearbyPlayerDetection;
+        nearbyDetectionRadius = config.antiAfk.playerSafety.nearbyPlayerDetectionRadius;
+        checkIntervalMs = config.antiAfk.timing.playerMonitorInterval;
+        enablePlayerList = config.antiAfk.playerSafety.enablePlayerListMonitoring;
+        enableNearbyDetection = config.antiAfk.playerSafety.enableNearbyPlayerDetection;
         
         if (playersToAvoid.isEmpty()) {
             PokeAlertClient.LOGGER.info("PlayerMonitor: No players to avoid configured, skipping start");

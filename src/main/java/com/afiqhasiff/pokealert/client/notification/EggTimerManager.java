@@ -1,6 +1,7 @@
 package com.afiqhasiff.pokealert.client.notification;
 
 import com.afiqhasiff.pokealert.client.PokeAlertClient;
+import com.afiqhasiff.pokealert.client.automation.EggManager;
 import com.afiqhasiff.pokealert.client.config.ConfigManager;
 import com.afiqhasiff.pokealert.client.config.PokeAlertConfig;
 import net.minecraft.client.MinecraftClient;
@@ -34,7 +35,7 @@ public class EggTimerManager {
     
     public boolean startTimer() {
         PokeAlertConfig config = ConfigManager.getConfig();
-        return startTimer(config.eggTimerDuration);
+        return startTimer(config.eggTimer.duration);
     }
     
     public boolean startTimer(int durationMinutes) {
@@ -129,7 +130,7 @@ public class EggTimerManager {
         MinecraftClient client = MinecraftClient.getInstance();
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        if (config.eggTimerTextNotification && config.inGameTextEnabled && client.player != null) {
+        if (config.eggTimer.textNotification && config.notifications.textEnabled && client.player != null) {
             // Calculate expected end time
             long endTimeMillis = timerStartTime + (currentDuration * 60 * 1000);
             String endTime = new java.text.SimpleDateFormat("HH:mm").format(new java.util.Date(endTimeMillis));
@@ -154,7 +155,7 @@ public class EggTimerManager {
         MinecraftClient client = MinecraftClient.getInstance();
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        if (config.inGameTextEnabled && client.player != null) {
+        if (config.notifications.textEnabled && client.player != null) {
             int remaining = getRemainingMinutes();
             client.execute(() -> {
                 client.player.sendMessage(
@@ -191,7 +192,7 @@ public class EggTimerManager {
         MinecraftClient client = MinecraftClient.getInstance();
         
         // Only send in-game text notification on start (no sound or Telegram)
-        if (config.eggTimerTextNotification && config.inGameTextEnabled && client.player != null) {
+        if (config.eggTimer.textNotification && config.notifications.textEnabled && client.player != null) {
             client.execute(() -> {
                 client.player.sendMessage(
                     Text.literal("[").formatted(Formatting.GRAY)
@@ -216,16 +217,16 @@ public class EggTimerManager {
         if (client.player != null) {
             client.execute(() -> {
                 // Play notification sound if enabled
-                if (config.inGameSoundEnabled) {
+                if (config.notifications.soundEnabled) {
                     client.player.playSound(
                         PokeAlertClient.NOTIFICATION_SOUND_EVENT,
-                        config.inGameSoundVolume,
+                        config.notifications.soundVolume,
                         1.0f
                     );
                 }
                 
                 // Send text notification
-                if (config.eggTimerTextNotification && config.inGameTextEnabled) {
+                if (config.eggTimer.textNotification && config.notifications.textEnabled) {
                     client.player.sendMessage(
                         Text.literal("[").formatted(Formatting.GRAY)
                             .append(Text.literal("PokéAlert").formatted(Formatting.RED))
@@ -243,7 +244,7 @@ public class EggTimerManager {
         }
         
         // Telegram notification using StringBuilder pattern
-        if (config.eggTimerTelegramNotification && config.telegramEnabled) {
+        if (config.eggTimer.telegramNotification && config.telegram.enabled) {
             CompletableFuture.runAsync(() -> {
                 TelegramNotification telegram = new TelegramNotification();
                 telegram.initialize();
@@ -257,13 +258,32 @@ public class EggTimerManager {
                 telegram.sendEggTimerNotification(message.toString());
             });
         }
+        
+        // Phase 3: Trigger daycare egg fetching if enabled
+        if (config.isDaycareEffectivelyEnabled()) {
+            PokeAlertClient.LOGGER.info("[EggTimer] Timer completed - triggering daycare fetch");
+            
+            // Small delay to ensure notifications are sent first
+            scheduler.schedule(() -> {
+                try {
+                    EggManager eggManager = EggManager.getInstance();
+                    if (eggManager != null) {
+                        eggManager.startDaycareFetch();
+                    } else {
+                        PokeAlertClient.LOGGER.warn("[EggTimer] EggManager instance not available for daycare fetch");
+                    }
+                } catch (Exception e) {
+                    PokeAlertClient.LOGGER.error("[EggTimer] Error triggering daycare fetch: {}", e.getMessage());
+                }
+            }, 2, TimeUnit.SECONDS);
+        }
     }
     
     private void sendCancelNotification() {
         MinecraftClient client = MinecraftClient.getInstance();
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        if (config.eggTimerTextNotification && config.inGameTextEnabled && client.player != null) {
+        if (config.eggTimer.textNotification && config.notifications.textEnabled && client.player != null) {
             client.execute(() -> {
                 client.player.sendMessage(
                     Text.literal("[").formatted(Formatting.GRAY)

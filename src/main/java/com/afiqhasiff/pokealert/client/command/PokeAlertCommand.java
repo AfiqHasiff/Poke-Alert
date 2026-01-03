@@ -697,7 +697,7 @@ public class PokeAlertCommand {
         
         // Egg Hatcher features (only show if enabled)
         PokeAlertConfig config = PokeAlertClient.getInstance().config;
-        if (config.eggHatcherEnabled) {
+        if (config.eggHatcher.enabled) {
             source.sendFeedback(Text.literal("━━━ ").formatted(Formatting.DARK_GRAY)
                 .append(Text.literal("Egg Hatcher").formatted(Formatting.LIGHT_PURPLE))
                 .append(Text.literal(" ━━━").formatted(Formatting.DARK_GRAY)));
@@ -850,25 +850,25 @@ public class PokeAlertCommand {
                 .formatted(config.modEnabled ? Formatting.GREEN : Formatting.RED)));
         
         source.sendFeedback(Text.literal("  Categories:").formatted(Formatting.WHITE));
-        source.sendFeedback(formatCategoryStatus("Legendaries", config.broadcastAllLegendaries));
-        source.sendFeedback(formatCategoryStatus("Mythics", config.broadcastAllMythics));
-        source.sendFeedback(formatCategoryStatus("Starters", config.broadcastAllStarter));
-        source.sendFeedback(formatCategoryStatus("Babies", config.broadcastAllBabies));
-        source.sendFeedback(formatCategoryStatus("Ultra Beasts", config.broadcastAllUltraBeasts));
-        source.sendFeedback(formatCategoryStatus("Shinies", config.broadcastAllShinies));
-        source.sendFeedback(formatCategoryStatus("Paradox", config.broadcastAllParadox));
+        source.sendFeedback(formatCategoryStatus("Legendaries", config.detection.legendaries));
+        source.sendFeedback(formatCategoryStatus("Mythics", config.detection.mythics));
+        source.sendFeedback(formatCategoryStatus("Starters", config.detection.starters));
+        source.sendFeedback(formatCategoryStatus("Babies", config.detection.babies));
+        source.sendFeedback(formatCategoryStatus("Ultra Beasts", config.detection.ultraBeasts));
+        source.sendFeedback(formatCategoryStatus("Shinies", config.detection.shinies));
+        source.sendFeedback(formatCategoryStatus("Paradox", config.detection.paradox));
         
         source.sendFeedback(Text.literal("  Notifications:").formatted(Formatting.WHITE));
-        source.sendFeedback(formatCategoryStatus("In-Game Text", config.inGameTextEnabled));
-        source.sendFeedback(formatCategoryStatus("In-Game Sound", config.inGameSoundEnabled));
-        source.sendFeedback(formatCategoryStatus("Telegram", config.telegramEnabled));
+        source.sendFeedback(formatCategoryStatus("In-Game Text", config.notifications.textEnabled));
+        source.sendFeedback(formatCategoryStatus("In-Game Sound", config.notifications.soundEnabled));
+        source.sendFeedback(formatCategoryStatus("Telegram", config.telegram.enabled));
         
         source.sendFeedback(Text.literal("  Whitelist: ").formatted(Formatting.GRAY)
-            .append(Text.literal(config.broadcastWhitelist.length + " entries").formatted(Formatting.WHITE)));
+            .append(Text.literal(config.detection.whitelist.length + " entries").formatted(Formatting.WHITE)));
         source.sendFeedback(Text.literal("  Blacklist: ").formatted(Formatting.GRAY)
-            .append(Text.literal(config.broadcastBlacklist.length + " entries").formatted(Formatting.WHITE)));
+            .append(Text.literal(config.detection.blacklist.length + " entries").formatted(Formatting.WHITE)));
         source.sendFeedback(Text.literal("  Excluded Worlds: ").formatted(Formatting.GRAY)
-            .append(Text.literal(config.excludedWorlds.length + " entries").formatted(Formatting.WHITE)));
+            .append(Text.literal(config.detection.excludedWorlds.length + " entries").formatted(Formatting.WHITE)));
         
         return 1;
     }
@@ -929,12 +929,12 @@ public class PokeAlertCommand {
                 return 1;
             }
             case "whitelist" -> {
-                pokemonList = config.broadcastWhitelist;
+                pokemonList = config.detection.whitelist;
                 displayName = "Custom Whitelist";
                 categoryColor = Formatting.GREEN;
             }
             case "blacklist" -> {
-                pokemonList = config.broadcastBlacklist;
+                pokemonList = config.detection.blacklist;
                 displayName = "Custom Blacklist";
                 categoryColor = Formatting.RED;
             }
@@ -1046,13 +1046,13 @@ public class PokeAlertCommand {
         boolean updated = true;
         
         switch (category) {
-            case "legendaries" -> config.broadcastAllLegendaries = enabled;
-            case "mythics" -> config.broadcastAllMythics = enabled;
-            case "starters" -> config.broadcastAllStarter = enabled;
-            case "babies" -> config.broadcastAllBabies = enabled;
-            case "ultrabeasts" -> config.broadcastAllUltraBeasts = enabled;
-            case "shinies" -> config.broadcastAllShinies = enabled;
-            case "paradox" -> config.broadcastAllParadox = enabled;
+            case "legendaries" -> config.detection.legendaries = enabled;
+            case "mythics" -> config.detection.mythics = enabled;
+            case "starters" -> config.detection.starters = enabled;
+            case "babies" -> config.detection.babies = enabled;
+            case "ultrabeasts" -> config.detection.ultraBeasts = enabled;
+            case "shinies" -> config.detection.shinies = enabled;
+            case "paradox" -> config.detection.paradox = enabled;
             default -> {
                 context.getSource().sendError(Text.literal("Unknown category: " + category));
                 return 0;
@@ -1079,9 +1079,9 @@ public class PokeAlertCommand {
         PokeAlertConfig config = ConfigManager.getConfig();
         
         switch (type) {
-            case "text" -> config.inGameTextEnabled = enabled;
-            case "sound" -> config.inGameSoundEnabled = enabled;
-            case "telegram" -> config.telegramEnabled = enabled;
+            case "text" -> config.notifications.textEnabled = enabled;
+            case "sound" -> config.notifications.soundEnabled = enabled;
+            case "telegram" -> config.telegram.enabled = enabled;
         }
         
         ConfigManager.updateConfig(config);
@@ -1106,14 +1106,14 @@ public class PokeAlertCommand {
         FabricClientCommandSource source = context.getSource();
         
         // Check if already in whitelist
-        List<String> whitelist = new ArrayList<>(Arrays.asList(config.broadcastWhitelist));
+        List<String> whitelist = new ArrayList<>(Arrays.asList(config.detection.whitelist));
         if (whitelist.contains(pokemon)) {
             source.sendError(Text.literal(pokemon + " is already in the whitelist"));
             return 1;
         }
         
         // Check if in blacklist
-        List<String> blacklist = new ArrayList<>(Arrays.asList(config.broadcastBlacklist));
+        List<String> blacklist = new ArrayList<>(Arrays.asList(config.detection.blacklist));
         if (blacklist.contains(pokemon)) {
             // Prompt user about conflict
             source.sendFeedback(
@@ -1192,7 +1192,7 @@ public class PokeAlertCommand {
         
         // Add to whitelist
         whitelist.add(pokemon);
-        config.broadcastWhitelist = whitelist.toArray(new String[0]);
+        config.detection.whitelist = whitelist.toArray(new String[0]);
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -1211,9 +1211,9 @@ public class PokeAlertCommand {
         String pokemon = StringArgumentType.getString(context, "pokemon");
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        List<String> whitelist = new ArrayList<>(Arrays.asList(config.broadcastWhitelist));
+        List<String> whitelist = new ArrayList<>(Arrays.asList(config.detection.whitelist));
         if (whitelist.remove(pokemon)) {
-            config.broadcastWhitelist = whitelist.toArray(new String[0]);
+            config.detection.whitelist = whitelist.toArray(new String[0]);
             ConfigManager.updateConfig(config);
             PokeAlertClient.getInstance().reloadConfig();
             
@@ -1238,13 +1238,13 @@ public class PokeAlertCommand {
             Text.literal("[").formatted(Formatting.GRAY)
                 .append(Text.literal("PokéAlert").formatted(Formatting.RED))
                 .append(Text.literal("] Whitelist ").formatted(Formatting.GRAY))
-                .append(Text.literal("(" + config.broadcastWhitelist.length + ")").formatted(Formatting.WHITE))
+                .append(Text.literal("(" + config.detection.whitelist.length + ")").formatted(Formatting.WHITE))
         );
         
-        if (config.broadcastWhitelist.length == 0) {
+        if (config.detection.whitelist.length == 0) {
             context.getSource().sendFeedback(Text.literal("  Empty list").formatted(Formatting.GRAY));
         } else {
-            for (String pokemon : config.broadcastWhitelist) {
+            for (String pokemon : config.detection.whitelist) {
                 context.getSource().sendFeedback(Text.literal("  • ").formatted(Formatting.GRAY)
                     .append(Text.literal(pokemon).formatted(Formatting.WHITE)));
             }
@@ -1259,14 +1259,14 @@ public class PokeAlertCommand {
         FabricClientCommandSource source = context.getSource();
         
         // Check if already in blacklist
-        List<String> blacklist = new ArrayList<>(Arrays.asList(config.broadcastBlacklist));
+        List<String> blacklist = new ArrayList<>(Arrays.asList(config.detection.blacklist));
         if (blacklist.contains(pokemon)) {
             source.sendError(Text.literal(pokemon + " is already in the blacklist"));
             return 1;
         }
         
         // Check if in whitelist
-        List<String> whitelist = new ArrayList<>(Arrays.asList(config.broadcastWhitelist));
+        List<String> whitelist = new ArrayList<>(Arrays.asList(config.detection.whitelist));
         if (whitelist.contains(pokemon)) {
             // Prompt user about conflict
             source.sendFeedback(
@@ -1352,7 +1352,7 @@ public class PokeAlertCommand {
         
         // Add to blacklist
         blacklist.add(pokemon);
-        config.broadcastBlacklist = blacklist.toArray(new String[0]);
+        config.detection.blacklist = blacklist.toArray(new String[0]);
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -1371,9 +1371,9 @@ public class PokeAlertCommand {
         String pokemon = StringArgumentType.getString(context, "pokemon");
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        List<String> blacklist = new ArrayList<>(Arrays.asList(config.broadcastBlacklist));
+        List<String> blacklist = new ArrayList<>(Arrays.asList(config.detection.blacklist));
         if (blacklist.remove(pokemon)) {
-            config.broadcastBlacklist = blacklist.toArray(new String[0]);
+            config.detection.blacklist = blacklist.toArray(new String[0]);
             ConfigManager.updateConfig(config);
             PokeAlertClient.getInstance().reloadConfig();
             
@@ -1398,13 +1398,13 @@ public class PokeAlertCommand {
             Text.literal("[").formatted(Formatting.GRAY)
                 .append(Text.literal("PokéAlert").formatted(Formatting.RED))
                 .append(Text.literal("] Blacklist ").formatted(Formatting.GRAY))
-                .append(Text.literal("(" + config.broadcastBlacklist.length + ")").formatted(Formatting.WHITE))
+                .append(Text.literal("(" + config.detection.blacklist.length + ")").formatted(Formatting.WHITE))
         );
         
-        if (config.broadcastBlacklist.length == 0) {
+        if (config.detection.blacklist.length == 0) {
             context.getSource().sendFeedback(Text.literal("  Empty list").formatted(Formatting.GRAY));
         } else {
-            for (String pokemon : config.broadcastBlacklist) {
+            for (String pokemon : config.detection.blacklist) {
                 context.getSource().sendFeedback(Text.literal("  • ").formatted(Formatting.GRAY)
                     .append(Text.literal(pokemon).formatted(Formatting.WHITE)));
             }
@@ -1417,10 +1417,10 @@ public class PokeAlertCommand {
         String world = StringArgumentType.getString(context, "world");
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        List<String> excludedWorlds = new ArrayList<>(Arrays.asList(config.excludedWorlds));
+        List<String> excludedWorlds = new ArrayList<>(Arrays.asList(config.detection.excludedWorlds));
         if (!excludedWorlds.contains(world)) {
             excludedWorlds.add(world);
-            config.excludedWorlds = excludedWorlds.toArray(new String[0]);
+            config.detection.excludedWorlds = excludedWorlds.toArray(new String[0]);
             ConfigManager.updateConfig(config);
             
             context.getSource().sendFeedback(
@@ -1441,9 +1441,9 @@ public class PokeAlertCommand {
         String world = StringArgumentType.getString(context, "world");
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        List<String> excludedWorlds = new ArrayList<>(Arrays.asList(config.excludedWorlds));
+        List<String> excludedWorlds = new ArrayList<>(Arrays.asList(config.detection.excludedWorlds));
         if (excludedWorlds.remove(world)) {
-            config.excludedWorlds = excludedWorlds.toArray(new String[0]);
+            config.detection.excludedWorlds = excludedWorlds.toArray(new String[0]);
             ConfigManager.updateConfig(config);
             
             context.getSource().sendFeedback(
@@ -1467,13 +1467,13 @@ public class PokeAlertCommand {
             Text.literal("[").formatted(Formatting.GRAY)
                 .append(Text.literal("PokéAlert").formatted(Formatting.RED))
                 .append(Text.literal("] Excluded Worlds ").formatted(Formatting.GRAY))
-                .append(Text.literal("(" + config.excludedWorlds.length + ")").formatted(Formatting.WHITE))
+                .append(Text.literal("(" + config.detection.excludedWorlds.length + ")").formatted(Formatting.WHITE))
         );
         
-        if (config.excludedWorlds.length == 0) {
+        if (config.detection.excludedWorlds.length == 0) {
             context.getSource().sendFeedback(Text.literal("  No worlds excluded").formatted(Formatting.GRAY));
         } else {
-            for (String world : config.excludedWorlds) {
+            for (String world : config.detection.excludedWorlds) {
                 context.getSource().sendFeedback(Text.literal("  • ").formatted(Formatting.GRAY)
                     .append(Text.literal(world).formatted(Formatting.WHITE)));
             }
@@ -1687,12 +1687,12 @@ public class PokeAlertCommand {
                 .append(Text.literal("PokeAlert").formatted(Formatting.RED))
                 .append(Text.literal("] ").formatted(Formatting.GRAY))
                 .append(Text.literal("Egg Manager Status: ").formatted(Formatting.WHITE))
-                .append(Text.literal(config.eggManagerEnabled ? "Enabled" : "Disabled").formatted(
-                    config.eggManagerEnabled ? Formatting.GREEN : Formatting.RED
+                .append(Text.literal(config.eggManager.enabled ? "Enabled" : "Disabled").formatted(
+                    config.eggManager.enabled ? Formatting.GREEN : Formatting.RED
                 ))
         );
         
-        if (config.eggManagerEnabled) {
+        if (config.eggManager.enabled) {
             source.sendFeedback(
                 Text.literal("  ")
                     .append(Text.literal("Monitoring: ").formatted(Formatting.GRAY))
@@ -1717,7 +1717,7 @@ public class PokeAlertCommand {
         FabricClientCommandSource source = context.getSource();
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        config.eggManagerEnabled = enabled;
+        config.eggManager.enabled = enabled;
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -1810,7 +1810,7 @@ public class PokeAlertCommand {
             return 0;
         }
         
-        config.blacklistCharacter = character;
+        config.detection.blacklistCharacter = character;
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -1828,7 +1828,7 @@ public class PokeAlertCommand {
         int volumePercent = IntegerArgumentType.getInteger(context, "volume");
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        config.inGameSoundVolume = volumePercent / 100.0f;
+        config.notifications.soundVolume = volumePercent / 100.0f;
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -1875,7 +1875,7 @@ public class PokeAlertCommand {
             return 0;
         }
         
-        config.realmReturnCommand = command;
+        config.eggHatcher.realmReturnCommand = command;
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -1892,7 +1892,7 @@ public class PokeAlertCommand {
     private static int setDmDetection(CommandContext<FabricClientCommandSource> context, boolean enabled) {
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        config.dmDetectionEnabled = enabled;
+        config.eggHatcher.dmDetection.enabled = enabled;
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -1917,9 +1917,9 @@ public class PokeAlertCommand {
                 .append(Text.literal("] DM Detection Status").formatted(Formatting.WHITE))
         );
         
-        source.sendFeedback(formatCategoryStatus("DM Detection", config.dmDetectionEnabled));
-        source.sendFeedback(formatCategoryStatus("Telegram Notifications", config.dmTelegramNotification));
-        source.sendFeedback(formatCategoryStatus("In-Game Notifications", config.dmInGameNotification));
+        source.sendFeedback(formatCategoryStatus("DM Detection", config.eggHatcher.dmDetection.enabled));
+        source.sendFeedback(formatCategoryStatus("Telegram Notifications", config.eggHatcher.dmDetection.telegramNotification));
+        source.sendFeedback(formatCategoryStatus("In-Game Notifications", config.eggHatcher.dmDetection.inGameNotification));
         
         return 1;
     }
@@ -1928,8 +1928,8 @@ public class PokeAlertCommand {
         PokeAlertConfig config = ConfigManager.getConfig();
         
         switch (type) {
-            case "telegram" -> config.dmTelegramNotification = enabled;
-            case "ingame" -> config.dmInGameNotification = enabled;
+            case "telegram" -> config.eggHatcher.dmDetection.telegramNotification = enabled;
+            case "ingame" -> config.eggHatcher.dmDetection.inGameNotification = enabled;
         }
         
         ConfigManager.updateConfig(config);
@@ -1958,21 +1958,21 @@ public class PokeAlertCommand {
                 .append(Text.literal("] Telegram Configuration").formatted(Formatting.WHITE))
         );
         
-        source.sendFeedback(formatCategoryStatus("Telegram Enabled", config.telegramEnabled));
+        source.sendFeedback(formatCategoryStatus("Telegram Enabled", config.telegram.enabled));
         source.sendFeedback(Text.literal("  Bot Token: ").formatted(Formatting.GRAY)
-            .append(Text.literal(config.telegramBotToken != null && !config.telegramBotToken.isEmpty() 
-                ? "***" + config.telegramBotToken.substring(Math.max(0, config.telegramBotToken.length() - 4))
+            .append(Text.literal(config.telegram.botToken != null && !config.telegram.botToken.isEmpty() 
+                ? "***" + config.telegram.botToken.substring(Math.max(0, config.telegram.botToken.length() - 4))
                 : "Not set").formatted(Formatting.WHITE)));
         source.sendFeedback(Text.literal("  Chat ID: ").formatted(Formatting.GRAY)
-            .append(Text.literal(config.telegramChatId != null && !config.telegramChatId.isEmpty() 
-                ? "***" + config.telegramChatId.substring(Math.max(0, config.telegramChatId.length() - 4))
+            .append(Text.literal(config.telegram.chatId != null && !config.telegram.chatId.isEmpty() 
+                ? "***" + config.telegram.chatId.substring(Math.max(0, config.telegram.chatId.length() - 4))
                 : "Not set").formatted(Formatting.WHITE)));
         source.sendFeedback(Text.literal("  API URL: ").formatted(Formatting.GRAY)
-            .append(Text.literal(config.telegramApiUrl).formatted(Formatting.WHITE)));
+            .append(Text.literal(config.telegram.apiUrl).formatted(Formatting.WHITE)));
         source.sendFeedback(Text.literal("  Rate Limit: ").formatted(Formatting.GRAY)
-            .append(Text.literal(config.telegramMaxNotificationsPerMinute + " per minute").formatted(Formatting.WHITE)));
+            .append(Text.literal(config.telegram.maxNotificationsPerMinute + " per minute").formatted(Formatting.WHITE)));
         source.sendFeedback(Text.literal("  Cooldown: ").formatted(Formatting.GRAY)
-            .append(Text.literal(config.telegramCooldownSeconds + " seconds").formatted(Formatting.WHITE)));
+            .append(Text.literal(config.telegram.cooldownSeconds + " seconds").formatted(Formatting.WHITE)));
         source.sendFeedback(formatCategoryStatus("Valid Configuration", config.isTelegramValid()));
         
         return 1;
@@ -1982,7 +1982,7 @@ public class PokeAlertCommand {
         String token = StringArgumentType.getString(context, "token");
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        config.telegramBotToken = token;
+        config.telegram.botToken = token;
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -1999,7 +1999,7 @@ public class PokeAlertCommand {
         String chatId = StringArgumentType.getString(context, "chatId");
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        config.telegramChatId = chatId;
+        config.telegram.chatId = chatId;
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -2021,7 +2021,7 @@ public class PokeAlertCommand {
             return 0;
         }
         
-        config.telegramApiUrl = url;
+        config.telegram.apiUrl = url;
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -2039,7 +2039,7 @@ public class PokeAlertCommand {
         int maxPerMinute = IntegerArgumentType.getInteger(context, "maxPerMinute");
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        config.telegramMaxNotificationsPerMinute = maxPerMinute;
+        config.telegram.maxNotificationsPerMinute = maxPerMinute;
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -2057,7 +2057,7 @@ public class PokeAlertCommand {
         int seconds = IntegerArgumentType.getInteger(context, "seconds");
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        config.telegramCooldownSeconds = seconds;
+        config.telegram.cooldownSeconds = seconds;
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -2108,14 +2108,14 @@ public class PokeAlertCommand {
         );
         
         source.sendFeedback(Text.literal("  Corner 1: (").formatted(Formatting.GRAY)
-            .append(Text.literal(String.valueOf(config.antiAfkRegionX1)).formatted(Formatting.WHITE))
+            .append(Text.literal(String.valueOf(config.antiAfk.regionX1)).formatted(Formatting.WHITE))
             .append(Text.literal(", ").formatted(Formatting.GRAY))
-            .append(Text.literal(String.valueOf(config.antiAfkRegionZ1)).formatted(Formatting.WHITE))
+            .append(Text.literal(String.valueOf(config.antiAfk.regionZ1)).formatted(Formatting.WHITE))
             .append(Text.literal(")").formatted(Formatting.GRAY)));
         source.sendFeedback(Text.literal("  Corner 2: (").formatted(Formatting.GRAY)
-            .append(Text.literal(String.valueOf(config.antiAfkRegionX2)).formatted(Formatting.WHITE))
+            .append(Text.literal(String.valueOf(config.antiAfk.regionX2)).formatted(Formatting.WHITE))
             .append(Text.literal(", ").formatted(Formatting.GRAY))
-            .append(Text.literal(String.valueOf(config.antiAfkRegionZ2)).formatted(Formatting.WHITE))
+            .append(Text.literal(String.valueOf(config.antiAfk.regionZ2)).formatted(Formatting.WHITE))
             .append(Text.literal(")").formatted(Formatting.GRAY)));
         source.sendFeedback(Text.literal("  Size: ").formatted(Formatting.GRAY)
             .append(Text.literal(config.getAntiAfkRegionWidth() + " x " + config.getAntiAfkRegionDepth()).formatted(Formatting.WHITE)));
@@ -2139,10 +2139,10 @@ public class PokeAlertCommand {
             return 0;
         }
         
-        config.antiAfkRegionX1 = x1;
-        config.antiAfkRegionZ1 = z1;
-        config.antiAfkRegionX2 = x2;
-        config.antiAfkRegionZ2 = z2;
+        config.antiAfk.regionX1 = x1;
+        config.antiAfk.regionZ1 = z1;
+        config.antiAfk.regionX2 = x2;
+        config.antiAfk.regionZ2 = z2;
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -2162,10 +2162,10 @@ public class PokeAlertCommand {
     private static int resetAntiAfkRegion(CommandContext<FabricClientCommandSource> context) {
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        config.antiAfkRegionX1 = 0;
-        config.antiAfkRegionZ1 = 0;
-        config.antiAfkRegionX2 = 100;
-        config.antiAfkRegionZ2 = 100;
+        config.antiAfk.regionX1 = 0;
+        config.antiAfk.regionZ1 = 0;
+        config.antiAfk.regionX2 = 100;
+        config.antiAfk.regionZ2 = 100;
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -2182,7 +2182,7 @@ public class PokeAlertCommand {
         int blocks = IntegerArgumentType.getInteger(context, "blocks");
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        config.arrivalThreshold = blocks;
+        config.antiAfk.thresholds.arrivalThreshold = blocks;
         config.validateTimingConfig(); // Ensure teleport detection is valid
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
@@ -2201,7 +2201,7 @@ public class PokeAlertCommand {
         int blocks = IntegerArgumentType.getInteger(context, "blocks");
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        config.teleportDetectionOffset = blocks;
+        config.antiAfk.thresholds.teleportDetectionOffset = blocks;
         config.validateTimingConfig(); // Ensure it's at least 2x arrival threshold
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
@@ -2227,15 +2227,15 @@ public class PokeAlertCommand {
         );
         
         source.sendFeedback(Text.literal("  Coordinate Check: ").formatted(Formatting.GRAY)
-            .append(Text.literal(config.coordinateCheckInterval + "ms").formatted(Formatting.WHITE)));
+            .append(Text.literal(config.antiAfk.timing.coordinateCheckInterval + "ms").formatted(Formatting.WHITE)));
         source.sendFeedback(Text.literal("  Realm Check (Spawn): ").formatted(Formatting.GRAY)
-            .append(Text.literal(config.realmCheckIntervalSpawn + "ms").formatted(Formatting.WHITE)));
+            .append(Text.literal(config.antiAfk.timing.realmCheckIntervalSpawn + "ms").formatted(Formatting.WHITE)));
         source.sendFeedback(Text.literal("  Realm Check (Overworld): ").formatted(Formatting.GRAY)
-            .append(Text.literal(config.realmCheckIntervalOverworld + "ms").formatted(Formatting.WHITE)));
+            .append(Text.literal(config.antiAfk.timing.realmCheckIntervalOverworld + "ms").formatted(Formatting.WHITE)));
         source.sendFeedback(Text.literal("  Player Monitor: ").formatted(Formatting.GRAY)
-            .append(Text.literal(config.playerMonitorInterval + "ms").formatted(Formatting.WHITE)));
+            .append(Text.literal(config.antiAfk.timing.playerMonitorInterval + "ms").formatted(Formatting.WHITE)));
         source.sendFeedback(Text.literal("  Location Timeout: ").formatted(Formatting.GRAY)
-            .append(Text.literal(config.locationTimeout + "ms").formatted(Formatting.WHITE)));
+            .append(Text.literal(config.antiAfk.timing.locationTimeout + "ms").formatted(Formatting.WHITE)));
         
         return 1;
     }
@@ -2244,7 +2244,7 @@ public class PokeAlertCommand {
         int ms = IntegerArgumentType.getInteger(context, "ms");
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        config.coordinateCheckInterval = ms;
+        config.antiAfk.timing.coordinateCheckInterval = ms;
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -2262,7 +2262,7 @@ public class PokeAlertCommand {
         int ms = IntegerArgumentType.getInteger(context, "ms");
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        config.realmCheckIntervalSpawn = ms;
+        config.antiAfk.timing.realmCheckIntervalSpawn = ms;
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -2280,7 +2280,7 @@ public class PokeAlertCommand {
         int ms = IntegerArgumentType.getInteger(context, "ms");
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        config.realmCheckIntervalOverworld = ms;
+        config.antiAfk.timing.realmCheckIntervalOverworld = ms;
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -2298,7 +2298,7 @@ public class PokeAlertCommand {
         int ms = IntegerArgumentType.getInteger(context, "ms");
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        config.playerMonitorInterval = ms;
+        config.antiAfk.timing.playerMonitorInterval = ms;
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -2316,7 +2316,7 @@ public class PokeAlertCommand {
         int ms = IntegerArgumentType.getInteger(context, "ms");
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        config.locationTimeout = ms;
+        config.antiAfk.timing.locationTimeout = ms;
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -2333,11 +2333,11 @@ public class PokeAlertCommand {
     private static int resetTimingSettings(CommandContext<FabricClientCommandSource> context) {
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        config.coordinateCheckInterval = 500;
-        config.realmCheckIntervalSpawn = 200;
-        config.realmCheckIntervalOverworld = 30000;
-        config.playerMonitorInterval = 5000;
-        config.locationTimeout = 45000;
+        config.antiAfk.timing.coordinateCheckInterval = 500;
+        config.antiAfk.timing.realmCheckIntervalSpawn = 200;
+        config.antiAfk.timing.realmCheckIntervalOverworld = 30000;
+        config.antiAfk.timing.playerMonitorInterval = 5000;
+        config.antiAfk.timing.locationTimeout = 45000;
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -2353,7 +2353,7 @@ public class PokeAlertCommand {
     private static int setPlayerListMonitoring(CommandContext<FabricClientCommandSource> context, boolean enabled) {
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        config.enablePlayerListMonitoring = enabled;
+        config.antiAfk.playerSafety.enablePlayerListMonitoring = enabled;
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -2371,7 +2371,7 @@ public class PokeAlertCommand {
     private static int setNearbyPlayerDetection(CommandContext<FabricClientCommandSource> context, boolean enabled) {
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        config.enableNearbyPlayerDetection = enabled;
+        config.antiAfk.playerSafety.enableNearbyPlayerDetection = enabled;
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -2390,7 +2390,7 @@ public class PokeAlertCommand {
         double blocks = DoubleArgumentType.getDouble(context, "blocks");
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        config.nearbyPlayerDetectionRadius = blocks;
+        config.antiAfk.playerSafety.nearbyPlayerDetectionRadius = blocks;
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -2408,14 +2408,14 @@ public class PokeAlertCommand {
         String player = StringArgumentType.getString(context, "player");
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        List<String> playersToAvoid = new ArrayList<>(Arrays.asList(config.playersToAvoid));
+        List<String> playersToAvoid = new ArrayList<>(Arrays.asList(config.antiAfk.playerSafety.playersToAvoid));
         if (playersToAvoid.contains(player)) {
             context.getSource().sendError(Text.literal(player + " is already in the avoid list"));
             return 0;
         }
         
         playersToAvoid.add(player);
-        config.playersToAvoid = playersToAvoid.toArray(new String[0]);
+        config.antiAfk.playerSafety.playersToAvoid = playersToAvoid.toArray(new String[0]);
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -2434,9 +2434,9 @@ public class PokeAlertCommand {
         String player = StringArgumentType.getString(context, "player");
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        List<String> playersToAvoid = new ArrayList<>(Arrays.asList(config.playersToAvoid));
+        List<String> playersToAvoid = new ArrayList<>(Arrays.asList(config.antiAfk.playerSafety.playersToAvoid));
         if (playersToAvoid.remove(player)) {
-            config.playersToAvoid = playersToAvoid.toArray(new String[0]);
+            config.antiAfk.playerSafety.playersToAvoid = playersToAvoid.toArray(new String[0]);
             ConfigManager.updateConfig(config);
             PokeAlertClient.getInstance().reloadConfig();
             
@@ -2462,13 +2462,13 @@ public class PokeAlertCommand {
             Text.literal("[").formatted(Formatting.GRAY)
                 .append(Text.literal("PokéAlert").formatted(Formatting.RED))
                 .append(Text.literal("] Players to Avoid ").formatted(Formatting.GRAY))
-                .append(Text.literal("(" + config.playersToAvoid.length + ")").formatted(Formatting.WHITE))
+                .append(Text.literal("(" + config.antiAfk.playerSafety.playersToAvoid.length + ")").formatted(Formatting.WHITE))
         );
         
-        if (config.playersToAvoid.length == 0) {
+        if (config.antiAfk.playerSafety.playersToAvoid.length == 0) {
             source.sendFeedback(Text.literal("  No players in avoid list").formatted(Formatting.GRAY));
         } else {
-            for (String player : config.playersToAvoid) {
+            for (String player : config.antiAfk.playerSafety.playersToAvoid) {
                 source.sendFeedback(Text.literal("  • ").formatted(Formatting.GRAY)
                     .append(Text.literal(player).formatted(Formatting.WHITE)));
             }
@@ -2481,7 +2481,7 @@ public class PokeAlertCommand {
         int size = IntegerArgumentType.getInteger(context, "size");
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        config.initialQueueSize = size;
+        config.antiAfk.queue.initialSize = size;
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -2499,7 +2499,7 @@ public class PokeAlertCommand {
         int count = IntegerArgumentType.getInteger(context, "count");
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        config.replenishCount = count;
+        config.antiAfk.queue.replenishCount = count;
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -2517,7 +2517,7 @@ public class PokeAlertCommand {
         int count = IntegerArgumentType.getInteger(context, "count");
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        config.locationsForStep5 = count;
+        config.antiAfk.queue.locationsForCompletion = count;
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -2535,7 +2535,7 @@ public class PokeAlertCommand {
         int max = IntegerArgumentType.getInteger(context, "max");
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        config.maxConsecutiveTimeouts = max;
+        config.antiAfk.queue.maxConsecutiveTimeouts = max;
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -2554,7 +2554,7 @@ public class PokeAlertCommand {
     private static int setHumanLikeBehavior(CommandContext<FabricClientCommandSource> context, boolean enabled) {
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        config.enableHumanLikeBehavior = enabled;
+        config.antiAfk.humanBehavior.enabled = enabled;
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -2579,27 +2579,27 @@ public class PokeAlertCommand {
                 .append(Text.literal("] Human-like Behavior Settings").formatted(Formatting.WHITE))
         );
         
-        source.sendFeedback(formatCategoryStatus("Enabled", config.enableHumanLikeBehavior));
+        source.sendFeedback(formatCategoryStatus("Enabled", config.antiAfk.humanBehavior.enabled));
         source.sendFeedback(Text.literal("  Long Pause: ").formatted(Formatting.GRAY)
-            .append(Text.literal(config.minLongPauseMs + "-" + config.maxLongPauseMs + "ms").formatted(Formatting.WHITE))
+            .append(Text.literal(config.antiAfk.humanBehavior.minLongPauseMs + "-" + config.antiAfk.humanBehavior.maxLongPauseMs + "ms").formatted(Formatting.WHITE))
             .append(Text.literal(" (").formatted(Formatting.GRAY))
-            .append(Text.literal(String.format("%.1f%%", config.longPauseChance * 100)).formatted(Formatting.WHITE))
+            .append(Text.literal(String.format("%.1f%%", config.antiAfk.humanBehavior.longPauseChance * 100)).formatted(Formatting.WHITE))
             .append(Text.literal(")").formatted(Formatting.GRAY)));
         source.sendFeedback(Text.literal("  Break Pause: ").formatted(Formatting.GRAY)
-            .append(Text.literal(config.minBreakPauseMs + "-" + config.maxBreakPauseMs + "ms").formatted(Formatting.WHITE))
+            .append(Text.literal(config.antiAfk.humanBehavior.minBreakPauseMs + "-" + config.antiAfk.humanBehavior.maxBreakPauseMs + "ms").formatted(Formatting.WHITE))
             .append(Text.literal(" (").formatted(Formatting.GRAY))
-            .append(Text.literal(String.format("%.1f%%", config.breakPauseChance * 100)).formatted(Formatting.WHITE))
+            .append(Text.literal(String.format("%.1f%%", config.antiAfk.humanBehavior.breakPauseChance * 100)).formatted(Formatting.WHITE))
             .append(Text.literal(")").formatted(Formatting.GRAY)));
         source.sendFeedback(Text.literal("  Backtrack: ").formatted(Formatting.GRAY)
-            .append(Text.literal(String.format("%.1f%%", config.backtrackChance * 100)).formatted(Formatting.WHITE)));
+            .append(Text.literal(String.format("%.1f%%", config.antiAfk.humanBehavior.backtrackChance * 100)).formatted(Formatting.WHITE)));
         source.sendFeedback(Text.literal("  Walk: ").formatted(Formatting.GRAY)
-            .append(Text.literal(String.format("%.1f%%", config.walkChance * 100)).formatted(Formatting.WHITE)));
+            .append(Text.literal(String.format("%.1f%%", config.antiAfk.humanBehavior.walkChance * 100)).formatted(Formatting.WHITE)));
         source.sendFeedback(Text.literal("  Hotbar Switch: ").formatted(Formatting.GRAY)
-            .append(Text.literal(String.format("%.1f%%", config.hotbarSwitchChance * 100)).formatted(Formatting.WHITE)));
+            .append(Text.literal(String.format("%.1f%%", config.antiAfk.humanBehavior.hotbarSwitchChance * 100)).formatted(Formatting.WHITE)));
         source.sendFeedback(Text.literal("  Jump While Moving: ").formatted(Formatting.GRAY)
-            .append(Text.literal(String.format("%.2f%%", config.jumpWhileMovingChance * 100)).formatted(Formatting.WHITE)));
+            .append(Text.literal(String.format("%.2f%%", config.antiAfk.humanBehavior.jumpWhileMovingChance * 100)).formatted(Formatting.WHITE)));
         source.sendFeedback(Text.literal("  Look Around: ").formatted(Formatting.GRAY)
-            .append(Text.literal(String.format("%.1f%%", config.lookAroundChance * 100)).formatted(Formatting.WHITE)));
+            .append(Text.literal(String.format("%.1f%%", config.antiAfk.humanBehavior.lookAroundChance * 100)).formatted(Formatting.WHITE)));
         
         return 1;
     }
@@ -2607,18 +2607,18 @@ public class PokeAlertCommand {
     private static int resetBehaviorSettings(CommandContext<FabricClientCommandSource> context) {
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        config.enableHumanLikeBehavior = true;
-        config.minLongPauseMs = 5000;
-        config.maxLongPauseMs = 15000;
-        config.minBreakPauseMs = 30000;
-        config.maxBreakPauseMs = 60000;
-        config.longPauseChance = 0.05;
-        config.breakPauseChance = 0.01;
-        config.backtrackChance = 0.04;
-        config.walkChance = 0.15;
-        config.hotbarSwitchChance = 0.05;
-        config.jumpWhileMovingChance = 0.0005;
-        config.lookAroundChance = 0.03;
+        config.antiAfk.humanBehavior.enabled = true;
+        config.antiAfk.humanBehavior.minLongPauseMs = 5000;
+        config.antiAfk.humanBehavior.maxLongPauseMs = 15000;
+        config.antiAfk.humanBehavior.minBreakPauseMs = 30000;
+        config.antiAfk.humanBehavior.maxBreakPauseMs = 60000;
+        config.antiAfk.humanBehavior.longPauseChance = 0.05;
+        config.antiAfk.humanBehavior.breakPauseChance = 0.01;
+        config.antiAfk.humanBehavior.backtrackChance = 0.04;
+        config.antiAfk.humanBehavior.walkChance = 0.15;
+        config.antiAfk.humanBehavior.hotbarSwitchChance = 0.05;
+        config.antiAfk.humanBehavior.jumpWhileMovingChance = 0.0005;
+        config.antiAfk.humanBehavior.lookAroundChance = 0.03;
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -2641,8 +2641,8 @@ public class PokeAlertCommand {
             return 0;
         }
         
-        config.minLongPauseMs = minMs;
-        config.maxLongPauseMs = maxMs;
+        config.antiAfk.humanBehavior.minLongPauseMs = minMs;
+        config.antiAfk.humanBehavior.maxLongPauseMs = maxMs;
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -2666,8 +2666,8 @@ public class PokeAlertCommand {
             return 0;
         }
         
-        config.minBreakPauseMs = minMs;
-        config.maxBreakPauseMs = maxMs;
+        config.antiAfk.humanBehavior.minBreakPauseMs = minMs;
+        config.antiAfk.humanBehavior.maxBreakPauseMs = maxMs;
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -2685,7 +2685,7 @@ public class PokeAlertCommand {
         double percent = DoubleArgumentType.getDouble(context, "percent");
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        config.longPauseChance = percent / 100.0;
+        config.antiAfk.humanBehavior.longPauseChance = percent / 100.0;
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -2703,7 +2703,7 @@ public class PokeAlertCommand {
         double percent = DoubleArgumentType.getDouble(context, "percent");
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        config.breakPauseChance = percent / 100.0;
+        config.antiAfk.humanBehavior.breakPauseChance = percent / 100.0;
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -2721,7 +2721,7 @@ public class PokeAlertCommand {
         double percent = DoubleArgumentType.getDouble(context, "percent");
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        config.backtrackChance = percent / 100.0;
+        config.antiAfk.humanBehavior.backtrackChance = percent / 100.0;
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -2739,7 +2739,7 @@ public class PokeAlertCommand {
         double percent = DoubleArgumentType.getDouble(context, "percent");
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        config.walkChance = percent / 100.0;
+        config.antiAfk.humanBehavior.walkChance = percent / 100.0;
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -2757,7 +2757,7 @@ public class PokeAlertCommand {
         double percent = DoubleArgumentType.getDouble(context, "percent");
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        config.hotbarSwitchChance = percent / 100.0;
+        config.antiAfk.humanBehavior.hotbarSwitchChance = percent / 100.0;
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -2775,7 +2775,7 @@ public class PokeAlertCommand {
         double percent = DoubleArgumentType.getDouble(context, "percent");
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        config.jumpWhileMovingChance = percent / 100.0;
+        config.antiAfk.humanBehavior.jumpWhileMovingChance = percent / 100.0;
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -2793,7 +2793,7 @@ public class PokeAlertCommand {
         double percent = DoubleArgumentType.getDouble(context, "percent");
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        config.lookAroundChance = percent / 100.0;
+        config.antiAfk.humanBehavior.lookAroundChance = percent / 100.0;
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -2813,7 +2813,7 @@ public class PokeAlertCommand {
         FabricClientCommandSource source = context.getSource();
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        config.slotMapping.visualIndicatorsEnabled = !config.slotMapping.visualIndicatorsEnabled;
+        config.mappingLines.slotMapping.visualIndicatorsEnabled = !config.mappingLines.slotMapping.visualIndicatorsEnabled;
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -2821,8 +2821,8 @@ public class PokeAlertCommand {
             Text.literal("[").formatted(Formatting.GRAY)
                 .append(Text.literal("PokéAlert").formatted(Formatting.RED))
                 .append(Text.literal("] Visual debug indicators: ").formatted(Formatting.GRAY))
-                .append(Text.literal(config.slotMapping.visualIndicatorsEnabled ? "ENABLED" : "DISABLED").formatted(
-                    config.slotMapping.visualIndicatorsEnabled ? Formatting.GREEN : Formatting.RED
+                .append(Text.literal(config.mappingLines.slotMapping.visualIndicatorsEnabled ? "ENABLED" : "DISABLED").formatted(
+                    config.mappingLines.slotMapping.visualIndicatorsEnabled ? Formatting.GREEN : Formatting.RED
                 ))
         );
         
@@ -2849,7 +2849,7 @@ public class PokeAlertCommand {
             return 0;
         }
         
-        config.slotMapping.setBoxSlot(slotIndex, x, y);
+        config.mappingLines.slotMapping.setBoxSlot(slotIndex, x, y);
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -2888,7 +2888,7 @@ public class PokeAlertCommand {
             return 0;
         }
         
-        config.slotMapping.setPartySlot(slotIndex, x, y);
+        config.mappingLines.slotMapping.setPartySlot(slotIndex, x, y);
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -2914,9 +2914,9 @@ public class PokeAlertCommand {
         int y = IntegerArgumentType.getInteger(context, "y");
         
         if (isLeft) {
-            config.slotMapping.boxArrowLeft = new SlotCoordinateMapping.SlotCoordinate(x, y);
+            config.mappingLines.slotMapping.boxArrowLeft = new SlotCoordinateMapping.SlotCoordinate(x, y);
         } else {
-            config.slotMapping.boxArrowRight = new SlotCoordinateMapping.SlotCoordinate(x, y);
+            config.mappingLines.slotMapping.boxArrowRight = new SlotCoordinateMapping.SlotCoordinate(x, y);
         }
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
@@ -2953,7 +2953,7 @@ public class PokeAlertCommand {
             return 0;
         }
         
-        SlotCoordinateMapping.SlotCoordinate coord = config.slotMapping.getBoxSlot(slotIndex);
+        SlotCoordinateMapping.SlotCoordinate coord = config.mappingLines.slotMapping.getBoxSlot(slotIndex);
         Formatting color = coord.isMapped() ? Formatting.GREEN : Formatting.RED;
         String status = coord.isMapped() ? "mapped" : "unmapped";
         
@@ -2991,7 +2991,7 @@ public class PokeAlertCommand {
             return 0;
         }
         
-        SlotCoordinateMapping.SlotCoordinate coord = config.slotMapping.getPartySlot(slotIndex);
+        SlotCoordinateMapping.SlotCoordinate coord = config.mappingLines.slotMapping.getPartySlot(slotIndex);
         Formatting color = coord.isMapped() ? Formatting.GREEN : Formatting.RED;
         String status = coord.isMapped() ? "mapped" : "unmapped";
         

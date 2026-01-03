@@ -96,12 +96,12 @@ public class DmDetector {
         }
         
         // Check if Egg Hatcher is enabled (required for DM detection)
-        if (!config.eggHatcherEnabled) {
+        if (!config.eggHatcher.enabled) {
             return;
         }
         
         // Check if DM detection is enabled
-        if (!config.dmDetectionEnabled) {
+        if (!config.eggHatcher.dmDetection.enabled) {
             return;
         }
         
@@ -164,12 +164,12 @@ public class DmDetector {
      * Check if sender is in avoided players list
      */
     private static boolean isPlayerAvoided(String sender, PokeAlertConfig config) {
-        if (config.playersToAvoid == null || config.playersToAvoid.length == 0) {
+        if (config.antiAfk.playerSafety.playersToAvoid == null || config.antiAfk.playerSafety.playersToAvoid.length == 0) {
             return false;
         }
         
         String senderLower = sender.toLowerCase();
-        return Arrays.stream(config.playersToAvoid)
+        return Arrays.stream(config.antiAfk.playerSafety.playersToAvoid)
             .anyMatch(avoided -> avoided != null && avoided.toLowerCase().equals(senderLower));
     }
     
@@ -178,12 +178,12 @@ public class DmDetector {
      */
     private static void sendNotifications(String sender, String message, boolean isAvoided, PokeAlertConfig config) {
         // In-game notification (optional)
-        if (config.dmInGameNotification && config.inGameTextEnabled) {
+        if (config.eggHatcher.dmDetection.inGameNotification && config.notifications.textEnabled) {
             sendInGameNotification(sender, message, isAvoided);
         }
         
         // Telegram notification
-        if (config.dmTelegramNotification && config.telegramEnabled) {
+        if (config.eggHatcher.dmDetection.telegramNotification && config.telegram.enabled) {
             TelegramNotification telegram = new TelegramNotification();
             telegram.initialize(); // Initialize httpClient before use
             telegram.sendDmNotification(sender, message, isAvoided);

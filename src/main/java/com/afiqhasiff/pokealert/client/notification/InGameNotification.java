@@ -26,13 +26,13 @@ public class InGameNotification extends NotificationService {
         }
         
         // Check if ANY in-game notification is enabled (text OR sound)
-        if (!PokeAlertClient.getInstance().config.inGameTextEnabled && 
-            !PokeAlertClient.getInstance().config.inGameSoundEnabled) {
+        if (!PokeAlertClient.getInstance().config.notifications.textEnabled && 
+            !PokeAlertClient.getInstance().config.notifications.soundEnabled) {
             return;
         }
 
         // Send text notification if enabled
-        if (PokeAlertClient.getInstance().config.inGameTextEnabled) {
+        if (PokeAlertClient.getInstance().config.notifications.textEnabled) {
             // Get rarity info from shared scraper (uses cached value from PokemonSpawnData)
             RarityScraper.RarityInfo rarity = data.getRarityInfo();
             
@@ -58,8 +58,8 @@ public class InGameNotification extends NotificationService {
         }
 
         // Play notification sound if enabled
-        if (PokeAlertClient.getInstance().config.inGameSoundEnabled) {
-            float volume = PokeAlertClient.getInstance().config.inGameSoundVolume;
+        if (PokeAlertClient.getInstance().config.notifications.soundEnabled) {
+            float volume = PokeAlertClient.getInstance().config.notifications.soundVolume;
             // Play sound at player's position with configured volume
             player.playSound(
                 PokeAlertClient.NOTIFICATION_SOUND_EVENT,

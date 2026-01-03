@@ -52,11 +52,11 @@ public class LocationQueue {
      */
     public void initialize(AntiAfkRegion region, PokeAlertConfig config) {
         this.region = region;
-        this.initialQueueSize = config.initialQueueSize;
-        this.replenishCount = config.replenishCount;
-        this.locationsForStep5 = config.locationsForStep5; // Config uses locationsForStep5 for v2 compat
-        this.maxConsecutiveTimeouts = config.maxConsecutiveTimeouts;
-        this.arrivalThreshold = config.arrivalThreshold;
+        this.initialQueueSize = config.antiAfk.queue.initialSize;
+        this.replenishCount = config.antiAfk.queue.replenishCount;
+        this.locationsForStep5 = config.antiAfk.queue.locationsForCompletion; // Config uses locationsForStep5 for v2 compat
+        this.maxConsecutiveTimeouts = config.antiAfk.queue.maxConsecutiveTimeouts;
+        this.arrivalThreshold = config.antiAfk.thresholds.arrivalThreshold;
         
         // Clear and repopulate
         locations.clear();
@@ -214,11 +214,11 @@ public class LocationQueue {
     public void reset() {
         if (region != null) {
             PokeAlertConfig config = new PokeAlertConfig();
-            config.initialQueueSize = this.initialQueueSize;
-            config.replenishCount = this.replenishCount;
-            config.locationsForStep5 = this.locationsForStep5;
-            config.maxConsecutiveTimeouts = this.maxConsecutiveTimeouts;
-            config.arrivalThreshold = this.arrivalThreshold; // Preserve arrival threshold
+            config.antiAfk.queue.initialSize = this.initialQueueSize;
+            config.antiAfk.queue.replenishCount = this.replenishCount;
+            config.antiAfk.queue.locationsForCompletion = this.locationsForStep5;
+            config.antiAfk.queue.maxConsecutiveTimeouts = this.maxConsecutiveTimeouts;
+            config.antiAfk.thresholds.arrivalThreshold = this.arrivalThreshold; // Preserve arrival threshold
             initialize(region, config);
         }
     }

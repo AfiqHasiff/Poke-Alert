@@ -326,7 +326,7 @@ public class EggHatcher {
         if (mode == AutomationMode.DISABLED) {
             // Cycle to AUTO mode
             mode = AutomationMode.AUTO;
-            config.eggHatcherEnabled = true;
+            config.eggHatcher.enabled = true;
             ConfigManager.saveSettings(config);
             
             // Reset ALL session flags for fresh start
@@ -404,7 +404,7 @@ public class EggHatcher {
             // wasRunning already checked at the start of the method
             
             mode = AutomationMode.DISABLED;
-            config.eggHatcherEnabled = false;
+            config.eggHatcher.enabled = false;
             ConfigManager.saveSettings(config);
 
             antiAfkDisabledOnReconnect = false;
@@ -451,7 +451,7 @@ public class EggHatcher {
         stopPlayerSuspicionMonitor();
         
         // Save config
-        config.eggHatcherEnabled = false;
+        config.eggHatcher.enabled = false;
         ConfigManager.saveSettings(config);
         
         // Send single notification based on whether it was running
@@ -687,7 +687,7 @@ public class EggHatcher {
             PokeAlertClient.LOGGER.info("🎯 Step 3/5: Realm Change - Sending teleport command at " + location);
             
             PokeAlertConfig config = PokeAlertClient.getInstance().config;
-            String returnCmd = config.realmReturnCommand;
+            String returnCmd = config.eggHatcher.realmReturnCommand;
             sendChatCommand(returnCmd);
             
             // Update last teleport time
@@ -761,8 +761,8 @@ public class EggHatcher {
         
         // Initialize region
         antiAfkRegion = new AntiAfkRegion(
-            config.antiAfkRegionX1, config.antiAfkRegionZ1,
-            config.antiAfkRegionX2, config.antiAfkRegionZ2
+            config.antiAfk.regionX1, config.antiAfk.regionZ1,
+            config.antiAfk.regionX2, config.antiAfk.regionZ2
         );
         PokeAlertClient.LOGGER.info("📍 Anti-AFK Region: " + antiAfkRegion);
         
@@ -849,7 +849,7 @@ public class EggHatcher {
             // NOTE: This roll happens ONCE per #goto action (when arriving at a destination)
             // Each action has its own chance (0% = disabled), and if multiple actions land, the one with the lowest chance is selected
             PokeAlertConfig config = ConfigManager.getConfig();
-            if (config.enableHumanLikeBehavior) {
+            if (config.antiAfk.humanBehavior.enabled) {
                 // Roll separate random value for each action
                 double backtrackRandom = behaviorRandom.nextDouble();
                 double walkRandom = behaviorRandom.nextDouble();
@@ -867,52 +867,52 @@ public class EggHatcher {
                 
                 // Collect all successful actions with their chance values
                 // Navigation actions
-                if (config.backtrackChance > 0 && backtrackRandom < config.backtrackChance) {
-                    if (config.backtrackChance < lowestChance) {
-                        lowestChance = config.backtrackChance;
+                if (config.antiAfk.humanBehavior.backtrackChance > 0 && backtrackRandom < config.antiAfk.humanBehavior.backtrackChance) {
+                    if (config.antiAfk.humanBehavior.backtrackChance < lowestChance) {
+                        lowestChance = config.antiAfk.humanBehavior.backtrackChance;
                         selectedAction = "backtrack";
                     }
                 }
 
-                if (config.walkChance > 0 && walkRandom < config.walkChance) {
-                    if (config.walkChance < lowestChance) {
-                        lowestChance = config.walkChance;
+                if (config.antiAfk.humanBehavior.walkChance > 0 && walkRandom < config.antiAfk.humanBehavior.walkChance) {
+                    if (config.antiAfk.humanBehavior.walkChance < lowestChance) {
+                        lowestChance = config.antiAfk.humanBehavior.walkChance;
                         selectedAction = "walk";
                     }
                 }
 
-                if (config.hotbarSwitchChance > 0 && hotbarRandom < config.hotbarSwitchChance) {
-                    if (config.hotbarSwitchChance < lowestChance) {
-                        lowestChance = config.hotbarSwitchChance;
+                if (config.antiAfk.humanBehavior.hotbarSwitchChance > 0 && hotbarRandom < config.antiAfk.humanBehavior.hotbarSwitchChance) {
+                    if (config.antiAfk.humanBehavior.hotbarSwitchChance < lowestChance) {
+                        lowestChance = config.antiAfk.humanBehavior.hotbarSwitchChance;
                         selectedAction = "hotbar";
                     }
                 }
 
-                if (config.jumpWhileMovingChance > 0 && jumpRandom < config.jumpWhileMovingChance) {
-                    if (config.jumpWhileMovingChance < lowestChance) {
-                        lowestChance = config.jumpWhileMovingChance;
+                if (config.antiAfk.humanBehavior.jumpWhileMovingChance > 0 && jumpRandom < config.antiAfk.humanBehavior.jumpWhileMovingChance) {
+                    if (config.antiAfk.humanBehavior.jumpWhileMovingChance < lowestChance) {
+                        lowestChance = config.antiAfk.humanBehavior.jumpWhileMovingChance;
                         selectedAction = "jump";
                     }
                 }
 
                 // Pause/look around actions
-                if (config.longPauseChance > 0 && longPauseRandom < config.longPauseChance) {
-                    if (config.longPauseChance < lowestChance) {
-                        lowestChance = config.longPauseChance;
+                if (config.antiAfk.humanBehavior.longPauseChance > 0 && longPauseRandom < config.antiAfk.humanBehavior.longPauseChance) {
+                    if (config.antiAfk.humanBehavior.longPauseChance < lowestChance) {
+                        lowestChance = config.antiAfk.humanBehavior.longPauseChance;
                         selectedAction = "longPause";
                     }
                 }
 
-                if (config.breakPauseChance > 0 && breakPauseRandom < config.breakPauseChance) {
-                    if (config.breakPauseChance < lowestChance) {
-                        lowestChance = config.breakPauseChance;
+                if (config.antiAfk.humanBehavior.breakPauseChance > 0 && breakPauseRandom < config.antiAfk.humanBehavior.breakPauseChance) {
+                    if (config.antiAfk.humanBehavior.breakPauseChance < lowestChance) {
+                        lowestChance = config.antiAfk.humanBehavior.breakPauseChance;
                         selectedAction = "breakPause";
                     }
                 }
 
-                if (config.lookAroundChance > 0 && lookAroundRandom < config.lookAroundChance) {
-                    if (config.lookAroundChance < lowestChance) {
-                        lowestChance = config.lookAroundChance;
+                if (config.antiAfk.humanBehavior.lookAroundChance > 0 && lookAroundRandom < config.antiAfk.humanBehavior.lookAroundChance) {
+                    if (config.antiAfk.humanBehavior.lookAroundChance < lowestChance) {
+                        lowestChance = config.antiAfk.humanBehavior.lookAroundChance;
                         selectedAction = "lookAround";
                     }
                 }
@@ -923,9 +923,9 @@ public class EggHatcher {
                         selectedAction, lowestChance);
                 } else {
                     // Log default behavior selection
-                    double totalChance = config.backtrackChance + config.walkChance + config.hotbarSwitchChance + 
-                                        config.jumpWhileMovingChance + config.longPauseChance + 
-                                        config.breakPauseChance + config.lookAroundChance;
+                    double totalChance = config.antiAfk.humanBehavior.backtrackChance + config.antiAfk.humanBehavior.walkChance + config.antiAfk.humanBehavior.hotbarSwitchChance + 
+                                        config.antiAfk.humanBehavior.jumpWhileMovingChance + config.antiAfk.humanBehavior.longPauseChance + 
+                                        config.antiAfk.humanBehavior.breakPauseChance + config.antiAfk.humanBehavior.lookAroundChance;
                     PokeAlertClient.LOGGER.info("Human behavior: No action selected (default behavior) - Total action chance: {:.2f}%, Default chance: {:.2f}%", 
                         String.format("%.2f", totalChance * 100.0), String.format("%.2f", (1.0 - totalChance) * 100.0));
                 }
@@ -939,12 +939,12 @@ public class EggHatcher {
                         
                         switch (selectedAction) {
                             case "longPause":
-                                pauseMs = config.minLongPauseMs + behaviorRandom.nextInt(config.maxLongPauseMs - config.minLongPauseMs);
+                                pauseMs = config.antiAfk.humanBehavior.minLongPauseMs + behaviorRandom.nextInt(config.antiAfk.humanBehavior.maxLongPauseMs - config.antiAfk.humanBehavior.minLongPauseMs);
                                 notificationMessage = "Taking a short break - Looking around";
                                 PokeAlertClient.LOGGER.info("Human behavior: Taking {}ms pause", pauseMs);
                                 break;
                             case "breakPause":
-                                pauseMs = config.minBreakPauseMs + behaviorRandom.nextInt(config.maxBreakPauseMs - config.minBreakPauseMs);
+                                pauseMs = config.antiAfk.humanBehavior.minBreakPauseMs + behaviorRandom.nextInt(config.antiAfk.humanBehavior.maxBreakPauseMs - config.antiAfk.humanBehavior.minBreakPauseMs);
                                 notificationMessage = "Taking a longer break - Looking around";
                                 PokeAlertClient.LOGGER.info("Human behavior: Taking {}ms break", pauseMs);
                                 break;
@@ -1070,7 +1070,7 @@ public class EggHatcher {
                 
                 // Send separate "Avoided Players Warning" Telegram notification
                 PokeAlertConfig config = ConfigManager.getConfig();
-                if (config.telegramEnabled && config.isTelegramValid()) {
+                if (config.telegram.enabled && config.isTelegramValid()) {
                     CompletableFuture.runAsync(() -> {
                         try {
                             TelegramNotification telegram = new TelegramNotification();
@@ -1215,7 +1215,7 @@ public class EggHatcher {
         // Clear stored action when starting new navigation (will be set if action is selected)
         currentNavigationAction = null;
         
-        if (config.enableHumanLikeBehavior && selectedAction == null) {
+        if (config.antiAfk.humanBehavior.enabled && selectedAction == null) {
             // No preselected action - roll for navigation actions only (pause actions handled in arrival callback)
             double backtrackRandom = behaviorRandom.nextDouble();
             double walkRandom = behaviorRandom.nextDouble();
@@ -1226,33 +1226,33 @@ public class EggHatcher {
             double lowestChance = Double.MAX_VALUE;
 
             // Check backtrack action (skip if chance is 0% - disabled)
-            if (config.backtrackChance > 0 && backtrackRandom < config.backtrackChance) {
-                if (config.backtrackChance < lowestChance) {
-                    lowestChance = config.backtrackChance;
+            if (config.antiAfk.humanBehavior.backtrackChance > 0 && backtrackRandom < config.antiAfk.humanBehavior.backtrackChance) {
+                if (config.antiAfk.humanBehavior.backtrackChance < lowestChance) {
+                    lowestChance = config.antiAfk.humanBehavior.backtrackChance;
                     selectedAction = "backtrack";
                 }
             }
 
             // Check walk action (skip if chance is 0% - disabled)
-            if (config.walkChance > 0 && walkRandom < config.walkChance) {
-                if (config.walkChance < lowestChance) {
-                    lowestChance = config.walkChance;
+            if (config.antiAfk.humanBehavior.walkChance > 0 && walkRandom < config.antiAfk.humanBehavior.walkChance) {
+                if (config.antiAfk.humanBehavior.walkChance < lowestChance) {
+                    lowestChance = config.antiAfk.humanBehavior.walkChance;
                     selectedAction = "walk";
                 }
             }
 
             // Check hotbar switch action (skip if chance is 0% - disabled)
-            if (config.hotbarSwitchChance > 0 && hotbarRandom < config.hotbarSwitchChance) {
-                if (config.hotbarSwitchChance < lowestChance) {
-                    lowestChance = config.hotbarSwitchChance;
+            if (config.antiAfk.humanBehavior.hotbarSwitchChance > 0 && hotbarRandom < config.antiAfk.humanBehavior.hotbarSwitchChance) {
+                if (config.antiAfk.humanBehavior.hotbarSwitchChance < lowestChance) {
+                    lowestChance = config.antiAfk.humanBehavior.hotbarSwitchChance;
                     selectedAction = "hotbar";
                 }
             }
 
             // Check jump while moving action (skip if chance is 0% - disabled)
-            if (config.jumpWhileMovingChance > 0 && jumpRandom < config.jumpWhileMovingChance) {
-                if (config.jumpWhileMovingChance < lowestChance) {
-                    lowestChance = config.jumpWhileMovingChance;
+            if (config.antiAfk.humanBehavior.jumpWhileMovingChance > 0 && jumpRandom < config.antiAfk.humanBehavior.jumpWhileMovingChance) {
+                if (config.antiAfk.humanBehavior.jumpWhileMovingChance < lowestChance) {
+                    lowestChance = config.antiAfk.humanBehavior.jumpWhileMovingChance;
                     selectedAction = "jump";
                 }
             }
@@ -1264,7 +1264,7 @@ public class EggHatcher {
         }
         
         // Execute the selected navigation action
-        if (selectedAction != null && config.enableHumanLikeBehavior) {
+        if (selectedAction != null && config.antiAfk.humanBehavior.enabled) {
             switch (selectedAction) {
                 case "backtrack":
                     if (locationQueue.hasPrevious()) {
@@ -1357,7 +1357,7 @@ public class EggHatcher {
         // Human-like behavior: Jumping while moving - ONLY when sprinting, not walking
         // IMPORTANT: Only execute jump if it was explicitly selected as the action
         // This ensures only ONE action executes per navigation (backtrack OR walk OR hotbar OR jump, not multiple)
-        if (config.enableHumanLikeBehavior && "jump".equals(selectedAction) && !shouldWalk) {
+        if (config.antiAfk.humanBehavior.enabled && "jump".equals(selectedAction) && !shouldWalk) {
             PokeAlertClient.LOGGER.debug("Human behavior: Jumping while moving");
             sendNotification("Egg Hatcher", "Jumping while moving", Formatting.GRAY);
             // Start periodic jump execution (every 100ms) for natural sprint+jump behavior
@@ -1370,7 +1370,7 @@ public class EggHatcher {
         // Start timeout timer
         locationTimeoutTask = scheduler.schedule(() -> {
             handleLocationTimeout();
-        }, config.locationTimeout, TimeUnit.MILLISECONDS);
+        }, config.antiAfk.timing.locationTimeout, TimeUnit.MILLISECONDS);
     }
     
     /**
@@ -1494,7 +1494,7 @@ public class EggHatcher {
             
             // Get arrival threshold from config
             PokeAlertConfig config = ConfigManager.getConfig();
-            if (distance <= config.arrivalThreshold) {
+            if (distance <= config.antiAfk.thresholds.arrivalThreshold) {
                 PokeAlertClient.LOGGER.warn("Location timeout: Actually at destination but arrival callback didn't fire - treating as arrival");
                 // Mark as arrived and continue to next location
                 BaritoneController.markPathComplete();
@@ -1949,7 +1949,7 @@ public class EggHatcher {
                 }
                 
                 // Check if player is in top N of tab list (admin suspicion detection)
-                int topNThreshold = config.playerSuspicionTopNThreshold;
+                int topNThreshold = config.antiAfk.playerSafety.suspicionTopNThreshold;
                 PokeAlertClient.LOGGER.info("[PlayerSuspicionMonitor] Running position check (threshold: top {}, mode: {})", 
                     topNThreshold, mode);
                 boolean inTopN = PlayerMonitor.isPlayerInTopN(topNThreshold);
@@ -2345,7 +2345,7 @@ public class EggHatcher {
     private void sendNotification(String title, String message, Formatting color) {
         if (client.player != null) {
             PokeAlertConfig config = PokeAlertClient.getInstance().config;
-            if (config.inGameTextEnabled) {
+            if (config.notifications.textEnabled) {
                 String formattedMessage = formatNotificationMessage(message);
                 Text notification = Text.literal("[").formatted(Formatting.GRAY)
                     .append(Text.literal("PokeAlert").formatted(Formatting.RED))
@@ -2370,7 +2370,7 @@ public class EggHatcher {
         PokeAlertConfig config = PokeAlertClient.getInstance().config;
         
         // Check both telegramEnabled and isTelegramValid
-        if (!config.telegramEnabled || !config.isTelegramValid()) {
+        if (!config.telegram.enabled || !config.isTelegramValid()) {
             PokeAlertClient.LOGGER.debug("Telegram notification skipped - not enabled or not configured");
             return;
         }

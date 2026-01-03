@@ -66,7 +66,7 @@ public class TelegramCommandReceiver {
         
         config = ConfigManager.getConfig();
         
-        if (!config.telegramCommandExecutionEnabled) {
+        if (!config.telegram.commands.enabled) {
             PokeAlertClient.LOGGER.info("TelegramCommandReceiver: Command execution disabled");
             return;
         }
@@ -99,7 +99,7 @@ public class TelegramCommandReceiver {
             }
         }, "TelegramCommandReceiver-Init").start();
         
-        PokeAlertClient.LOGGER.info("TelegramCommandReceiver: Started polling (interval: {}ms)", config.telegramPollingInterval);
+        PokeAlertClient.LOGGER.info("TelegramCommandReceiver: Started polling (interval: {}ms)", config.telegram.commands.pollingInterval);
     }
     
     /**
@@ -136,7 +136,7 @@ public class TelegramCommandReceiver {
                 config = ConfigManager.getConfig();
                 
                 // Check if still enabled
-                if (!config.telegramCommandExecutionEnabled || !config.isTelegramValid()) {
+                if (!config.telegram.commands.enabled || !config.isTelegramValid()) {
                     PokeAlertClient.LOGGER.info("TelegramCommandReceiver: Disabled or invalid config, stopping");
                     isPolling = false;
                     break;
@@ -146,7 +146,7 @@ public class TelegramCommandReceiver {
                 pollUpdates();
                 
                 // Wait before next poll
-                Thread.sleep(config.telegramPollingInterval);
+                Thread.sleep(config.telegram.commands.pollingInterval);
                 
             } catch (InterruptedException e) {
                 PokeAlertClient.LOGGER.info("TelegramCommandReceiver: Polling thread interrupted");
@@ -173,8 +173,8 @@ public class TelegramCommandReceiver {
             // Build URL with proper query parameters
             String url = String.format(
                 "%s/bot%s/getUpdates?offset=%d&timeout=30&allowed_updates=[\"message\"]",
-                config.telegramApiUrl,
-                config.telegramBotToken,
+                config.telegram.apiUrl,
+                config.telegram.botToken,
                 lastUpdateId + 1
             );
             
@@ -322,10 +322,10 @@ public class TelegramCommandReceiver {
      * Check if user is authorized
      */
     private boolean isAuthorizedUser(long userId) {
-        if (config.telegramAuthorizedUsers == null || config.telegramAuthorizedUsers.length == 0) {
+        if (config.telegram.commands.authorizedUsers == null || config.telegram.commands.authorizedUsers.length == 0) {
             return false; // No users authorized
         }
-        return Arrays.stream(config.telegramAuthorizedUsers)
+        return Arrays.stream(config.telegram.commands.authorizedUsers)
             .anyMatch(id -> id == userId);
     }
     
@@ -336,8 +336,8 @@ public class TelegramCommandReceiver {
         try {
             String url = String.format(
                 "%s/bot%s/getMe",
-                config.telegramApiUrl,
-                config.telegramBotToken
+                config.telegram.apiUrl,
+                config.telegram.botToken
             );
             
             Request request = new Request.Builder()
@@ -460,7 +460,7 @@ public class TelegramCommandReceiver {
         config = ConfigManager.getConfig();
         
         // Check if DM replies are enabled
-        if (!config.dmReplyEnabled) {
+        if (!config.eggHatcher.dmDetection.replyEnabled) {
             sendTelegramResponse(chatId, "❌ <b>DM Reply</b>\n• <b>Status:</b> <i>Error</i>\n• <b>Reason:</b> DM replies are disabled", messageId);
             return;
         }
@@ -555,12 +555,12 @@ public class TelegramCommandReceiver {
      * Check if player is in avoided list
      */
     private boolean isPlayerAvoided(String playerName, PokeAlertConfig config) {
-        if (config.playersToAvoid == null || config.playersToAvoid.length == 0) {
+        if (config.antiAfk.playerSafety.playersToAvoid == null || config.antiAfk.playerSafety.playersToAvoid.length == 0) {
             return false;
         }
         
         String playerLower = playerName.toLowerCase();
-        return Arrays.stream(config.playersToAvoid)
+        return Arrays.stream(config.antiAfk.playerSafety.playersToAvoid)
             .anyMatch(avoided -> avoided != null && avoided.toLowerCase().equals(playerLower));
     }
     
@@ -576,7 +576,7 @@ public class TelegramCommandReceiver {
         }
         
         // Get DM command format from config
-        String dmCommand = config.dmCommandFormat;
+        String dmCommand = config.eggHatcher.dmDetection.commandFormat;
         if (dmCommand == null || dmCommand.trim().isEmpty()) {
             dmCommand = "/dm"; // Fallback to default
         }
@@ -871,9 +871,9 @@ public class TelegramCommandReceiver {
         sb.append("<b>PokéAlert Mod</b>\n");
         sb.append("• <b>Status:</b> <i>").append(config.modEnabled ? "Enabled" : "Disabled").append("</i>\n");
         if (config.modEnabled) {
-            sb.append("• <b>Whitelist:</b> <code>").append(config.broadcastWhitelist.length).append("</code> entries\n");
-            sb.append("• <b>Blacklist:</b> <code>").append(config.broadcastBlacklist.length).append("</code> entries\n");
-            sb.append("• <b>Excluded Worlds:</b> <code>").append(config.excludedWorlds.length).append("</code> entries\n");
+            sb.append("• <b>Whitelist:</b> <code>").append(config.detection.whitelist.length).append("</code> entries\n");
+            sb.append("• <b>Blacklist:</b> <code>").append(config.detection.blacklist.length).append("</code> entries\n");
+            sb.append("• <b>Excluded Worlds:</b> <code>").append(config.detection.excludedWorlds.length).append("</code> entries\n");
         }
         sb.append("\n");
         
@@ -983,25 +983,25 @@ public class TelegramCommandReceiver {
         
         switch (catLower) {
             case "legendaries":
-                config.broadcastAllLegendaries = enable;
+                config.detection.legendaries = enable;
                 break;
             case "mythics":
-                config.broadcastAllMythics = enable;
+                config.detection.mythics = enable;
                 break;
             case "starters":
-                config.broadcastAllStarter = enable;
+                config.detection.starters = enable;
                 break;
             case "babies":
-                config.broadcastAllBabies = enable;
+                config.detection.babies = enable;
                 break;
             case "ultrabeasts":
-                config.broadcastAllUltraBeasts = enable;
+                config.detection.ultraBeasts = enable;
                 break;
             case "shinies":
-                config.broadcastAllShinies = enable;
+                config.detection.shinies = enable;
                 break;
             case "paradox":
-                config.broadcastAllParadox = enable;
+                config.detection.paradox = enable;
                 break;
             default:
                 return "❌ <b>Category</b>\n• <b>Status:</b> <i>Error</i>\n• <b>Reason:</b> Unknown category: <code>" + escapeHtml(category) + "</code>";
@@ -1020,13 +1020,13 @@ public class TelegramCommandReceiver {
         
         switch (typeLower) {
             case "text":
-                config.inGameTextEnabled = enable;
+                config.notifications.textEnabled = enable;
                 break;
             case "sound":
-                config.inGameSoundEnabled = enable;
+                config.notifications.soundEnabled = enable;
                 break;
             case "telegram":
-                config.telegramEnabled = enable;
+                config.telegram.enabled = enable;
                 break;
             default:
                 return "❌ <b>Notification</b>\n• <b>Status:</b> <i>Error</i>\n• <b>Reason:</b> Unknown notification type: <code>" + escapeHtml(type) + "</code>";
@@ -1091,11 +1091,11 @@ public class TelegramCommandReceiver {
                 listName = "Paradox";
                 break;
             case "whitelist":
-                pokemonList = config.broadcastWhitelist;
+                pokemonList = config.detection.whitelist;
                 listName = "Whitelist";
                 break;
             case "blacklist":
-                pokemonList = config.broadcastBlacklist;
+                pokemonList = config.detection.blacklist;
                 listName = "Blacklist";
                 break;
             default:
@@ -1211,11 +1211,11 @@ public class TelegramCommandReceiver {
                 listName = "Paradox";
                 break;
             case "whitelist":
-                pokemonList = config.broadcastWhitelist;
+                pokemonList = config.detection.whitelist;
                 listName = "Whitelist";
                 break;
             case "blacklist":
-                pokemonList = config.broadcastBlacklist;
+                pokemonList = config.detection.blacklist;
                 listName = "Blacklist";
                 break;
             default:
@@ -1260,7 +1260,7 @@ public class TelegramCommandReceiver {
     
     private String executeWhitelistAdd(String pokemon) {
         PokeAlertConfig config = ConfigManager.getConfig();
-        List<String> whitelist = new ArrayList<>(Arrays.asList(config.broadcastWhitelist));
+        List<String> whitelist = new ArrayList<>(Arrays.asList(config.detection.whitelist));
         String pokemonLower = pokemon.toLowerCase();
         
         // Check if already exists (case-insensitive)
@@ -1278,7 +1278,7 @@ public class TelegramCommandReceiver {
             // Update capitalization if different
             if (!whitelist.get(existingIndex).equals(pokemon)) {
                 whitelist.set(existingIndex, pokemon);
-                config.broadcastWhitelist = whitelist.toArray(new String[0]);
+                config.detection.whitelist = whitelist.toArray(new String[0]);
                 ConfigManager.updateConfig(config);
                 PokeAlertClient.getInstance().reloadConfig();
                 return "✅ <b>Whitelist</b>\n• <b>Status:</b> <i>Updated</i>\n• <b>Pokémon:</b> <code>" + escapeHtml(pokemon) + "</code>";
@@ -1288,7 +1288,7 @@ public class TelegramCommandReceiver {
         
         // Add with original capitalization
         whitelist.add(pokemon);
-        config.broadcastWhitelist = whitelist.toArray(new String[0]);
+        config.detection.whitelist = whitelist.toArray(new String[0]);
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -1297,7 +1297,7 @@ public class TelegramCommandReceiver {
     
     private String executeWhitelistRemove(String pokemon) {
         PokeAlertConfig config = ConfigManager.getConfig();
-        List<String> whitelist = new ArrayList<>(Arrays.asList(config.broadcastWhitelist));
+        List<String> whitelist = new ArrayList<>(Arrays.asList(config.detection.whitelist));
         String pokemonLower = pokemon.toLowerCase();
         
         // Find and remove (case-insensitive)
@@ -1315,7 +1315,7 @@ public class TelegramCommandReceiver {
             return "❌ <b>Whitelist</b>\n• <b>Status:</b> <i>Error</i>\n• <b>Reason:</b> Pokémon not found in list\n• <b>Pokémon:</b> <code>" + escapeHtml(pokemon) + "</code>";
         }
         
-        config.broadcastWhitelist = whitelist.toArray(new String[0]);
+        config.detection.whitelist = whitelist.toArray(new String[0]);
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -1328,7 +1328,7 @@ public class TelegramCommandReceiver {
     
     private String executeBlacklistAdd(String pokemon) {
         PokeAlertConfig config = ConfigManager.getConfig();
-        List<String> blacklist = new ArrayList<>(Arrays.asList(config.broadcastBlacklist));
+        List<String> blacklist = new ArrayList<>(Arrays.asList(config.detection.blacklist));
         String pokemonLower = pokemon.toLowerCase();
         
         // Check if already exists (case-insensitive)
@@ -1346,7 +1346,7 @@ public class TelegramCommandReceiver {
             // Update capitalization if different
             if (!blacklist.get(existingIndex).equals(pokemon)) {
                 blacklist.set(existingIndex, pokemon);
-                config.broadcastBlacklist = blacklist.toArray(new String[0]);
+                config.detection.blacklist = blacklist.toArray(new String[0]);
                 ConfigManager.updateConfig(config);
                 PokeAlertClient.getInstance().reloadConfig();
                 return "✅ <b>Blacklist</b>\n• <b>Status:</b> <i>Updated</i>\n• <b>Pokémon:</b> <code>" + escapeHtml(pokemon) + "</code>";
@@ -1356,7 +1356,7 @@ public class TelegramCommandReceiver {
         
         // Add with original capitalization
         blacklist.add(pokemon);
-        config.broadcastBlacklist = blacklist.toArray(new String[0]);
+        config.detection.blacklist = blacklist.toArray(new String[0]);
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -1365,7 +1365,7 @@ public class TelegramCommandReceiver {
     
     private String executeBlacklistRemove(String pokemon) {
         PokeAlertConfig config = ConfigManager.getConfig();
-        List<String> blacklist = new ArrayList<>(Arrays.asList(config.broadcastBlacklist));
+        List<String> blacklist = new ArrayList<>(Arrays.asList(config.detection.blacklist));
         String pokemonLower = pokemon.toLowerCase();
         
         // Find and remove (case-insensitive)
@@ -1383,7 +1383,7 @@ public class TelegramCommandReceiver {
             return "❌ <b>Blacklist</b>\n• <b>Status:</b> <i>Error</i>\n• <b>Reason:</b> Pokémon not found in list\n• <b>Pokémon:</b> <code>" + escapeHtml(pokemon) + "</code>";
         }
         
-        config.broadcastBlacklist = blacklist.toArray(new String[0]);
+        config.detection.blacklist = blacklist.toArray(new String[0]);
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -1510,7 +1510,7 @@ public class TelegramCommandReceiver {
     private String executeEggManagerEnable(boolean enabled) {
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        config.eggManagerEnabled = enabled;
+        config.eggManager.enabled = enabled;
         ConfigManager.updateConfig(config);
         PokeAlertClient.getInstance().reloadConfig();
         
@@ -1535,9 +1535,9 @@ public class TelegramCommandReceiver {
         
         StringBuilder sb = new StringBuilder();
         sb.append("ℹ️ <b>Egg Manager</b>\n");
-        sb.append("• <b>Status:</b> <i>").append(config.eggManagerEnabled ? "Enabled" : "Disabled").append("</i>\n");
+        sb.append("• <b>Status:</b> <i>").append(config.eggManager.enabled ? "Enabled" : "Disabled").append("</i>\n");
         
-        if (config.eggManagerEnabled) {
+        if (config.eggManager.enabled) {
             sb.append("• <b>Monitoring:</b> <i>").append(eggManager.isMonitoring() ? "Yes" : "No").append("</i>\n");
             if (eggManager.isMonitoring()) {
                 sb.append("• <b>State:</b> ").append(eggManager.getStatus()).append("\n");
@@ -1592,11 +1592,11 @@ public class TelegramCommandReceiver {
             
             String url = String.format(
                 "%s/bot%s/sendMessage",
-                config.telegramApiUrl,
-                config.telegramBotToken
+                config.telegram.apiUrl,
+                config.telegram.botToken
             );
             
-            PokeAlertClient.LOGGER.debug("TelegramCommandReceiver: Sending to URL: {}", url.replace(config.telegramBotToken, "***"));
+            PokeAlertClient.LOGGER.debug("TelegramCommandReceiver: Sending to URL: {}", url.replace(config.telegram.botToken, "***"));
             PokeAlertClient.LOGGER.debug("TelegramCommandReceiver: Payload: {}", jsonPayload.toString());
             
             RequestBody body = RequestBody.create(

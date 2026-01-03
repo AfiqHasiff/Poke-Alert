@@ -204,7 +204,7 @@ public class EggManager {
     public void startMonitoring() {
         PokeAlertConfig config = ConfigManager.getConfig();
         
-        if (!config.eggManagerEnabled) {
+        if (!config.eggManager.enabled) {
             PokeAlertClient.LOGGER.info("EggManager: Monitoring not started - Egg Manager is disabled in config");
             return;
         }
@@ -241,14 +241,14 @@ public class EggManager {
         initializeEggTracking();
         
         // Start PC discovery mode if enabled
-        if (config.eggManagerPCDiscoveryMode) {
+        if (config.eggManager.pcDiscoveryMode) {
             startPCDiscoveryMode();
         }
         
         isMonitoring = true;
         allEggsHatchedProcessed = false;
         
-        int checkInterval = Math.max(1000, Math.min(600000, config.eggManagerCheckInterval)); // Clamp 1s-10min
+        int checkInterval = Math.max(1000, Math.min(600000, config.eggManager.checkInterval)); // Clamp 1s-10min
         
         monitorTask = scheduler.scheduleAtFixedRate(
             this::checkPartySlots,
@@ -367,7 +367,7 @@ public class EggManager {
         }
         
         PokeAlertConfig config = ConfigManager.getConfig();
-        if (!config.eggManagerEnabled) {
+        if (!config.eggManager.enabled) {
             stopMonitoring();
             return;
         }
@@ -464,9 +464,9 @@ public class EggManager {
                 hatchConfirmationCount.put(slot, confirmCount);
                 
                 PokeAlertClient.LOGGER.debug("EggManager: Slot {} hatch confirmation count: {}/{}", 
-                    slot + 1, confirmCount, config.eggManagerConfirmationChecks);
+                    slot + 1, confirmCount, config.eggManager.confirmationChecks);
                 
-                if (confirmCount >= config.eggManagerConfirmationChecks) {
+                if (confirmCount >= config.eggManager.confirmationChecks) {
                     // Confirmed hatch
                     trackedEggSlots.remove(slot);
                     hatchedSlots.add(slot); // Track for notification
@@ -491,7 +491,7 @@ public class EggManager {
         
         // Phase 2: Periodically check for empty slots and fill with eggs from PC
         // CRITICAL: Only fill slots after Egg Hatcher completes Step 5 (Completion)
-        if (config.eggManagerAutoFillFromPC && !isFillingSlots) {
+        if (config.eggManager.phase2.autoFillFromPC && !isFillingSlots) {
             // Check if Egg Hatcher Step 5 is completed
             EggHatcher eggHatcher = EggHatcher.getInstance();
             boolean step5Completed = eggHatcher != null && eggHatcher.isStep5Completed();
@@ -553,7 +553,7 @@ public class EggManager {
         EggHatcher eggHatcher = EggHatcher.getInstance();
         
         // Stop automation if running and auto-stop is enabled
-        if (config.eggManagerAutoStopEggHatcher) {
+        if (config.eggManager.autoStopEggHatcher) {
             if (eggHatcher.isRunning() || eggHatcher.isAntiAfkActive()) {
                 PokeAlertClient.LOGGER.info("EggManager: Stopping Egg Hatcher automation");
                 eggHatcher.stopAutomation();
@@ -565,7 +565,7 @@ public class EggManager {
         }
         
         // Phase 2: Check PC for eggs if enabled
-        if (config.eggManagerCompletionCheckPC) {
+        if (config.eggManager.phase2.completionCheckPC) {
             if (!findAllEggsInPC().isEmpty()) {
                 PokeAlertClient.LOGGER.info("EggManager: Eggs still found in PC - not completing yet");
                 allEggsHatchedProcessed = false; // Reset flag to allow re-checking
@@ -632,7 +632,7 @@ public class EggManager {
                 
                 // Extract IVs if enabled (on main thread)
                 PokemonIVs ivs = null;
-                if (config.eggManagerIVTrackingEnabled) {
+                if (config.eggManager.phase2.ivTrackingEnabled) {
                     PokeAlertClient.LOGGER.info("EggManager: Attempting to extract IVs for {} (slot {})", pokemonName, finalSlot + 1);
                     ivs = extractIVs(pokemon);
                     if (ivs != null) {
@@ -664,9 +664,9 @@ public class EggManager {
                 
                 // Transfer to PC if enabled (on main thread)
                 Object targetBoxInfo = null;
-                if (config.eggManagerAutoTransferToPC) {
+                if (config.eggManager.phase2.autoTransferToPC) {
                     targetBoxInfo = transferHatchedPokemonToPC(finalSlot, ivs);
-                    if (targetBoxInfo != null && config.eggManagerAutoFillFromPC) {
+                    if (targetBoxInfo != null && config.eggManager.phase2.autoFillFromPC) {
                         // Fill empty party slots with eggs from PC (async to avoid blocking)
                         if (scheduler != null) {
                             scheduler.execute(() -> fillPartySlotsWithEggs());
@@ -675,7 +675,7 @@ public class EggManager {
                 }
                 
                 // Send Telegram notification with IV stats if enabled
-                if (config.eggManagerIVTrackingEnabled && config.telegramEnabled && config.isTelegramValid()) {
+                if (config.eggManager.phase2.ivTrackingEnabled && config.telegram.enabled && config.isTelegramValid()) {
                     sendHatchNotification(trackingInfo, targetBoxInfo);
                 }
                 
@@ -692,7 +692,7 @@ public class EggManager {
         PokeAlertConfig config = ConfigManager.getConfig();
         
         // In-game notification
-        if (client.player != null && config.inGameTextEnabled) {
+        if (client.player != null && config.notifications.textEnabled) {
             client.execute(() -> {
                 if (client.player != null) {
                     net.minecraft.text.MutableText notification = Text.literal("[")
@@ -701,7 +701,7 @@ public class EggManager {
                         .append(Text.literal("] ").formatted(Formatting.GRAY))
                         .append(Text.literal("✅ All eggs have hatched!").formatted(Formatting.GREEN));
                     
-                    if (config.eggManagerAutoStopEggHatcher) {
+                    if (config.eggManager.autoStopEggHatcher) {
                         notification.append(Text.literal("\nEgg Hatcher has been automatically disabled.").formatted(Formatting.YELLOW));
                     }
                     
@@ -711,7 +711,7 @@ public class EggManager {
         }
         
         // Telegram notification
-        if (config.telegramEnabled && config.isTelegramValid()) {
+        if (config.telegram.enabled && config.isTelegramValid()) {
             try {
                 com.afiqhasiff.pokealert.client.notification.TelegramNotification telegram = 
                     new com.afiqhasiff.pokealert.client.notification.TelegramNotification();
@@ -722,7 +722,7 @@ public class EggManager {
                 message.append("• <b>Status:</b> <i>Complete</i>\n");
                 
                 // Phase 2: Check PC for eggs if enabled
-                if (config.eggManagerCompletionCheckPC) {
+                if (config.eggManager.phase2.completionCheckPC) {
                     List<Object> pcEggs = findAllEggsInPC();
                     if (pcEggs.isEmpty()) {
                         message.append("• <b>PC Status:</b> No eggs remaining in PC\n");
@@ -737,7 +737,7 @@ public class EggManager {
                     message.append("• <b>Hatched Slots:</b> ").append(slotsText).append("\n");
                 }
                 
-                if (config.eggManagerAutoStopEggHatcher) {
+                if (config.eggManager.autoStopEggHatcher) {
                     message.append("• <b>Action:</b> Egg Hatcher has been automatically disabled");
                 }
                 
@@ -1041,7 +1041,19 @@ public class EggManager {
                     }
                     
                     if (!pcWasOpen) {
+                        // WARNING: Give player 10 seconds notice before opening PC
+                        sendPCWarningNotification(10, 1);
+                        PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: Sending 10 second warning before PC transfer");
+                        
+                        try {
+                            Thread.sleep(10000); // Wait 10 seconds
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            PokeAlertClient.LOGGER.warn("🔍 [TRANSFER] transferHatchedPokemonToPC: PC warning wait interrupted");
+                        }
+                        
                         PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: Opening PC GUI...");
+                        sendPCTransferNotification("Opening PC...");
                         if (client.player != null && client.player.networkHandler != null) {
                             String command = "pc";
                             client.player.networkHandler.sendChatCommand(command);
@@ -1274,7 +1286,7 @@ public class EggManager {
             }
             
             PokeAlertConfig config = ConfigManager.getConfig();
-            if (!config.eggManagerBoxOrganizationEnabled) {
+            if (!config.eggManager.phase2.boxOrganizationEnabled) {
                 // Just find any empty slot
                 return findEmptyPCSlot(pcStore);
             }
@@ -1457,7 +1469,7 @@ public class EggManager {
         isFillingSlots = true;
         try {
             PokeAlertConfig config = ConfigManager.getConfig();
-            if (!config.eggManagerAutoFillFromPC) {
+            if (!config.eggManager.phase2.autoFillFromPC) {
                 PokeAlertClient.LOGGER.debug("EggManager: Auto-fill from PC is disabled");
                 return;
             }
@@ -1509,9 +1521,22 @@ public class EggManager {
             PokeAlertClient.LOGGER.info("EggManager: Found {} eggs in PC (searched from box 1, stopped at breedject boxes), transferring to fill {} empty slots", 
                 eggPositions.size(), emptySlots.size());
             
+            // WARNING: Give player 10 seconds notice before opening PC
+            sendPCWarningNotification(10, eggPositions.size());
+            PokeAlertClient.LOGGER.info("EggManager: Sending 10 second warning before PC transfer");
+            
+            try {
+                Thread.sleep(10000); // Wait 10 seconds
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                PokeAlertClient.LOGGER.warn("EggManager: PC warning wait interrupted");
+                return;
+            }
+            
             // CRITICAL: Open PC interface ONCE before all transfers
             // This ensures all transfers happen while PC is open
             PokeAlertClient.LOGGER.info("EggManager: Opening PC interface for batch transfer");
+            sendPCTransferNotification("Opening PC...");
             client.execute(() -> {
                 if (client.player != null && client.player.networkHandler != null) {
                     String command = "pc";
@@ -1780,9 +1805,22 @@ public class EggManager {
             
             UUID playerUuid = client.player.getUuid();
             
+            // WARNING: Give player 10 seconds notice before opening PC
+            sendPCWarningNotification(10, 1);
+            PokeAlertClient.LOGGER.info("EggManager: Sending 10 second warning before PC transfer (egg from PC to party)");
+            
+            try {
+                Thread.sleep(10000); // Wait 10 seconds
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                PokeAlertClient.LOGGER.warn("EggManager: PC warning wait interrupted");
+                return false;
+            }
+            
             // CRITICAL: Open PC interface first to ensure PC is initialized on server
             // This ensures transfers persist properly
             PokeAlertClient.LOGGER.info("EggManager: Opening PC interface before transfer");
+            sendPCTransferNotification("Opening PC...");
             client.execute(() -> {
                 if (client.player != null && client.player.networkHandler != null) {
                     // Use sendChatCommand which expects command WITHOUT leading '/'
@@ -2532,7 +2570,7 @@ public class EggManager {
     private void sendTransferNotification(String pokemonName, String fromLocation, String toLocation, 
                                          Integer boxNumber, String boxName, Integer slot) {
         PokeAlertConfig config = ConfigManager.getConfig();
-        if (!config.inGameTextEnabled || client.player == null) {
+        if (!config.notifications.textEnabled || client.player == null) {
             return;
         }
         
@@ -2565,7 +2603,7 @@ public class EggManager {
      */
     private int[] calculateSlotPosition(int slotIndex, boolean isPCSlot) {
         PokeAlertConfig config = ConfigManager.getConfig();
-        SlotCoordinateMapping mapping = config.slotMapping;
+        SlotCoordinateMapping mapping = config.mappingLines.slotMapping;
         
         // Try mapped coordinates first
         SlotCoordinateMapping.SlotCoordinate mappedCoord;
@@ -3038,23 +3076,16 @@ public class EggManager {
      * @return true if transfer was initiated successfully
      */
     private boolean performTransferWithWidgets(Object storageWidget, int pcSlotIndex, int partySlotIndex) {
-        PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER] ========== ITERATION 35: WIDGET-BASED TRANSFER ==========");
-        PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER] Using onStorageSlotClicked() with actual widget instances");
-        PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER] Target: PC Slot {} → Party Slot {}", pcSlotIndex, partySlotIndex + 1);
+        PokeAlertClient.LOGGER.info("[WIDGET-TRANSFER] Starting transfer: PC Slot {} → Party Slot {}", pcSlotIndex, partySlotIndex + 1);
         
         try {
             if (storageWidget == null) {
-                PokeAlertClient.LOGGER.error("🔍 [WIDGET-TRANSFER] ❌ StorageWidget is null");
+                PokeAlertClient.LOGGER.error("[WIDGET-TRANSFER] ❌ StorageWidget is null");
                 return false;
             }
             
-            // =====================================================
             // STEP 1: Access boxSlots list from StorageWidget
-            // =====================================================
-            PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER] Step 1: Accessing boxSlots list...");
             java.util.List<?> boxSlots = null;
-            
-            // Try different field names for box slots
             String[] boxSlotFieldNames = {"boxSlots", "pcSlots", "storageSlots", "slots"};
             for (String fieldName : boxSlotFieldNames) {
                 try {
@@ -3063,40 +3094,21 @@ public class EggManager {
                     Object fieldValue = field.get(storageWidget);
                     if (fieldValue instanceof java.util.List) {
                         boxSlots = (java.util.List<?>) fieldValue;
-                        PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER]   ✅ Found boxSlots via field '{}' - size: {}", fieldName, boxSlots.size());
+                        PokeAlertClient.LOGGER.debug("[WIDGET-TRANSFER] Found boxSlots via field '{}' - size: {}", fieldName, boxSlots.size());
                         break;
                     }
                 } catch (NoSuchFieldException e) {
-                    PokeAlertClient.LOGGER.debug("🔍 [WIDGET-TRANSFER]   Field '{}' not found", fieldName);
+                    // Field not found, try next
                 }
             }
             
             if (boxSlots == null) {
-                PokeAlertClient.LOGGER.error("🔍 [WIDGET-TRANSFER] ❌ Could not find boxSlots field");
-                // List all fields for debugging
-                PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER] Available fields in StorageWidget:");
-                for (java.lang.reflect.Field f : storageWidget.getClass().getDeclaredFields()) {
-                    f.setAccessible(true);
-                    try {
-                        Object val = f.get(storageWidget);
-                        String valType = val != null ? val.getClass().getSimpleName() : "null";
-                        PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER]   - {} ({}) = {}", 
-                            f.getName(), f.getType().getSimpleName(), valType);
-                    } catch (Exception e) {
-                        PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER]   - {} ({}) = <error>", 
-                            f.getName(), f.getType().getSimpleName());
-                    }
-                }
+                PokeAlertClient.LOGGER.error("[WIDGET-TRANSFER] Could not find boxSlots field");
                 return false;
             }
             
-            // =====================================================
             // STEP 2: Access partySlots list from StorageWidget
-            // =====================================================
-            PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER] Step 2: Accessing partySlots list...");
             java.util.List<?> partySlots = null;
-            
-            // Try different field names for party slots
             String[] partySlotFieldNames = {"partySlots", "partyStorageSlots"};
             for (String fieldName : partySlotFieldNames) {
                 try {
@@ -3105,86 +3117,58 @@ public class EggManager {
                     Object fieldValue = field.get(storageWidget);
                     if (fieldValue instanceof java.util.List) {
                         partySlots = (java.util.List<?>) fieldValue;
-                        PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER]   ✅ Found partySlots via field '{}' - size: {}", fieldName, partySlots.size());
+                        PokeAlertClient.LOGGER.debug("[WIDGET-TRANSFER] Found partySlots via field '{}' - size: {}", fieldName, partySlots.size());
                         break;
                     }
                 } catch (NoSuchFieldException e) {
-                    PokeAlertClient.LOGGER.debug("🔍 [WIDGET-TRANSFER]   Field '{}' not found", fieldName);
+                    // Field not found, try next
                 }
             }
             
             if (partySlots == null) {
-                PokeAlertClient.LOGGER.error("🔍 [WIDGET-TRANSFER] ❌ Could not find partySlots field");
+                PokeAlertClient.LOGGER.error("[WIDGET-TRANSFER] Could not find partySlots field");
                 return false;
             }
             
-            // =====================================================
             // STEP 3: Validate indices and get slot widgets
-            // =====================================================
-            PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER] Step 3: Validating indices...");
-            
             if (pcSlotIndex < 0 || pcSlotIndex >= boxSlots.size()) {
-                PokeAlertClient.LOGGER.error("🔍 [WIDGET-TRANSFER] ❌ Invalid pcSlotIndex: {} (boxSlots size: {})", pcSlotIndex, boxSlots.size());
+                PokeAlertClient.LOGGER.error("[WIDGET-TRANSFER] Invalid pcSlotIndex: {} (boxSlots size: {})", pcSlotIndex, boxSlots.size());
                 return false;
             }
             
             if (partySlotIndex < 0 || partySlotIndex >= partySlots.size()) {
-                PokeAlertClient.LOGGER.error("🔍 [WIDGET-TRANSFER] ❌ Invalid partySlotIndex: {} (partySlots size: {})", partySlotIndex, partySlots.size());
+                PokeAlertClient.LOGGER.error("[WIDGET-TRANSFER] Invalid partySlotIndex: {} (partySlots size: {})", partySlotIndex, partySlots.size());
                 return false;
             }
             
             Object pcSlotWidget = boxSlots.get(pcSlotIndex);
             Object partySlotWidget = partySlots.get(partySlotIndex);
             
-            PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER]   ✅ PC slot widget: {}", pcSlotWidget != null ? pcSlotWidget.getClass().getName() : "null");
-            PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER]   ✅ Party slot widget: {}", partySlotWidget != null ? partySlotWidget.getClass().getName() : "null");
-            
             if (pcSlotWidget == null || partySlotWidget == null) {
-                PokeAlertClient.LOGGER.error("🔍 [WIDGET-TRANSFER] ❌ Slot widget is null");
+                PokeAlertClient.LOGGER.error("[WIDGET-TRANSFER] Slot widget is null");
                 return false;
             }
             
-            // =====================================================
             // STEP 4: Find onStorageSlotClicked method
-            // =====================================================
-            PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER] Step 4: Finding onStorageSlotClicked method...");
             java.lang.reflect.Method onStorageSlotClickedMethod = null;
             
             // Try to find the method with Object parameter (generic slot widget)
             try {
                 onStorageSlotClickedMethod = storageWidget.getClass().getDeclaredMethod("onStorageSlotClicked", Object.class);
                 onStorageSlotClickedMethod.setAccessible(true);
-                PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER]   ✅ Found onStorageSlotClicked(Object)");
             } catch (NoSuchMethodException e) {
-                PokeAlertClient.LOGGER.debug("🔍 [WIDGET-TRANSFER]   onStorageSlotClicked(Object) not found, trying specific types...");
-            }
-            
-            // If not found, try with specific slot widget class
-            if (onStorageSlotClickedMethod == null) {
-                // Get the actual class of the slot widget
+                // Try with specific slot widget class
                 Class<?> slotWidgetClass = pcSlotWidget.getClass();
                 try {
                     onStorageSlotClickedMethod = storageWidget.getClass().getDeclaredMethod("onStorageSlotClicked", slotWidgetClass);
                     onStorageSlotClickedMethod.setAccessible(true);
-                    PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER]   ✅ Found onStorageSlotClicked({})", slotWidgetClass.getSimpleName());
-                } catch (NoSuchMethodException e) {
-                    PokeAlertClient.LOGGER.debug("🔍 [WIDGET-TRANSFER]   onStorageSlotClicked({}) not found", slotWidgetClass.getSimpleName());
-                }
-            }
-            
-            // Try finding method by scanning all methods
-            if (onStorageSlotClickedMethod == null) {
-                PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER]   Scanning all methods for slot click handler...");
-                for (java.lang.reflect.Method m : storageWidget.getClass().getDeclaredMethods()) {
-                    String methodName = m.getName().toLowerCase();
-                    if (methodName.contains("slot") && methodName.contains("click")) {
-                        PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER]   Found candidate method: {}({})", 
-                            m.getName(), 
-                            java.util.Arrays.toString(m.getParameterTypes()));
-                        if (m.getParameterCount() == 1) {
+                } catch (NoSuchMethodException e2) {
+                    // Scan all methods for slot click handler
+                    for (java.lang.reflect.Method m : storageWidget.getClass().getDeclaredMethods()) {
+                        String methodName = m.getName().toLowerCase();
+                        if (methodName.contains("slot") && methodName.contains("click") && m.getParameterCount() == 1) {
                             m.setAccessible(true);
                             onStorageSlotClickedMethod = m;
-                            PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER]   ✅ Using method: {}", m.getName());
                             break;
                         }
                     }
@@ -3192,109 +3176,36 @@ public class EggManager {
             }
             
             if (onStorageSlotClickedMethod == null) {
-                PokeAlertClient.LOGGER.error("🔍 [WIDGET-TRANSFER] ❌ Could not find onStorageSlotClicked method");
-                // List all methods for debugging
-                PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER] Available methods in StorageWidget:");
-                for (java.lang.reflect.Method m : storageWidget.getClass().getDeclaredMethods()) {
-                    PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER]   - {}({})", 
-                        m.getName(), java.util.Arrays.toString(m.getParameterTypes()));
-                }
+                PokeAlertClient.LOGGER.error("[WIDGET-TRANSFER] Could not find onStorageSlotClicked method");
                 return false;
             }
             
-            // =====================================================
-            // STEP 4B: Inspect slot widget to check if it has a Pokemon
-            // =====================================================
-            PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER] Step 4B: Inspecting slot widget internal state...");
-            try {
-                // Check the slot's position field (PCPosition)
-                java.lang.reflect.Field positionField = pcSlotWidget.getClass().getDeclaredField("position");
-                positionField.setAccessible(true);
-                Object slotPosition = positionField.get(pcSlotWidget);
-                PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER]   Slot position field: {}", slotPosition);
-                
-                if (slotPosition != null) {
-                    // Extract box and slot from position
-                    int[] extracted = extractBoxAndSlotFromPCPosition(slotPosition);
-                    if (extracted != null) {
-                        PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER]   Slot position: Box {} (0-based: {}), Slot {}", 
-                            extracted[0], extracted[0] - 1, extracted[1]);
-                    }
-                }
-                
-                // Try to get getPokemon() method on slot widget
-                try {
-                    java.lang.reflect.Method getPokemonMethod = pcSlotWidget.getClass().getMethod("getPokemon");
-                    Object pokemon = getPokemonMethod.invoke(pcSlotWidget);
-                    PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER]   Slot getPokemon(): {}", pokemon != null ? pokemon.getClass().getSimpleName() : "null");
-                    if (pokemon == null) {
-                        PokeAlertClient.LOGGER.warn("🔍 [WIDGET-TRANSFER]   ⚠️ Slot widget thinks it's EMPTY! This might be why grab fails.");
-                    }
-                } catch (NoSuchMethodException e) {
-                    PokeAlertClient.LOGGER.debug("🔍 [WIDGET-TRANSFER]   No getPokemon() method on slot widget");
-                }
-                
-                // List all methods on slot widget for debugging
-                PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER]   Available methods on slot widget:");
-                for (java.lang.reflect.Method m : pcSlotWidget.getClass().getDeclaredMethods()) {
-                    if (!m.getName().startsWith("lambda$") && !m.getName().contains("$")) {
-                        PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER]     - {}({})", 
-                            m.getName(), m.getParameterCount() > 0 ? m.getParameterTypes()[0].getSimpleName() : "");
-                    }
-                }
-                
-            } catch (Exception e) {
-                PokeAlertClient.LOGGER.warn("🔍 [WIDGET-TRANSFER]   Could not inspect slot widget: {}", e.getMessage());
-            }
-            
-            // =====================================================
             // STEP 5: Check grabbedSlot BEFORE first click
-            // =====================================================
-            PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER] Step 5: Checking grabbedSlot state...");
             Object grabbedSlotBefore = null;
             java.lang.reflect.Field grabbedSlotField = null;
             try {
                 grabbedSlotField = storageWidget.getClass().getDeclaredField("grabbedSlot");
                 grabbedSlotField.setAccessible(true);
                 grabbedSlotBefore = grabbedSlotField.get(storageWidget);
-                PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER]   grabbedSlot BEFORE: {}", grabbedSlotBefore);
             } catch (Exception e) {
-                PokeAlertClient.LOGGER.warn("🔍 [WIDGET-TRANSFER]   Could not check grabbedSlot: {}", e.getMessage());
+                PokeAlertClient.LOGGER.debug("[WIDGET-TRANSFER] Could not check grabbedSlot: {}", e.getMessage());
             }
             
-            // =====================================================
             // STEP 6: Click source slot (GRAB)
-            // =====================================================
-            PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER] Step 6: Clicking source slot (PC Slot {}) to GRAB...", pcSlotIndex);
+            PokeAlertClient.LOGGER.debug("[WIDGET-TRANSFER] Clicking source slot (PC Slot {}) to GRAB...", pcSlotIndex);
             
             final java.lang.reflect.Method finalMethod = onStorageSlotClickedMethod;
             final Object finalPcSlotWidget = pcSlotWidget;
             final Object finalPartySlotWidget = partySlotWidget;
             
             try {
-                // Log the actual parameter types to verify compatibility
-                PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER]   Method expects: {}", 
-                    java.util.Arrays.toString(finalMethod.getParameterTypes()));
-                PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER]   Passing widget of type: {}", finalPcSlotWidget.getClass().getName());
-                
-                // Check if slot widget is assignable to parameter type
-                Class<?> expectedType = finalMethod.getParameterTypes()[0];
-                boolean isAssignable = expectedType.isAssignableFrom(finalPcSlotWidget.getClass());
-                PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER]   Is {} assignable to {}? {}", 
-                    finalPcSlotWidget.getClass().getSimpleName(), expectedType.getSimpleName(), isAssignable);
-                
-                // Call the method and capture return value if any
-                Object result = finalMethod.invoke(storageWidget, finalPcSlotWidget);
-                PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER]   ✅ onStorageSlotClicked(pcSlotWidget) completed, returned: {}", result);
+                // Call onStorageSlotClicked to initiate grab
+                finalMethod.invoke(storageWidget, finalPcSlotWidget);
             } catch (java.lang.reflect.InvocationTargetException ite) {
-                PokeAlertClient.LOGGER.error("🔍 [WIDGET-TRANSFER]   ❌ Method threw exception: {}", ite.getCause());
-                ite.getCause().printStackTrace();
+                PokeAlertClient.LOGGER.error("[WIDGET-TRANSFER] Method threw exception: {}", ite.getCause());
                 return false;
             } catch (Exception e) {
-                PokeAlertClient.LOGGER.error("🔍 [WIDGET-TRANSFER]   ❌ Failed to click source slot: {}", e.getMessage());
-                if (e.getCause() != null) {
-                    PokeAlertClient.LOGGER.error("🔍 [WIDGET-TRANSFER]   Cause: {}", e.getCause().getMessage());
-                }
+                PokeAlertClient.LOGGER.error("[WIDGET-TRANSFER] Failed to click source slot: {}", e.getMessage());
                 return false;
             }
             
@@ -3303,150 +3214,90 @@ public class EggManager {
             try {
                 if (grabbedSlotField != null) {
                     grabbedSlotAfterGrab = grabbedSlotField.get(storageWidget);
-                    PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER]   grabbedSlot AFTER GRAB: {} (changed: {})", 
-                        grabbedSlotAfterGrab, grabbedSlotAfterGrab != grabbedSlotBefore);
                     
                     if (grabbedSlotAfterGrab == null) {
-                        PokeAlertClient.LOGGER.warn("🔍 [WIDGET-TRANSFER]   ⚠️ grabbedSlot is still null after grab! Drag mode not entered.");
+                        PokeAlertClient.LOGGER.debug("[WIDGET-TRANSFER] grabbedSlot still null after grab, trying alternatives...");
                         
-                        // =====================================================
-                        // STEP 6B: ALTERNATIVE - Try calling mouseClicked on slot widget
-                        // =====================================================
-                        PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER] Step 6B: Trying alternative - calling mouseClicked on slot widget...");
+                        // STEP 6B: Try calling mouseClicked on slot widget (fallback)
                         try {
-                            // Get configured coordinates for this slot
                             PokeAlertConfig config = ConfigManager.getConfig();
-                            SlotCoordinateMapping mapping = config.slotMapping;
+                            SlotCoordinateMapping mapping = config.mappingLines.slotMapping;
                             SlotCoordinateMapping.SlotCoordinate pcCoord = mapping.getBoxSlot(pcSlotIndex + 1);
                             
                             if (pcCoord.isMapped()) {
-                                PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER]   Using configured coordinates: ({}, {})", pcCoord.x, pcCoord.y);
-                                
-                                // Try calling mouseClicked on the slot widget itself
-                                // NOTE: In production, mouseClicked is obfuscated (e.g., method_25402)
+                                // Try known mouseClicked method names (including obfuscated)
                                 java.lang.reflect.Method mouseClickedMethod = null;
                                 String[] mouseClickedNames = {"mouseClicked", "method_25402", "method_1595"};
                                 
-                                // First try known names
                                 for (String methodName : mouseClickedNames) {
                                     try {
                                         mouseClickedMethod = pcSlotWidget.getClass().getMethod(methodName, double.class, double.class, int.class);
-                                        PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER]   ✅ Found mouseClicked as '{}'", methodName);
                                         break;
                                     } catch (NoSuchMethodException e) {
                                         // Try next
                                     }
                                 }
                                 
-                                // If not found, search for any method with (double, double, int) signature
+                                // Scan for (double, double, int) -> boolean methods
                                 if (mouseClickedMethod == null) {
-                                    PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER]   Scanning for (double, double, int) methods...");
                                     for (java.lang.reflect.Method m : pcSlotWidget.getClass().getMethods()) {
                                         Class<?>[] params = m.getParameterTypes();
                                         if (params.length == 3 && 
                                             params[0] == double.class && 
                                             params[1] == double.class && 
                                             params[2] == int.class &&
-                                            m.getReturnType() == boolean.class) {
-                                            PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER]   Found candidate: {}(double, double, int) -> boolean", m.getName());
-                                            if (m.getName().startsWith("method_") || m.getName().equals("mouseClicked")) {
-                                                mouseClickedMethod = m;
-                                                PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER]   ✅ Using method: {}", m.getName());
-                                                break;
-                                            }
+                                            m.getReturnType() == boolean.class &&
+                                            (m.getName().startsWith("method_") || m.getName().equals("mouseClicked"))) {
+                                            mouseClickedMethod = m;
+                                            break;
                                         }
                                     }
                                 }
                                 
                                 if (mouseClickedMethod != null) {
                                     mouseClickedMethod.setAccessible(true);
-                                    PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER]   Calling slot.{}({}, {}, 0)...", mouseClickedMethod.getName(), pcCoord.x, pcCoord.y);
-                                    Object result = mouseClickedMethod.invoke(pcSlotWidget, (double)pcCoord.x, (double)pcCoord.y, 0);
-                                    PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER]   {} returned: {}", mouseClickedMethod.getName(), result);
-                                    
-                                    // Check grabbedSlot again
+                                    mouseClickedMethod.invoke(pcSlotWidget, (double)pcCoord.x, (double)pcCoord.y, 0);
                                     grabbedSlotAfterGrab = grabbedSlotField.get(storageWidget);
-                                    PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER]   grabbedSlot after {}: {}", mouseClickedMethod.getName(), grabbedSlotAfterGrab);
-                                } else {
-                                    PokeAlertClient.LOGGER.warn("🔍 [WIDGET-TRANSFER]   Could not find mouseClicked method on slot widget");
-                                    // List all methods with (double, double, int) signature for debugging
-                                    PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER]   Listing all methods on slot widget:");
-                                    for (java.lang.reflect.Method m : pcSlotWidget.getClass().getMethods()) {
-                                        if (m.getParameterCount() <= 3 && m.getName().startsWith("method_")) {
-                                            PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER]     - {}({})", 
-                                                m.getName(), java.util.Arrays.toString(m.getParameterTypes()));
-                                        }
-                                    }
                                 }
                             }
                         } catch (Exception altE) {
-                            PokeAlertClient.LOGGER.warn("🔍 [WIDGET-TRANSFER]   Alternative mouseClicked failed: {}", altE.getMessage());
+                            PokeAlertClient.LOGGER.debug("[WIDGET-TRANSFER] Alternative mouseClicked failed: {}", altE.getMessage());
                         }
                         
-                        // =====================================================
                         // STEP 6C: MIXIN WORKAROUND - Directly set grabbedSlot
-                        // The "more_cobblemon_tweaks" mixin is canceling normal slot click
-                        // behavior. Bypass by directly setting grabbedSlot field.
-                        // =====================================================
+                        // Bypasses mixin interference from "more_cobblemon_tweaks" mod
                         if (grabbedSlotAfterGrab == null) {
-                            PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER] Step 6C: MIXIN WORKAROUND - Directly setting grabbedSlot...");
-                            PokeAlertClient.LOGGER.warn("🔍 [WIDGET-TRANSFER]   ⚠️ Detected mixin interference from 'more_cobblemon_tweaks' mod");
-                            PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER]   Bypassing mixin by directly setting grabbedSlot field...");
+                            PokeAlertClient.LOGGER.debug("[WIDGET-TRANSFER] Applying mixin workaround - directly setting grabbedSlot");
                             
                             try {
-                                // Set grabbedSlot to the PC slot widget directly
                                 grabbedSlotField.set(storageWidget, finalPcSlotWidget);
                                 grabbedSlotAfterGrab = grabbedSlotField.get(storageWidget);
-                                PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER]   grabbedSlot after direct set: {}", grabbedSlotAfterGrab);
-                                
-                                if (grabbedSlotAfterGrab != null) {
-                                    PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER]   ✅ Successfully bypassed mixin! grabbedSlot is now set.");
-                                } else {
-                                    PokeAlertClient.LOGGER.error("🔍 [WIDGET-TRANSFER]   ❌ Failed to set grabbedSlot directly");
+                                if (grabbedSlotAfterGrab == null) {
+                                    PokeAlertClient.LOGGER.error("[WIDGET-TRANSFER] Failed to set grabbedSlot directly");
                                 }
                             } catch (Exception setEx) {
-                                PokeAlertClient.LOGGER.error("🔍 [WIDGET-TRANSFER]   ❌ Could not set grabbedSlot directly: {}", setEx.getMessage());
+                                PokeAlertClient.LOGGER.error("[WIDGET-TRANSFER] Could not set grabbedSlot directly: {}", setEx.getMessage());
                             }
                         }
                     }
                 }
             } catch (Exception e) {
-                PokeAlertClient.LOGGER.warn("🔍 [WIDGET-TRANSFER]   Could not check grabbedSlot after grab: {}", e.getMessage());
+                PokeAlertClient.LOGGER.debug("[WIDGET-TRANSFER] Could not check grabbedSlot after grab: {}", e.getMessage());
             }
             
-            // =====================================================
             // STEP 7: Click destination slot (DROP)
-            // =====================================================
-            PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER] Step 7: Clicking destination slot (Party Slot {}) to DROP...", partySlotIndex + 1);
-            
             try {
                 finalMethod.invoke(storageWidget, finalPartySlotWidget);
-                PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER]   ✅ onStorageSlotClicked(partySlotWidget) completed");
             } catch (Exception e) {
-                PokeAlertClient.LOGGER.error("🔍 [WIDGET-TRANSFER]   ❌ Failed to click destination slot: {}", e.getMessage());
-                if (e.getCause() != null) {
-                    PokeAlertClient.LOGGER.error("🔍 [WIDGET-TRANSFER]   Cause: {}", e.getCause().getMessage());
-                }
+                PokeAlertClient.LOGGER.error("[WIDGET-TRANSFER] Failed to click destination slot: {}", e.getMessage());
                 return false;
             }
             
-            // Check grabbedSlot AFTER second click (should be null if transfer succeeded)
-            Object grabbedSlotAfterDrop = null;
-            try {
-                if (grabbedSlotField != null) {
-                    grabbedSlotAfterDrop = grabbedSlotField.get(storageWidget);
-                    PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER]   grabbedSlot AFTER DROP: {} (should be null if transfer succeeded)", grabbedSlotAfterDrop);
-                }
-            } catch (Exception e) {
-                PokeAlertClient.LOGGER.warn("🔍 [WIDGET-TRANSFER]   Could not check grabbedSlot after drop: {}", e.getMessage());
-            }
-            
-            PokeAlertClient.LOGGER.info("🔍 [WIDGET-TRANSFER] ========== TRANSFER SEQUENCE COMPLETED ==========");
+            PokeAlertClient.LOGGER.info("[WIDGET-TRANSFER] Transfer completed: PC Slot {} → Party Slot {}", pcSlotIndex, partySlotIndex + 1);
             return true;
             
         } catch (Exception e) {
-            PokeAlertClient.LOGGER.error("🔍 [WIDGET-TRANSFER] ❌ Error in widget-based transfer: {}", e.getMessage());
-            e.printStackTrace();
+            PokeAlertClient.LOGGER.error("[WIDGET-TRANSFER] Error in widget-based transfer: {}", e.getMessage());
             return false;
         }
     }
@@ -3458,21 +3309,21 @@ public class EggManager {
      */
     private int getCurrentVisibleBox(Object storageWidget) {
         if (storageWidget == null) {
-            PokeAlertClient.LOGGER.error("🔍 [BOX-NAV] getCurrentVisibleBox: StorageWidget is null");
+            PokeAlertClient.LOGGER.error("[BOX-NAV] getCurrentVisibleBox: StorageWidget is null");
             return -1;
         }
         
-        PokeAlertClient.LOGGER.info("🔍 [BOX-NAV] getCurrentVisibleBox: Extracting current visible box from StorageWidget");
+        PokeAlertClient.LOGGER.info("[BOX-NAV] getCurrentVisibleBox: Extracting current visible box from StorageWidget");
         
         try {
             // Method 1: Try getCurrentBox() method
             try {
                 java.lang.reflect.Method getCurrentBoxMethod = storageWidget.getClass().getMethod("getCurrentBox");
                 int currentBox = ((Number) getCurrentBoxMethod.invoke(storageWidget)).intValue();
-                PokeAlertClient.LOGGER.info("🔍 [BOX-NAV] getCurrentVisibleBox: ✅ Extracted via getCurrentBox() = {} (0-based)", currentBox);
+                PokeAlertClient.LOGGER.info("[BOX-NAV] getCurrentVisibleBox: ✅ Extracted via getCurrentBox() = {} (0-based)", currentBox);
                 return currentBox;
             } catch (NoSuchMethodException e) {
-                PokeAlertClient.LOGGER.debug("🔍 [BOX-NAV] getCurrentVisibleBox: getCurrentBox() not found, trying fields...");
+                PokeAlertClient.LOGGER.debug("[BOX-NAV] getCurrentVisibleBox: getCurrentBox() not found, trying fields...");
             }
             
             // Method 2: Try "box" field (the actual field name from logs)
@@ -3480,10 +3331,10 @@ public class EggManager {
                 java.lang.reflect.Field boxField = storageWidget.getClass().getDeclaredField("box");
                 boxField.setAccessible(true);
                 int currentBox = boxField.getInt(storageWidget);
-                PokeAlertClient.LOGGER.info("🔍 [BOX-NAV] getCurrentVisibleBox: ✅ Extracted via 'box' field = {} (0-based)", currentBox);
+                PokeAlertClient.LOGGER.info("[BOX-NAV] getCurrentVisibleBox: ✅ Extracted via 'box' field = {} (0-based)", currentBox);
                 return currentBox;
             } catch (NoSuchFieldException e) {
-                PokeAlertClient.LOGGER.debug("🔍 [BOX-NAV] getCurrentVisibleBox: 'box' field not found, trying alternative names...");
+                PokeAlertClient.LOGGER.debug("[BOX-NAV] getCurrentVisibleBox: 'box' field not found, trying alternative names...");
             }
             
             // Method 3: Try currentBox field
@@ -3491,10 +3342,10 @@ public class EggManager {
                 java.lang.reflect.Field currentBoxField = storageWidget.getClass().getDeclaredField("currentBox");
                 currentBoxField.setAccessible(true);
                 int currentBox = currentBoxField.getInt(storageWidget);
-                PokeAlertClient.LOGGER.info("🔍 [BOX-NAV] getCurrentVisibleBox: ✅ Extracted via currentBox field = {} (0-based)", currentBox);
+                PokeAlertClient.LOGGER.info("[BOX-NAV] getCurrentVisibleBox: ✅ Extracted via currentBox field = {} (0-based)", currentBox);
                 return currentBox;
             } catch (NoSuchFieldException e) {
-                PokeAlertClient.LOGGER.debug("🔍 [BOX-NAV] getCurrentVisibleBox: currentBox field not found, trying alternative names...");
+                PokeAlertClient.LOGGER.debug("[BOX-NAV] getCurrentVisibleBox: currentBox field not found, trying alternative names...");
             }
             
             // Method 4: Try alternative field names
@@ -3505,7 +3356,7 @@ public class EggManager {
                     f.setAccessible(true);
                     try {
                         int currentBox = f.getInt(storageWidget);
-                        PokeAlertClient.LOGGER.info("🔍 [BOX-NAV] getCurrentVisibleBox: ✅ Extracted via field '{}' = {} (0-based)", f.getName(), currentBox);
+                        PokeAlertClient.LOGGER.info("[BOX-NAV] getCurrentVisibleBox: ✅ Extracted via field '{}' = {} (0-based)", f.getName(), currentBox);
                         return currentBox;
                     } catch (Exception e2) {
                         // Skip non-int fields
@@ -3513,12 +3364,12 @@ public class EggManager {
                 }
             }
             
-            PokeAlertClient.LOGGER.warn("🔍 [BOX-NAV] getCurrentVisibleBox: ❌ Could not extract current box - available fields: {}", 
+            PokeAlertClient.LOGGER.warn("[BOX-NAV] getCurrentVisibleBox: ❌ Could not extract current box - available fields: {}", 
                 java.util.Arrays.toString(fields));
             return -1;
             
         } catch (Exception e) {
-            PokeAlertClient.LOGGER.error("🔍 [BOX-NAV] getCurrentVisibleBox: ❌ Error extracting current box", e);
+            PokeAlertClient.LOGGER.error("[BOX-NAV] getCurrentVisibleBox: ❌ Error extracting current box", e);
             return -1;
         }
     }
@@ -3528,15 +3379,15 @@ public class EggManager {
      * Returns true if navigation successful or already on target box
      */
     private boolean navigateToBox(Object storageWidget, int targetBoxIndex) {
-        PokeAlertClient.LOGGER.info("🔍 [BOX-NAV] navigateToBox: Attempting to navigate to box {} (0-based index)", targetBoxIndex);
+        PokeAlertClient.LOGGER.info("[BOX-NAV] navigateToBox: Attempting to navigate to box {} (0-based index)", targetBoxIndex);
         
         if (storageWidget == null) {
-            PokeAlertClient.LOGGER.error("🔍 [BOX-NAV] navigateToBox: ❌ StorageWidget is null");
+            PokeAlertClient.LOGGER.error("[BOX-NAV] navigateToBox: ❌ StorageWidget is null");
             return false;
         }
         
         if (client.currentScreen == null) {
-            PokeAlertClient.LOGGER.error("🔍 [BOX-NAV] navigateToBox: ❌ Current screen is null");
+            PokeAlertClient.LOGGER.error("[BOX-NAV] navigateToBox: ❌ Current screen is null");
             return false;
         }
         
@@ -3544,30 +3395,30 @@ public class EggManager {
         int currentBox = getCurrentVisibleBox(storageWidget);
         
         if (currentBox == -1) {
-            PokeAlertClient.LOGGER.warn("🔍 [BOX-NAV] navigateToBox: ⚠️ Could not determine current box, attempting navigation anyway");
+            PokeAlertClient.LOGGER.warn("[BOX-NAV] navigateToBox: ⚠️ Could not determine current box, attempting navigation anyway");
         } else {
-            PokeAlertClient.LOGGER.info("🔍 [BOX-NAV] navigateToBox: Current visible box: {} (0-based)", currentBox);
+            PokeAlertClient.LOGGER.info("[BOX-NAV] navigateToBox: Current visible box: {} (0-based)", currentBox);
             
             if (currentBox == targetBoxIndex) {
-                PokeAlertClient.LOGGER.info("🔍 [BOX-NAV] navigateToBox: ✅ Already on target box {}, no navigation needed", targetBoxIndex);
+                PokeAlertClient.LOGGER.info("[BOX-NAV] navigateToBox: ✅ Already on target box {}, no navigation needed", targetBoxIndex);
                 return true;
             }
         }
         
         // Get mapped arrow coordinates
         PokeAlertConfig config = ConfigManager.getConfig();
-        SlotCoordinateMapping mapping = config.slotMapping;
+        SlotCoordinateMapping mapping = config.mappingLines.slotMapping;
         
         if (!mapping.isBoxArrowLeftMapped() || !mapping.isBoxArrowRightMapped()) {
-            PokeAlertClient.LOGGER.error("🔍 [BOX-NAV] navigateToBox: ❌ Arrow coordinates not mapped - please set using /pokealert mappingLines set box arrow-left/right");
+            PokeAlertClient.LOGGER.error("[BOX-NAV] navigateToBox: ❌ Arrow coordinates not mapped - please set using /pokealert mappingLines set box arrow-left/right");
             return false;
         }
         
         int[] leftArrowPos = new int[]{mapping.boxArrowLeft.x, mapping.boxArrowLeft.y};
         int[] rightArrowPos = new int[]{mapping.boxArrowRight.x, mapping.boxArrowRight.y};
         
-        PokeAlertClient.LOGGER.info("🔍 [BOX-NAV] navigateToBox: Need to navigate from box {} to box {}", currentBox, targetBoxIndex);
-        PokeAlertClient.LOGGER.info("🔍 [BOX-NAV] navigateToBox: Using mapped arrow coordinates - Left: ({}, {}), Right: ({}, {})", 
+        PokeAlertClient.LOGGER.info("[BOX-NAV] navigateToBox: Need to navigate from box {} to box {}", currentBox, targetBoxIndex);
+        PokeAlertClient.LOGGER.info("[BOX-NAV] navigateToBox: Using mapped arrow coordinates - Left: ({}, {}), Right: ({}, {})", 
             leftArrowPos[0], leftArrowPos[1], rightArrowPos[0], rightArrowPos[1]);
         
         // Calculate number of clicks needed
@@ -3575,7 +3426,7 @@ public class EggManager {
         boolean clickRight = clicksNeeded > 0;
         int absClicks = Math.abs(clicksNeeded);
         
-        PokeAlertClient.LOGGER.info("🔍 [BOX-NAV] navigateToBox: Need to click {} arrow {} times", clickRight ? "right" : "left", absClicks);
+        PokeAlertClient.LOGGER.info("[BOX-NAV] navigateToBox: Need to click {} arrow {} times", clickRight ? "right" : "left", absClicks);
         
         // Click arrows to navigate
         // NOTE: Arrow clicking uses Screen.mouseClicked() which WORKS for arrows (direct Screen children)
@@ -3586,7 +3437,7 @@ public class EggManager {
             // Click the arrow (arrows work with Screen.mouseClicked because they're direct children)
             try {
                 boolean clicked = client.currentScreen.mouseClicked(arrowPos[0], arrowPos[1], 0);
-                PokeAlertClient.LOGGER.info("🔍 [BOX-NAV] navigateToBox: Clicked {} arrow at ({}, {}) - returned: {}", 
+                PokeAlertClient.LOGGER.info("[BOX-NAV] navigateToBox: Clicked {} arrow at ({}, {}) - returned: {}", 
                     clickRight ? "right" : "left", arrowPos[0], arrowPos[1], clicked);
                 
                 // NO Thread.sleep! - Box change happens immediately
@@ -3594,17 +3445,17 @@ public class EggManager {
                 int newCurrentBox = getCurrentVisibleBox(storageWidget);
                 if (newCurrentBox != currentBox) {
                     currentBox = newCurrentBox;
-                    PokeAlertClient.LOGGER.info("🔍 [BOX-NAV] navigateToBox: Box changed to {} (click {}/{})", currentBox, i + 1, absClicks);
+                    PokeAlertClient.LOGGER.info("[BOX-NAV] navigateToBox: Box changed to {} (click {}/{})", currentBox, i + 1, absClicks);
                     
                     if (currentBox == targetBoxIndex) {
-                        PokeAlertClient.LOGGER.info("🔍 [BOX-NAV] navigateToBox: ✅ Successfully navigated to target box {}", targetBoxIndex);
+                        PokeAlertClient.LOGGER.info("[BOX-NAV] navigateToBox: ✅ Successfully navigated to target box {}", targetBoxIndex);
                     return true;
                     }
                 } else {
-                    PokeAlertClient.LOGGER.warn("🔍 [BOX-NAV] navigateToBox: ⚠️ Box did not change after click");
+                    PokeAlertClient.LOGGER.warn("[BOX-NAV] navigateToBox: ⚠️ Box did not change after click");
                 }
             } catch (Exception e) {
-                PokeAlertClient.LOGGER.error("🔍 [BOX-NAV] navigateToBox: ❌ Error clicking arrow: {}", e.getMessage());
+                PokeAlertClient.LOGGER.error("[BOX-NAV] navigateToBox: ❌ Error clicking arrow: {}", e.getMessage());
                 return false;
             }
         }
@@ -3612,10 +3463,10 @@ public class EggManager {
         // Final verification
         int finalBox = getCurrentVisibleBox(storageWidget);
         if (finalBox == targetBoxIndex) {
-            PokeAlertClient.LOGGER.info("🔍 [BOX-NAV] navigateToBox: ✅ Successfully navigated to box {}", targetBoxIndex);
+            PokeAlertClient.LOGGER.info("[BOX-NAV] navigateToBox: ✅ Successfully navigated to box {}", targetBoxIndex);
                 return true;
         } else {
-            PokeAlertClient.LOGGER.warn("🔍 [BOX-NAV] navigateToBox: ⚠️ Navigation incomplete - current box: {}, target: {}", finalBox, targetBoxIndex);
+            PokeAlertClient.LOGGER.warn("[BOX-NAV] navigateToBox: ⚠️ Navigation incomplete - current box: {}, target: {}", finalBox, targetBoxIndex);
             return false;
         }
     }
@@ -4170,7 +4021,7 @@ public class EggManager {
      */
     private void startPCDiscoveryMode() {
         PokeAlertConfig config = ConfigManager.getConfig();
-        if (!config.eggManagerPCDiscoveryMode) {
+        if (!config.eggManager.pcDiscoveryMode) {
             return;
         }
         
@@ -4209,7 +4060,7 @@ public class EggManager {
      */
     private void checkForScreenAndStateChanges() {
         PokeAlertConfig config = ConfigManager.getConfig();
-        if (!config.eggManagerPCDiscoveryMode) {
+        if (!config.eggManager.pcDiscoveryMode) {
             stopPCDiscoveryMode();
             return;
         }
@@ -5333,7 +5184,7 @@ public class EggManager {
             }
             
             PokeAlertConfig config = ConfigManager.getConfig();
-            SlotCoordinateMapping mapping = config.slotMapping;
+            SlotCoordinateMapping mapping = config.mappingLines.slotMapping;
             
             // Debug: Log config instance to check if it's the same
             PokeAlertClient.LOGGER.debug("EggManager: renderDebugIndicators - config instance: {}", System.identityHashCode(config));
@@ -5527,7 +5378,7 @@ public class EggManager {
         
         // Get config - use the same instance that renderDebugIndicators uses
         PokeAlertConfig config = ConfigManager.getConfig();
-        SlotCoordinateMapping mapping = config.slotMapping;
+        SlotCoordinateMapping mapping = config.mappingLines.slotMapping;
         
         // Debug: Log config instance to check if it's the same
         PokeAlertClient.LOGGER.debug("EggManager: initializeDefaultCoordinates - config instance: {}", System.identityHashCode(config));
@@ -5604,7 +5455,7 @@ public class EggManager {
         if (button != 0) return false; // Only handle left click
         
         PokeAlertConfig config = ConfigManager.getConfig();
-        SlotCoordinateMapping mapping = config.slotMapping;
+        SlotCoordinateMapping mapping = config.mappingLines.slotMapping;
         
         if (!mapping.visualIndicatorsEnabled) {
             return false;
@@ -5703,7 +5554,7 @@ public class EggManager {
         
         try {
             // Use the config instance passed in to ensure we're modifying the same object
-            SlotCoordinateMapping mapping = config.slotMapping;
+            SlotCoordinateMapping mapping = config.mappingLines.slotMapping;
             
             int releaseX = (int) mouseX;
             int releaseY = (int) mouseY;
@@ -5974,5 +5825,816 @@ public class EggManager {
     /**
      * Clear all debug positions (useful for testing)
      */
+    
+    // ========== Phase 3: Daycare Egg Fetching ==========
+    
+    /**
+     * State machine for daycare fetching process
+     */
+    private enum DaycareState {
+        IDLE,
+        STOPPING_EGG_HATCHER,
+        WARPING_TO_DAYCARE,
+        WAITING_FOR_DAYCARE_ARRIVAL,
+        INTERACTING_WITH_NPC,
+        WAITING_FOR_DAYCARE_MENU,
+        CLICKING_EGG,
+        CLOSING_MENU,
+        WARPING_HOME,
+        WAITING_FOR_HOME_ARRIVAL,
+        STARTING_EGG_TIMER,
+        RESUMING_EGG_HATCHER,
+        COMPLETED,
+        FAILED
+    }
+    
+    // Daycare process state
+    private volatile DaycareState daycareState = DaycareState.IDLE;
+    private volatile int daycareRetryCount = 0;
+    private volatile String daycareCurrentStep = "";
+    private volatile long daycareStepStartTime = 0;
+    private ScheduledFuture<?> daycareTask;
+    
+    /**
+     * Start the daycare egg fetching process.
+     * Called when Egg Timer completes.
+     */
+    public void startDaycareFetch() {
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        if (!config.isDaycareEffectivelyEnabled()) {
+            PokeAlertClient.LOGGER.info("[Egg Manager] Daycare fetch disabled in config, skipping");
+            return;
+        }
+        
+        if (daycareState != DaycareState.IDLE) {
+            PokeAlertClient.LOGGER.warn("[Egg Manager] Daycare fetch already in progress, state: {}", daycareState);
+            return;
+        }
+        
+        PokeAlertClient.LOGGER.info("[Egg Manager] Starting daycare egg fetch process");
+        sendDaycareStepNotification(0, "Daycare run initiated");
+        
+        daycareState = DaycareState.STOPPING_EGG_HATCHER;
+        daycareRetryCount = 0;
+        daycareCurrentStep = "Stopping Egg Hatcher";
+        daycareStepStartTime = System.currentTimeMillis();
+        
+        // Execute the state machine
+        executeDaycareStateMachine();
+    }
+    
+    /**
+     * Execute the daycare state machine
+     */
+    private void executeDaycareStateMachine() {
+        if (scheduler == null || scheduler.isShutdown()) {
+            PokeAlertClient.LOGGER.error("[Egg Manager] Scheduler not available for daycare process");
+            failDaycareProcess("Scheduler not available");
+            return;
+        }
+        
+        // Cancel any existing task
+        if (daycareTask != null && !daycareTask.isDone()) {
+            daycareTask.cancel(false);
+        }
+        
+        daycareTask = scheduler.schedule(this::processDaycareState, 100, TimeUnit.MILLISECONDS);
+    }
+    
+    /**
+     * Process the current daycare state
+     */
+    private void processDaycareState() {
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        try {
+            switch (daycareState) {
+                case STOPPING_EGG_HATCHER:
+                    handleStoppingEggHatcher();
+                    break;
+                    
+                case WARPING_TO_DAYCARE:
+                    handleWarpingToDaycare(config);
+                    break;
+                    
+                case WAITING_FOR_DAYCARE_ARRIVAL:
+                    handleWaitingForDaycareArrival(config);
+                    break;
+                    
+                case INTERACTING_WITH_NPC:
+                    handleInteractingWithNPC();
+                    break;
+                    
+                case WAITING_FOR_DAYCARE_MENU:
+                    handleWaitingForDaycareMenu();
+                    break;
+                    
+                case CLICKING_EGG:
+                    handleClickingEgg();
+                    break;
+                    
+                case CLOSING_MENU:
+                    handleClosingMenu();
+                    break;
+                    
+                case WARPING_HOME:
+                    handleWarpingHome(config);
+                    break;
+                    
+                case WAITING_FOR_HOME_ARRIVAL:
+                    handleWaitingForHomeArrival(config);
+                    break;
+                    
+                case STARTING_EGG_TIMER:
+                    handleStartingEggTimer();
+                    break;
+                    
+                case RESUMING_EGG_HATCHER:
+                    handleResumingEggHatcher();
+                    break;
+                    
+                case COMPLETED:
+                    PokeAlertClient.LOGGER.info("[Egg Manager] Daycare fetch completed successfully!");
+                    sendDaycareStepNotification(9, "Daycare run completed ✓");
+                    daycareState = DaycareState.IDLE;
+                    break;
+                    
+                case FAILED:
+                    PokeAlertClient.LOGGER.error("[Egg Manager] Daycare fetch failed after {} retries", daycareRetryCount);
+                    daycareState = DaycareState.IDLE;
+                    break;
+                    
+                case IDLE:
+                default:
+                    // Nothing to do
+                    break;
+            }
+        } catch (Exception e) {
+            PokeAlertClient.LOGGER.error("[Egg Manager] Error in daycare state machine: {}", e.getMessage());
+            retryDaycareStep("Exception: " + e.getMessage());
+        }
+    }
+    
+    // Daycare run has 9 visible steps (not counting internal waiting states)
+    private static final int DAYCARE_TOTAL_STEPS = 9;
+    
+    /**
+     * Step 1: Stop Egg Hatcher
+     */
+    private void handleStoppingEggHatcher() {
+        daycareCurrentStep = "Stopping Egg Hatcher";
+        sendDaycareStepNotification(1, "Stopping Egg Hatcher");
+        
+        EggHatcher eggHatcher = EggHatcher.getInstance();
+        if (eggHatcher != null && (eggHatcher.isRunning() || eggHatcher.isAntiAfkActive())) {
+            // CRITICAL: Call stopAutomation() to actually stop Baritone Anti-AFK, not just setMode()
+            eggHatcher.stopAutomation();
+            // Set mode to DISABLED after stopping so it doesn't auto-restart
+            eggHatcher.setMode(EggHatcher.AutomationMode.DISABLED);
+            PokeAlertClient.LOGGER.info("[Egg Manager] Egg Hatcher stopped via stopAutomation()");
+            
+            // Send /pokealert egghatcher disable command for confirmed cancellation
+            sendChatCommand("pokealert egghatcher disable");
+            PokeAlertClient.LOGGER.info("[Egg Manager] Sent /pokealert egghatcher disable command for confirmed stop");
+        } else {
+            PokeAlertClient.LOGGER.info("[Egg Manager] Egg Hatcher was not running");
+        }
+        
+        // Wait a moment for Egg Hatcher to fully stop before proceeding
+        daycareState = DaycareState.WARPING_TO_DAYCARE;
+        daycareStepStartTime = System.currentTimeMillis();
+        
+        // Small delay to ensure Egg Hatcher is fully stopped
+        daycareTask = scheduler.schedule(this::executeDaycareStateMachine, 1000, TimeUnit.MILLISECONDS);
+    }
+    
+    /**
+     * Step 2: Warp to daycare
+     */
+    private void handleWarpingToDaycare(PokeAlertConfig config) {
+        daycareCurrentStep = "Warping to daycare";
+        sendDaycareStepNotification(2, "Warping to daycare");
+        
+        // Send the warp command
+        String daycareCmd = config.eggManager.daycare.warpCommand;
+        sendChatCommand(daycareCmd);
+        PokeAlertClient.LOGGER.info("[Egg Manager] Sent command: {}", daycareCmd);
+        
+        // Wait for pre-teleport delay (5 seconds)
+        daycareState = DaycareState.WAITING_FOR_DAYCARE_ARRIVAL;
+        daycareStepStartTime = System.currentTimeMillis();
+        
+        // Schedule next check after teleport wait
+        int totalWait = config.eggManager.daycare.teleportWait + config.eggManager.daycare.worldLoadWait;
+        daycareTask = scheduler.schedule(this::processDaycareState, totalWait, TimeUnit.MILLISECONDS);
+    }
+    
+    /**
+     * Step 3: Verify arrival at daycare (spawn world)
+     */
+    private void handleWaitingForDaycareArrival(PokeAlertConfig config) {
+        daycareCurrentStep = "Verifying daycare arrival";
+        
+        // Check if we're at spawn
+        EggHatcher eggHatcher = EggHatcher.getInstance();
+        if (eggHatcher != null && eggHatcher.isAtSpawn()) {
+            PokeAlertClient.LOGGER.info("[Egg Manager] Arrived at daycare (spawn world)");
+            sendDaycareStepNotification(3, "Arrived at daycare");
+            
+            // Move to next state
+            daycareState = DaycareState.INTERACTING_WITH_NPC;
+            daycareStepStartTime = System.currentTimeMillis();
+            
+            // Small delay before interacting
+            daycareTask = scheduler.schedule(this::processDaycareState, 1000, TimeUnit.MILLISECONDS);
+        } else {
+            // Not at spawn yet - check timeout
+            long elapsed = System.currentTimeMillis() - daycareStepStartTime;
+            int totalWait = config.eggManager.daycare.teleportWait + config.eggManager.daycare.worldLoadWait;
+            
+            if (elapsed > totalWait + 5000) { // Extra 5s grace period
+                PokeAlertClient.LOGGER.warn("[Egg Manager] Timeout waiting for daycare arrival");
+                retryDaycareStep("Timeout waiting for daycare");
+            } else {
+                // Keep waiting
+                daycareTask = scheduler.schedule(this::processDaycareState, 1000, TimeUnit.MILLISECONDS);
+            }
+        }
+    }
+    
+    /**
+     * Step 4: Interact with NPC (right-click at crosshair)
+     */
+    private void handleInteractingWithNPC() {
+        daycareCurrentStep = "Opening daycare menu";
+        sendDaycareStepNotification(4, "Opening daycare menu");
+        
+        // Simulate right-click (use key)
+        if (client.player != null) {
+            client.execute(() -> {
+                // Press and release use key (right-click)
+                client.options.useKey.setPressed(true);
+                
+                // Release after a short delay
+                scheduler.schedule(() -> {
+                    client.execute(() -> {
+                        client.options.useKey.setPressed(false);
+                        PokeAlertClient.LOGGER.info("[Egg Manager] Right-click simulated to open daycare menu");
+                    });
+                }, 100, TimeUnit.MILLISECONDS);
+            });
+        }
+        
+        // Transition to waiting for daycare menu to open
+        daycareState = DaycareState.WAITING_FOR_DAYCARE_MENU;
+        daycareStepStartTime = System.currentTimeMillis();
+        
+        // Check for menu after a short delay
+        daycareTask = scheduler.schedule(this::processDaycareState, 500, TimeUnit.MILLISECONDS);
+    }
+    
+    /**
+     * Step 4B: Wait for daycare menu to open
+     */
+    private void handleWaitingForDaycareMenu() {
+        daycareCurrentStep = "Waiting for daycare menu";
+        
+        // CRITICAL: Use CompletableFuture to check screen on render thread
+        // client.currentScreen must be accessed from the render thread
+        java.util.concurrent.CompletableFuture<Boolean> menuCheckFuture = new java.util.concurrent.CompletableFuture<>();
+        
+        client.execute(() -> {
+            try {
+                if (client.currentScreen != null) {
+                    String screenTitle = client.currentScreen.getTitle().getString();
+                    String screenClass = client.currentScreen.getClass().getName();
+                    PokeAlertClient.LOGGER.info("[Egg Manager] Screen detected: '{}' (class: {})", 
+                        screenTitle, screenClass);
+                    
+                    // FIXED: The daycare title uses Unicode small caps "Dᴀʏᴄᴀʀᴇ" which don't match "daycare"
+                    // Instead, check if ANY HandledScreen (container) is open after right-clicking the NPC
+                    // Since we just simulated right-click at daycare, any container screen is the daycare menu
+                    boolean isDaycareMenu = false;
+                    
+                    // Method 1: Check if it's a HandledScreen (container menu)
+                    if (client.currentScreen instanceof net.minecraft.client.gui.screen.ingame.HandledScreen<?>) {
+                        isDaycareMenu = true;
+                        PokeAlertClient.LOGGER.info("[Egg Manager] Daycare menu opened (HandledScreen detected): {}", screenTitle);
+                    }
+                    
+                    // Method 2: Fallback - normalize Unicode and check for "daycare" variants
+                    if (!isDaycareMenu) {
+                        // Normalize Unicode small caps to regular letters
+                        String normalizedTitle = normalizeUnicodeSmallCaps(screenTitle.toLowerCase());
+                        if (normalizedTitle.contains("daycare")) {
+                            isDaycareMenu = true;
+                            PokeAlertClient.LOGGER.info("[Egg Manager] Daycare menu opened (title match): {} -> {}", screenTitle, normalizedTitle);
+                        }
+                    }
+                    
+                    menuCheckFuture.complete(isDaycareMenu);
+                    return;
+                } else {
+                    PokeAlertClient.LOGGER.debug("[Egg Manager] No screen currently open");
+                }
+                menuCheckFuture.complete(false);
+            } catch (Exception e) {
+                PokeAlertClient.LOGGER.error("[Egg Manager] Error checking screen: {}", e.getMessage());
+                menuCheckFuture.complete(false);
+            }
+        });
+        
+        // Wait for result with timeout
+        boolean menuFound = false;
+        try {
+            menuFound = menuCheckFuture.get(500, java.util.concurrent.TimeUnit.MILLISECONDS);
+        } catch (Exception e) {
+            PokeAlertClient.LOGGER.debug("[Egg Manager] Menu check timed out or failed");
+        }
+        
+        if (menuFound) {
+            sendDaycareStepNotification(5, "Daycare menu opened");
+            
+            // Move to clicking egg state
+            daycareState = DaycareState.CLICKING_EGG;
+            daycareStepStartTime = System.currentTimeMillis();
+            
+            // Small delay before clicking
+            daycareTask = scheduler.schedule(this::processDaycareState, 500, TimeUnit.MILLISECONDS);
+            return;
+        }
+        
+        // Check timeout
+        long elapsed = System.currentTimeMillis() - daycareStepStartTime;
+        if (elapsed > 5000) { // 5 second timeout for menu to open
+            PokeAlertClient.LOGGER.warn("[Egg Manager] Timeout waiting for daycare menu to open");
+            retryDaycareStep("Daycare menu did not open");
+        } else {
+            // Keep waiting
+            daycareTask = scheduler.schedule(this::processDaycareState, 500, TimeUnit.MILLISECONDS);
+        }
+    }
+    
+    /**
+     * Step 5: Click the egg in the daycare menu
+     */
+    private void handleClickingEgg() {
+        daycareCurrentStep = "Retrieving egg";
+        sendDaycareStepNotification(5, "Retrieving egg");
+        
+        // CRITICAL: Use CompletableFuture to handle screen interaction on render thread
+        java.util.concurrent.CompletableFuture<Integer> eggCheckFuture = new java.util.concurrent.CompletableFuture<>();
+        // -1 = error/screen closed, -2 = no egg found, >= 0 = egg found at slot
+        
+        client.execute(() -> {
+            try {
+                if (client.currentScreen == null) {
+                    PokeAlertClient.LOGGER.warn("[Egg Manager] Screen closed unexpectedly");
+                    eggCheckFuture.complete(-1);
+                    return;
+                }
+                
+                // The daycare menu is a handled screen (container)
+                // We need to find the egg slot and click it
+                if (client.currentScreen instanceof net.minecraft.client.gui.screen.ingame.HandledScreen<?> handledScreen) {
+                    net.minecraft.screen.ScreenHandler screenHandler = handledScreen.getScreenHandler();
+                    
+                    if (screenHandler != null) {
+                        // Scan slots for an egg
+                        int eggSlotId = -2;
+                        for (int i = 0; i < screenHandler.slots.size(); i++) {
+                            net.minecraft.screen.slot.Slot slot = screenHandler.slots.get(i);
+                            net.minecraft.item.ItemStack stack = slot.getStack();
+                            
+                            if (!stack.isEmpty()) {
+                                String itemName = stack.getName().getString().toLowerCase();
+                                PokeAlertClient.LOGGER.debug("[Egg Manager] Slot {}: {}", i, itemName);
+                                
+                                // Check if this is an egg
+                                if (itemName.contains("egg")) {
+                                    eggSlotId = i;
+                                    PokeAlertClient.LOGGER.info("[Egg Manager] Found egg at slot {}: {}", i, stack.getName().getString());
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        if (eggSlotId >= 0) {
+                            // Click the egg slot to retrieve it
+                            try {
+                                // Use the interactionManager to click the slot
+                                if (client.interactionManager != null) {
+                                    client.interactionManager.clickSlot(
+                                        screenHandler.syncId,
+                                        eggSlotId,
+                                        0, // Left click
+                                        net.minecraft.screen.slot.SlotActionType.PICKUP,
+                                        client.player
+                                    );
+                                    PokeAlertClient.LOGGER.info("[Egg Manager] Clicked egg slot {}", eggSlotId);
+                                }
+                            } catch (Exception e) {
+                                PokeAlertClient.LOGGER.error("[Egg Manager] Error clicking slot: {}", e.getMessage());
+                            }
+                        }
+                        
+                        eggCheckFuture.complete(eggSlotId);
+                        return;
+                    }
+                }
+                eggCheckFuture.complete(-1);
+            } catch (Exception e) {
+                PokeAlertClient.LOGGER.error("[Egg Manager] Error in egg check: {}", e.getMessage());
+                eggCheckFuture.complete(-1);
+            }
+        });
+        
+        // Wait for result with timeout
+        int result = -1;
+        try {
+            result = eggCheckFuture.get(2000, java.util.concurrent.TimeUnit.MILLISECONDS);
+        } catch (Exception e) {
+            PokeAlertClient.LOGGER.error("[Egg Manager] Egg check timed out");
+        }
+        
+        if (result == -1) {
+            // Screen closed or error
+            retryDaycareStep("Screen closed unexpectedly");
+            return;
+        }
+        
+        if (result >= 0) {
+            sendDaycareStepNotification(5, "Egg retrieved ✓");
+            
+            // Move to closing menu state
+            daycareState = DaycareState.CLOSING_MENU;
+            daycareStepStartTime = System.currentTimeMillis();
+            
+            // Wait a moment for the click to process
+            daycareTask = scheduler.schedule(this::processDaycareState, 1000, TimeUnit.MILLISECONDS);
+            return;
+        } else {
+            // result == -2: No egg found - close menu and warp home anyway
+            daycareState = DaycareState.CLOSING_MENU;
+            daycareStepStartTime = System.currentTimeMillis();
+            daycareTask = scheduler.schedule(this::processDaycareState, 500, TimeUnit.MILLISECONDS);
+        }
+    }
+    
+    /**
+     * Step 6: Close the daycare menu
+     */
+    private void handleClosingMenu() {
+        daycareCurrentStep = "Closing menu";
+        
+        // Close any open screen
+        if (client.currentScreen != null) {
+            client.execute(() -> client.setScreen(null));
+            PokeAlertClient.LOGGER.info("[Egg Manager] Closed daycare menu");
+        }
+        
+        // Move to warping home
+        daycareState = DaycareState.WARPING_HOME;
+        daycareStepStartTime = System.currentTimeMillis();
+        
+        // Small delay before warping
+        daycareTask = scheduler.schedule(this::processDaycareState, 500, TimeUnit.MILLISECONDS);
+    }
+    
+    /**
+     * Step 7: Warp home
+     */
+    private void handleWarpingHome(PokeAlertConfig config) {
+        daycareCurrentStep = "Returning home";
+        sendDaycareStepNotification(6, "Warping home");
+        
+        // Send the home command
+        String homeCmd = config.eggManager.daycare.homeCommand;
+        sendChatCommand(homeCmd);
+        PokeAlertClient.LOGGER.info("[Egg Manager] Sent command: {}", homeCmd);
+        
+        // Wait for teleport
+        daycareState = DaycareState.WAITING_FOR_HOME_ARRIVAL;
+        daycareStepStartTime = System.currentTimeMillis();
+        
+        int totalWait = config.eggManager.daycare.teleportWait + config.eggManager.daycare.worldLoadWait;
+        daycareTask = scheduler.schedule(this::processDaycareState, totalWait, TimeUnit.MILLISECONDS);
+    }
+    
+    /**
+     * Step 6: Verify arrival at overworld
+     */
+    private void handleWaitingForHomeArrival(PokeAlertConfig config) {
+        daycareCurrentStep = "Verifying overworld arrival";
+        
+        // Check if we're in overworld (not at spawn)
+        EggHatcher eggHatcher = EggHatcher.getInstance();
+        if (eggHatcher != null && eggHatcher.isInOverworld()) {
+            PokeAlertClient.LOGGER.info("[Egg Manager] Arrived at overworld");
+            sendDaycareStepNotification(7, "Arrived in overworld");
+            
+            // Move to starting egg timer state (step 8)
+            daycareState = DaycareState.STARTING_EGG_TIMER;
+            daycareStepStartTime = System.currentTimeMillis();
+            
+            // Small delay before starting timer
+            daycareTask = scheduler.schedule(this::processDaycareState, 1000, TimeUnit.MILLISECONDS);
+        } else {
+            // Not in overworld yet - check timeout
+            long elapsed = System.currentTimeMillis() - daycareStepStartTime;
+            int totalWait = config.eggManager.daycare.teleportWait + config.eggManager.daycare.worldLoadWait;
+            
+            if (elapsed > totalWait + 5000) { // Extra 5s grace period
+                PokeAlertClient.LOGGER.warn("[Egg Manager] Timeout waiting for overworld arrival");
+                retryDaycareStep("Timeout waiting for overworld");
+            } else {
+                // Keep waiting
+                daycareTask = scheduler.schedule(this::processDaycareState, 1000, TimeUnit.MILLISECONDS);
+            }
+        }
+    }
+    
+    /**
+     * Step 8: Start Egg Timer
+     */
+    private void handleStartingEggTimer() {
+        daycareCurrentStep = "Starting egg timer";
+        sendDaycareStepNotification(8, "Starting 30-minute egg timer");
+        
+        // Start egg timer for 30 minutes
+        sendChatCommand("pokealert eggtimer start 30");
+        PokeAlertClient.LOGGER.info("[Egg Manager] Started 30-minute egg timer");
+        
+        // Move to resuming egg hatcher state (step 9)
+        daycareState = DaycareState.RESUMING_EGG_HATCHER;
+        daycareStepStartTime = System.currentTimeMillis();
+        
+        // Small delay before resuming egg hatcher
+        daycareTask = scheduler.schedule(this::processDaycareState, 1000, TimeUnit.MILLISECONDS);
+    }
+    
+    /**
+     * Step 9: Resume Egg Hatcher (Final Step)
+     */
+    private void handleResumingEggHatcher() {
+        daycareCurrentStep = "Resuming Egg Hatcher";
+        sendDaycareStepNotification(9, "Resuming Egg Hatcher");
+        
+        EggHatcher eggHatcher = EggHatcher.getInstance();
+        if (eggHatcher != null) {
+            // Re-enable egg hatcher via command to ensure it restarts properly
+            sendChatCommand("pokealert egghatcher enable");
+            PokeAlertClient.LOGGER.info("[Egg Manager] Sent /pokealert egghatcher enable command");
+            
+            // Also set mode to AUTO as backup
+            eggHatcher.setMode(EggHatcher.AutomationMode.AUTO);
+            PokeAlertClient.LOGGER.info("[Egg Manager] Egg Hatcher resumed");
+        } else {
+            PokeAlertClient.LOGGER.warn("[Egg Manager] Egg Hatcher instance not available");
+        }
+        
+        // Complete!
+        daycareState = DaycareState.COMPLETED;
+        executeDaycareStateMachine();
+    }
+    
+    /**
+     * Retry the current daycare step
+     */
+    private void retryDaycareStep(String reason) {
+        PokeAlertConfig config = ConfigManager.getConfig();
+        daycareRetryCount++;
+        
+        PokeAlertClient.LOGGER.warn("[Egg Manager] Retry {}/{} for step '{}': {}", 
+            daycareRetryCount, config.eggManager.daycare.retryCount, daycareCurrentStep, reason);
+        
+        if (daycareRetryCount >= config.eggManager.daycare.retryCount) {
+            failDaycareProcess("Max retries exceeded: " + reason);
+            return;
+        }
+        
+        sendDaycareNotification("⚠️ Retrying " + daycareCurrentStep + "...");
+        
+        // Wait 2 seconds before retry
+        daycareTask = scheduler.schedule(() -> {
+            // Go back to the appropriate state based on current step
+            if (daycareCurrentStep.contains("daycare")) {
+                daycareState = DaycareState.WARPING_TO_DAYCARE;
+            } else if (daycareCurrentStep.contains("overworld") || daycareCurrentStep.contains("home")) {
+                daycareState = DaycareState.WARPING_HOME;
+            }
+            daycareStepStartTime = System.currentTimeMillis();
+            executeDaycareStateMachine();
+        }, 2000, TimeUnit.MILLISECONDS);
+    }
+    
+    /**
+     * Fail the daycare process and send Telegram notification
+     */
+    private void failDaycareProcess(String reason) {
+        daycareState = DaycareState.FAILED;
+        
+        PokeAlertClient.LOGGER.error("[Egg Manager] Daycare process failed: {}", reason);
+        sendDaycareNotification("❌ Daycare run failed: " + reason);
+        
+        // Send Telegram notification on failure
+        PokeAlertConfig config = ConfigManager.getConfig();
+        if (config.telegram.enabled) {
+            try {
+                com.afiqhasiff.pokealert.client.notification.TelegramNotification telegram = 
+                    new com.afiqhasiff.pokealert.client.notification.TelegramNotification();
+                telegram.initialize();
+                
+                StringBuilder message = new StringBuilder();
+                message.append("🚨 <b>Egg Manager</b>\n");
+                message.append("• <b>Status:</b> Failed to complete daycare run\n");
+                message.append("• <b>Step:</b> ").append(daycareCurrentStep).append("\n");
+                message.append("• <b>Reason:</b> ").append(reason).append("\n");
+                
+                telegram.sendEggTimerNotification(message.toString());
+            } catch (Exception e) {
+                PokeAlertClient.LOGGER.error("[Egg Manager] Failed to send Telegram notification: {}", e.getMessage());
+            }
+        }
+        
+        // Try to resume Egg Hatcher anyway (in case player can handle manually)
+        EggHatcher eggHatcher = EggHatcher.getInstance();
+        if (eggHatcher != null) {
+            eggHatcher.setMode(EggHatcher.AutomationMode.AUTO);
+        }
+    }
+    
+    /**
+     * Send a chat command
+     */
+    private void sendChatCommand(String command) {
+        if (client.player != null && command != null && !command.isEmpty()) {
+            client.execute(() -> {
+                // Remove the leading '/' if present
+                String cmd = command.startsWith("/") ? command.substring(1) : command;
+                client.player.networkHandler.sendChatCommand(cmd);
+            });
+        }
+    }
+    
+    /**
+     * Normalize Unicode small caps characters to regular lowercase letters.
+     * Servers often use Unicode small caps for styled text (e.g., "Dᴀʏᴄᴀʀᴇ" instead of "Daycare").
+     * This method converts them back to regular letters for matching.
+     * 
+     * @param text The text to normalize
+     * @return Text with Unicode small caps converted to lowercase letters
+     */
+    private String normalizeUnicodeSmallCaps(String text) {
+        if (text == null) return "";
+        
+        // Map of Unicode small caps to regular lowercase letters
+        // Common Unicode small caps range: U+1D00 to U+1D2B and others
+        StringBuilder normalized = new StringBuilder();
+        for (char c : text.toCharArray()) {
+            switch (c) {
+                case 'ᴀ' -> normalized.append('a'); // U+1D00
+                case 'ʙ' -> normalized.append('b'); // U+0299
+                case 'ᴄ' -> normalized.append('c'); // U+1D04
+                case 'ᴅ' -> normalized.append('d'); // U+1D05
+                case 'ᴇ' -> normalized.append('e'); // U+1D07
+                case 'ꜰ' -> normalized.append('f'); // U+A730
+                case 'ɢ' -> normalized.append('g'); // U+0262
+                case 'ʜ' -> normalized.append('h'); // U+029C
+                case 'ɪ' -> normalized.append('i'); // U+026A
+                case 'ᴊ' -> normalized.append('j'); // U+1D0A
+                case 'ᴋ' -> normalized.append('k'); // U+1D0B
+                case 'ʟ' -> normalized.append('l'); // U+029F
+                case 'ᴍ' -> normalized.append('m'); // U+1D0D
+                case 'ɴ' -> normalized.append('n'); // U+0274
+                case 'ᴏ' -> normalized.append('o'); // U+1D0F
+                case 'ᴘ' -> normalized.append('p'); // U+1D18
+                case 'ꞯ' -> normalized.append('q'); // U+A7AF (rare)
+                case 'ʀ' -> normalized.append('r'); // U+0280
+                case 'ꜱ' -> normalized.append('s'); // U+A731
+                case 'ᴛ' -> normalized.append('t'); // U+1D1B
+                case 'ᴜ' -> normalized.append('u'); // U+1D1C
+                case 'ᴠ' -> normalized.append('v'); // U+1D20
+                case 'ᴡ' -> normalized.append('w'); // U+1D21
+                case 'x' -> normalized.append('x'); // No small cap version
+                case 'ʏ' -> normalized.append('y'); // U+028F
+                case 'ᴢ' -> normalized.append('z'); // U+1D22
+                default -> normalized.append(c);
+            }
+        }
+        return normalized.toString();
+    }
+    
+    /**
+     * Send in-game notification for daycare process with step number.
+     * Format: [PokeAlert] Egg Manager Daycare [x/8]: message
+     * Uses same color formatting as Egg Hatcher notifications.
+     * 
+     * @param step Current step number (0 = initiated, 1-8 = actual steps)
+     * @param message The notification message
+     */
+    private void sendDaycareStepNotification(int step, String message) {
+        if (client.player != null) {
+            PokeAlertConfig config = ConfigManager.getConfig();
+            if (config.notifications.textEnabled) {
+                client.execute(() -> {
+                    String title = step == 0 
+                        ? "Egg Manager Daycare" 
+                        : "Egg Manager Daycare [" + step + "/" + DAYCARE_TOTAL_STEPS + "]";
+                    
+                    client.player.sendMessage(
+                        net.minecraft.text.Text.literal("[").formatted(net.minecraft.util.Formatting.GRAY)
+                            .append(net.minecraft.text.Text.literal("PokeAlert").formatted(net.minecraft.util.Formatting.RED))
+                            .append(net.minecraft.text.Text.literal("] ").formatted(net.minecraft.util.Formatting.GRAY))
+                            .append(net.minecraft.text.Text.literal(title + ": ").formatted(net.minecraft.util.Formatting.WHITE))
+                            .append(net.minecraft.text.Text.literal(message).formatted(net.minecraft.util.Formatting.YELLOW))
+                    );
+                });
+            }
+        }
+    }
+    
+    /**
+     * Send in-game notification for daycare process (non-step, for errors/retries)
+     */
+    private void sendDaycareNotification(String message) {
+        if (client.player != null) {
+            PokeAlertConfig config = ConfigManager.getConfig();
+            if (config.notifications.textEnabled) {
+                client.execute(() -> {
+                    client.player.sendMessage(
+                        net.minecraft.text.Text.literal("[").formatted(net.minecraft.util.Formatting.GRAY)
+                            .append(net.minecraft.text.Text.literal("PokeAlert").formatted(net.minecraft.util.Formatting.RED))
+                            .append(net.minecraft.text.Text.literal("] ").formatted(net.minecraft.util.Formatting.GRAY))
+                            .append(net.minecraft.text.Text.literal("Egg Manager Daycare: ").formatted(net.minecraft.util.Formatting.WHITE))
+                            .append(net.minecraft.text.Text.literal(message).formatted(net.minecraft.util.Formatting.YELLOW))
+                    );
+                });
+            }
+        }
+    }
+    
+    /**
+     * Send 10-second warning notification before opening PC for transfers.
+     * This gives the player time to close any open interfaces.
+     * 
+     * @param seconds Seconds until PC will open
+     * @param eggCount Number of eggs to be transferred
+     */
+    private void sendPCWarningNotification(int seconds, int eggCount) {
+        if (client.player != null) {
+            PokeAlertConfig config = ConfigManager.getConfig();
+            if (config.notifications.textEnabled) {
+                client.execute(() -> {
+                    String message = "⚠️ PC will open in " + seconds + "s for " + eggCount + " egg" + (eggCount > 1 ? "s" : "") + " - Close any open interfaces!";
+                    client.player.sendMessage(
+                        net.minecraft.text.Text.literal("[").formatted(net.minecraft.util.Formatting.GRAY)
+                            .append(net.minecraft.text.Text.literal("PokeAlert").formatted(net.minecraft.util.Formatting.RED))
+                            .append(net.minecraft.text.Text.literal("] ").formatted(net.minecraft.util.Formatting.GRAY))
+                            .append(net.minecraft.text.Text.literal("Egg Manager: ").formatted(net.minecraft.util.Formatting.WHITE))
+                            .append(net.minecraft.text.Text.literal(message).formatted(net.minecraft.util.Formatting.GOLD))
+                    );
+                });
+            }
+        }
+    }
+    
+    /**
+     * Send notification for PC transfer status
+     */
+    private void sendPCTransferNotification(String message) {
+        if (client.player != null) {
+            PokeAlertConfig config = ConfigManager.getConfig();
+            if (config.notifications.textEnabled) {
+                client.execute(() -> {
+                    client.player.sendMessage(
+                        net.minecraft.text.Text.literal("[").formatted(net.minecraft.util.Formatting.GRAY)
+                            .append(net.minecraft.text.Text.literal("PokeAlert").formatted(net.minecraft.util.Formatting.RED))
+                            .append(net.minecraft.text.Text.literal("] ").formatted(net.minecraft.util.Formatting.GRAY))
+                            .append(net.minecraft.text.Text.literal("Egg Manager: ").formatted(net.minecraft.util.Formatting.WHITE))
+                            .append(net.minecraft.text.Text.literal(message).formatted(net.minecraft.util.Formatting.YELLOW))
+                    );
+                });
+            }
+        }
+    }
+    
+    /**
+     * Check if daycare fetch is currently in progress
+     */
+    public boolean isDaycareFetchInProgress() {
+        return daycareState != DaycareState.IDLE && daycareState != DaycareState.COMPLETED && daycareState != DaycareState.FAILED;
+    }
+    
+    /**
+     * Get the current daycare state for status display
+     */
+    public String getDaycareStatus() {
+        if (daycareState == DaycareState.IDLE) {
+            return "Idle";
+        }
+        return daycareCurrentStep + " (Retry " + daycareRetryCount + ")";
+    }
 }
 

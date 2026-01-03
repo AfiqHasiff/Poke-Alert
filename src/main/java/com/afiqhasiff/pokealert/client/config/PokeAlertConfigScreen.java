@@ -88,6 +88,11 @@ public class PokeAlertConfigScreen extends Screen {
     private ButtonWidget eggManagerCheckIntervalButton;
     private boolean waitingForEggManagerKey = false;
     
+    // Egg Manager Phase 3: Daycare settings
+    private ButtonWidget eggManagerDaycareEnabledButton;
+    private TextFieldWidget eggManagerDaycareCommandField;
+    private TextFieldWidget eggManagerHomeCommandField;
+    
     // Slot Coordinate Mapping settings
     private ButtonWidget visualIndicatorsToggleButton;
     
@@ -149,93 +154,107 @@ public class PokeAlertConfigScreen extends Screen {
         PokeAlertConfig original = ConfigManager.getConfig();
         PokeAlertConfig copy = new PokeAlertConfig();
         
-        // Copy all fields from original config
+        // Copy master toggle
         copy.modEnabled = original.modEnabled;
         
-        // Detection categories
-        copy.broadcastAllLegendaries = original.broadcastAllLegendaries;
-        copy.broadcastAllMythics = original.broadcastAllMythics;
-        copy.broadcastAllStarter = original.broadcastAllStarter;
-        copy.broadcastAllBabies = original.broadcastAllBabies;
-        copy.broadcastAllUltraBeasts = original.broadcastAllUltraBeasts;
-        copy.broadcastAllShinies = original.broadcastAllShinies;
-        copy.broadcastAllParadox = original.broadcastAllParadox;
+        // Copy detection settings (nested structure)
+        copy.detection.legendaries = original.detection.legendaries;
+        copy.detection.mythics = original.detection.mythics;
+        copy.detection.starters = original.detection.starters;
+        copy.detection.babies = original.detection.babies;
+        copy.detection.ultraBeasts = original.detection.ultraBeasts;
+        copy.detection.shinies = original.detection.shinies;
+        copy.detection.paradox = original.detection.paradox;
+        copy.detection.whitelist = original.detection.whitelist != null 
+            ? Arrays.copyOf(original.detection.whitelist, original.detection.whitelist.length) 
+            : new String[0];
+        copy.detection.blacklist = original.detection.blacklist != null 
+            ? Arrays.copyOf(original.detection.blacklist, original.detection.blacklist.length) 
+            : new String[0];
+        copy.detection.blacklistCharacter = original.detection.blacklistCharacter;
+        copy.detection.excludedWorlds = original.detection.excludedWorlds != null 
+            ? Arrays.copyOf(original.detection.excludedWorlds, original.detection.excludedWorlds.length) 
+            : new String[0];
         
-        // Whitelist/Blacklist
-        copy.broadcastWhitelist = Arrays.copyOf(original.broadcastWhitelist, original.broadcastWhitelist.length);
-        copy.broadcastBlacklist = Arrays.copyOf(original.broadcastBlacklist, original.broadcastBlacklist.length);
-        copy.blacklistCharacter = original.blacklistCharacter;
+        // Copy notification settings (nested structure)
+        copy.notifications.textEnabled = original.notifications.textEnabled;
+        copy.notifications.soundEnabled = original.notifications.soundEnabled;
+        copy.notifications.soundVolume = original.notifications.soundVolume;
         
-        // World exclusions
-        copy.excludedWorlds = Arrays.copyOf(original.excludedWorlds, original.excludedWorlds.length);
+        // Copy telegram settings (nested structure)
+        copy.telegram.enabled = original.telegram.enabled;
+        copy.telegram.botToken = original.telegram.botToken;
+        copy.telegram.chatId = original.telegram.chatId;
+        copy.telegram.apiUrl = original.telegram.apiUrl;
+        copy.telegram.maxNotificationsPerMinute = original.telegram.maxNotificationsPerMinute;
+        copy.telegram.cooldownSeconds = original.telegram.cooldownSeconds;
         
-        // Notification settings
-        copy.inGameTextEnabled = original.inGameTextEnabled;
-        copy.inGameSoundEnabled = original.inGameSoundEnabled;
-        copy.inGameSoundVolume = original.inGameSoundVolume;
-        copy.telegramEnabled = original.telegramEnabled;
+        // Copy egg timer settings (nested structure)
+        copy.eggTimer.duration = original.eggTimer.duration;
+        copy.eggTimer.textNotification = original.eggTimer.textNotification;
+        copy.eggTimer.telegramNotification = original.eggTimer.telegramNotification;
         
-        // Telegram config
-        copy.telegramBotToken = original.telegramBotToken;
-        copy.telegramChatId = original.telegramChatId;
-        copy.telegramApiUrl = original.telegramApiUrl;
-        copy.telegramMaxNotificationsPerMinute = original.telegramMaxNotificationsPerMinute;
-        copy.telegramCooldownSeconds = original.telegramCooldownSeconds;
+        // Copy egg hatcher settings (nested structure)
+        copy.eggHatcher.enabled = original.eggHatcher.enabled;
+        copy.eggHatcher.realmReturnCommand = original.eggHatcher.realmReturnCommand;
+        copy.eggHatcher.dmDetection.enabled = original.eggHatcher.dmDetection.enabled;
+        copy.eggHatcher.dmDetection.telegramNotification = original.eggHatcher.dmDetection.telegramNotification;
+        copy.eggHatcher.dmDetection.inGameNotification = original.eggHatcher.dmDetection.inGameNotification;
         
-        // Egg timer settings
-        copy.eggTimerDuration = original.eggTimerDuration;
-        copy.eggTimerTextNotification = original.eggTimerTextNotification;
-        copy.eggTimerTelegramNotification = original.eggTimerTelegramNotification;
+        // Copy egg manager settings (nested structure)
+        copy.eggManager.enabled = original.eggManager.enabled;
+        copy.eggManager.checkInterval = original.eggManager.checkInterval;
+        copy.eggManager.confirmationChecks = original.eggManager.confirmationChecks;
+        copy.eggManager.autoStopEggHatcher = original.eggManager.autoStopEggHatcher;
+        copy.eggManager.daycare.enabled = original.eggManager.daycare.enabled;
+        copy.eggManager.daycare.warpCommand = original.eggManager.daycare.warpCommand;
+        copy.eggManager.daycare.homeCommand = original.eggManager.daycare.homeCommand;
+        copy.eggManager.daycare.retryCount = original.eggManager.daycare.retryCount;
+        copy.eggManager.daycare.teleportWait = original.eggManager.daycare.teleportWait;
+        copy.eggManager.daycare.worldLoadWait = original.eggManager.daycare.worldLoadWait;
         
-        // Egg hatcher settings
-        copy.eggHatcherEnabled = original.eggHatcherEnabled;
-        copy.realmReturnCommand = original.realmReturnCommand;
+        // Copy mapping lines / slot coordinate settings (nested structure)
+        if (original.mappingLines != null && original.mappingLines.slotMapping != null) {
+            copy.mappingLines.slotMapping.visualIndicatorsEnabled = original.mappingLines.slotMapping.visualIndicatorsEnabled;
+        }
         
-        // Egg Manager settings
-        copy.eggManagerEnabled = original.eggManagerEnabled;
-        copy.eggManagerCheckInterval = original.eggManagerCheckInterval;
-        copy.eggManagerConfirmationChecks = original.eggManagerConfirmationChecks;
-        copy.eggManagerAutoStopEggHatcher = original.eggManagerAutoStopEggHatcher;
+        // Copy anti-afk settings (nested structure)
+        copy.antiAfk.regionX1 = original.antiAfk.regionX1;
+        copy.antiAfk.regionZ1 = original.antiAfk.regionZ1;
+        copy.antiAfk.regionX2 = original.antiAfk.regionX2;
+        copy.antiAfk.regionZ2 = original.antiAfk.regionZ2;
+        copy.antiAfk.thresholds.arrivalThreshold = original.antiAfk.thresholds.arrivalThreshold;
+        copy.antiAfk.thresholds.teleportDetectionOffset = original.antiAfk.thresholds.teleportDetectionOffset;
+        copy.antiAfk.timing.coordinateCheckInterval = original.antiAfk.timing.coordinateCheckInterval;
+        copy.antiAfk.timing.realmCheckIntervalSpawn = original.antiAfk.timing.realmCheckIntervalSpawn;
+        copy.antiAfk.timing.realmCheckIntervalOverworld = original.antiAfk.timing.realmCheckIntervalOverworld;
+        copy.antiAfk.timing.playerMonitorInterval = original.antiAfk.timing.playerMonitorInterval;
+        copy.antiAfk.timing.locationTimeout = original.antiAfk.timing.locationTimeout;
+        copy.antiAfk.playerSafety.playersToAvoid = original.antiAfk.playerSafety.playersToAvoid != null 
+            ? Arrays.copyOf(original.antiAfk.playerSafety.playersToAvoid, original.antiAfk.playerSafety.playersToAvoid.length) 
+            : new String[0];
+        copy.antiAfk.playerSafety.enablePlayerListMonitoring = original.antiAfk.playerSafety.enablePlayerListMonitoring;
+        copy.antiAfk.playerSafety.enableNearbyPlayerDetection = original.antiAfk.playerSafety.enableNearbyPlayerDetection;
+        copy.antiAfk.playerSafety.nearbyPlayerDetectionRadius = original.antiAfk.playerSafety.nearbyPlayerDetectionRadius;
+        copy.antiAfk.playerSafety.suspicionTopNThreshold = original.antiAfk.playerSafety.suspicionTopNThreshold;
+        copy.antiAfk.queue.initialSize = original.antiAfk.queue.initialSize;
+        copy.antiAfk.queue.replenishCount = original.antiAfk.queue.replenishCount;
+        copy.antiAfk.queue.locationsForCompletion = original.antiAfk.queue.locationsForCompletion;
+        copy.antiAfk.queue.maxConsecutiveTimeouts = original.antiAfk.queue.maxConsecutiveTimeouts;
         
-        // Slot Coordinate Mapping settings
-        copy.slotMapping.visualIndicatorsEnabled = original.slotMapping.visualIndicatorsEnabled;
-        // Note: Individual slot coordinates are not copied here - they should be set via commands
-        
-        // v3.0.0: Anti-AFK Region settings
-        copy.antiAfkRegionX1 = original.antiAfkRegionX1;
-        copy.antiAfkRegionZ1 = original.antiAfkRegionZ1;
-        copy.antiAfkRegionX2 = original.antiAfkRegionX2;
-        copy.antiAfkRegionZ2 = original.antiAfkRegionZ2;
-        copy.arrivalThreshold = original.arrivalThreshold;
-        copy.teleportDetectionOffset = original.teleportDetectionOffset;
-        copy.coordinateCheckInterval = original.coordinateCheckInterval;
-        copy.realmCheckIntervalSpawn = original.realmCheckIntervalSpawn;
-        copy.realmCheckIntervalOverworld = original.realmCheckIntervalOverworld;
-        copy.playerMonitorInterval = original.playerMonitorInterval;
-        copy.locationTimeout = original.locationTimeout;
-        copy.playersToAvoid = Arrays.copyOf(original.playersToAvoid, original.playersToAvoid.length);
-        copy.enablePlayerListMonitoring = original.enablePlayerListMonitoring;
-        copy.enableNearbyPlayerDetection = original.enableNearbyPlayerDetection;
-        copy.nearbyPlayerDetectionRadius = original.nearbyPlayerDetectionRadius;
-        copy.playerSuspicionTopNThreshold = original.playerSuspicionTopNThreshold;
-        copy.initialQueueSize = original.initialQueueSize;
-        copy.replenishCount = original.replenishCount;
-        copy.locationsForStep5 = original.locationsForStep5;
-        copy.maxConsecutiveTimeouts = original.maxConsecutiveTimeouts;
-        
-        // Human-like behavior settings
-        copy.enableHumanLikeBehavior = original.enableHumanLikeBehavior;
-        copy.minLongPauseMs = original.minLongPauseMs;
-        copy.maxLongPauseMs = original.maxLongPauseMs;
-        copy.minBreakPauseMs = original.minBreakPauseMs;
-        copy.maxBreakPauseMs = original.maxBreakPauseMs;
-        copy.longPauseChance = original.longPauseChance;
-        copy.breakPauseChance = original.breakPauseChance;
-        copy.backtrackChance = original.backtrackChance;
-        copy.walkChance = original.walkChance;
-        copy.hotbarSwitchChance = original.hotbarSwitchChance;
-        copy.jumpWhileMovingChance = original.jumpWhileMovingChance;
-        copy.lookAroundChance = original.lookAroundChance;
+        // Copy human-like behavior settings (nested structure)
+        copy.antiAfk.humanBehavior.enabled = original.antiAfk.humanBehavior.enabled;
+        copy.antiAfk.humanBehavior.minLongPauseMs = original.antiAfk.humanBehavior.minLongPauseMs;
+        copy.antiAfk.humanBehavior.maxLongPauseMs = original.antiAfk.humanBehavior.maxLongPauseMs;
+        copy.antiAfk.humanBehavior.minBreakPauseMs = original.antiAfk.humanBehavior.minBreakPauseMs;
+        copy.antiAfk.humanBehavior.maxBreakPauseMs = original.antiAfk.humanBehavior.maxBreakPauseMs;
+        copy.antiAfk.humanBehavior.longPauseChance = original.antiAfk.humanBehavior.longPauseChance;
+        copy.antiAfk.humanBehavior.breakPauseChance = original.antiAfk.humanBehavior.breakPauseChance;
+        copy.antiAfk.humanBehavior.backtrackChance = original.antiAfk.humanBehavior.backtrackChance;
+        copy.antiAfk.humanBehavior.walkChance = original.antiAfk.humanBehavior.walkChance;
+        copy.antiAfk.humanBehavior.hotbarSwitchChance = original.antiAfk.humanBehavior.hotbarSwitchChance;
+        copy.antiAfk.humanBehavior.jumpWhileMovingChance = original.antiAfk.humanBehavior.jumpWhileMovingChance;
+        copy.antiAfk.humanBehavior.lookAroundChance = original.antiAfk.humanBehavior.lookAroundChance;
         
         return copy;
     }
@@ -274,10 +293,10 @@ public class PokeAlertConfigScreen extends Screen {
         legendariesButton = addCategoryRow(currentY, 
             "Legendary Pokémon", 
             "Rare and powerful legendary spawns",
-            config.broadcastAllLegendaries,
+            config.detection.legendaries,
             button -> {
-                config.broadcastAllLegendaries = !config.broadcastAllLegendaries;
-                updateToggleButton(legendariesButton, config.broadcastAllLegendaries);
+                config.detection.legendaries = !config.detection.legendaries;
+                updateToggleButton(legendariesButton, config.detection.legendaries);
             });
         currentY += ROW_HEIGHT;
 
@@ -285,10 +304,10 @@ public class PokeAlertConfigScreen extends Screen {
         mythicsButton = addCategoryRow(currentY,
             "Mythical Pokémon",
             "Ultra-rare mythical encounters",
-            config.broadcastAllMythics,
+            config.detection.mythics,
             button -> {
-                config.broadcastAllMythics = !config.broadcastAllMythics;
-                updateToggleButton(mythicsButton, config.broadcastAllMythics);
+                config.detection.mythics = !config.detection.mythics;
+                updateToggleButton(mythicsButton, config.detection.mythics);
             });
         currentY += ROW_HEIGHT;
 
@@ -296,10 +315,10 @@ public class PokeAlertConfigScreen extends Screen {
         starterButton = addCategoryRow(currentY,
             "Starter Pokémon",
             "All starter Pokémon and their evolutions",
-            config.broadcastAllStarter,
+            config.detection.starters,
             button -> {
-                config.broadcastAllStarter = !config.broadcastAllStarter;
-                updateToggleButton(starterButton, config.broadcastAllStarter);
+                config.detection.starters = !config.detection.starters;
+                updateToggleButton(starterButton, config.detection.starters);
             });
         currentY += ROW_HEIGHT;
 
@@ -307,10 +326,10 @@ public class PokeAlertConfigScreen extends Screen {
         babiesButton = addCategoryRow(currentY,
             "Baby Pokémon",
             "Cute baby Pokémon like Pichu and Togepi",
-            config.broadcastAllBabies,
+            config.detection.babies,
             button -> {
-                config.broadcastAllBabies = !config.broadcastAllBabies;
-                updateToggleButton(babiesButton, config.broadcastAllBabies);
+                config.detection.babies = !config.detection.babies;
+                updateToggleButton(babiesButton, config.detection.babies);
             });
         currentY += ROW_HEIGHT;
 
@@ -318,10 +337,10 @@ public class PokeAlertConfigScreen extends Screen {
         ultraBeastsButton = addCategoryRow(currentY,
             "Ultra Beasts",
             "Mysterious Pokémon from Ultra Space",
-            config.broadcastAllUltraBeasts,
+            config.detection.ultraBeasts,
             button -> {
-                config.broadcastAllUltraBeasts = !config.broadcastAllUltraBeasts;
-                updateToggleButton(ultraBeastsButton, config.broadcastAllUltraBeasts);
+                config.detection.ultraBeasts = !config.detection.ultraBeasts;
+                updateToggleButton(ultraBeastsButton, config.detection.ultraBeasts);
             });
         currentY += ROW_HEIGHT;
 
@@ -329,10 +348,10 @@ public class PokeAlertConfigScreen extends Screen {
         shiniesButton = addCategoryRow(currentY,
             "All Shiny Pokémon",
             "Any Pokémon in their shiny variant",
-            config.broadcastAllShinies,
+            config.detection.shinies,
             button -> {
-                config.broadcastAllShinies = !config.broadcastAllShinies;
-                updateToggleButton(shiniesButton, config.broadcastAllShinies);
+                config.detection.shinies = !config.detection.shinies;
+                updateToggleButton(shiniesButton, config.detection.shinies);
             });
         currentY += ROW_HEIGHT;
 
@@ -340,10 +359,10 @@ public class PokeAlertConfigScreen extends Screen {
         paradoxButton = addCategoryRow(currentY,
             "Paradox Pokémon",
             "Ancient and Future Paradox forms",
-            config.broadcastAllParadox,
+            config.detection.paradox,
             button -> {
-                config.broadcastAllParadox = !config.broadcastAllParadox;
-                updateToggleButton(paradoxButton, config.broadcastAllParadox);
+                config.detection.paradox = !config.detection.paradox;
+                updateToggleButton(paradoxButton, config.detection.paradox);
             });
         currentY += ROW_HEIGHT + SECTION_SPACING;
 
@@ -352,10 +371,10 @@ public class PokeAlertConfigScreen extends Screen {
         inGameTextButton = addNotificationRow(currentY,
             "In-Game Text",
             "Show chat notifications",
-            config.inGameTextEnabled,
+            config.notifications.textEnabled,
             button -> {
-                config.inGameTextEnabled = !config.inGameTextEnabled;
-                updateToggleButton(inGameTextButton, config.inGameTextEnabled);
+                config.notifications.textEnabled = !config.notifications.textEnabled;
+                updateToggleButton(inGameTextButton, config.notifications.textEnabled);
             });
         currentY += ROW_HEIGHT;
 
@@ -363,13 +382,13 @@ public class PokeAlertConfigScreen extends Screen {
         inGameSoundButton = addNotificationRow(currentY,
             "In-Game Sound",
             "Play notification sound",
-            config.inGameSoundEnabled,
+            config.notifications.soundEnabled,
             button -> {
-                config.inGameSoundEnabled = !config.inGameSoundEnabled;
-                updateToggleButton(inGameSoundButton, config.inGameSoundEnabled);
+                config.notifications.soundEnabled = !config.notifications.soundEnabled;
+                updateToggleButton(inGameSoundButton, config.notifications.soundEnabled);
                 // Enable/disable volume slider based on sound toggle
                 if (soundVolumeSlider != null) {
-                    soundVolumeSlider.active = config.inGameSoundEnabled;
+                    soundVolumeSlider.active = config.notifications.soundEnabled;
                 }
             });
         currentY += ROW_HEIGHT;
@@ -378,9 +397,9 @@ public class PokeAlertConfigScreen extends Screen {
         int sliderX = this.width - SIDE_MARGIN - 150;
         soundVolumeSlider = new VolumeSliderWidget(
             sliderX, currentY - (int)scrollOffset, 150, 20,
-            Text.literal("Volume: "), config.inGameSoundVolume
+            Text.literal("Volume: "), config.notifications.soundVolume
         );
-        soundVolumeSlider.active = config.inGameSoundEnabled;
+        soundVolumeSlider.active = config.notifications.soundEnabled;
         addDrawableChild(soundVolumeSlider);
         currentY += ROW_HEIGHT;
 
@@ -388,10 +407,10 @@ public class PokeAlertConfigScreen extends Screen {
         telegramButton = addNotificationRow(currentY,
             "Telegram",
             "Send notifications to Telegram bot",
-            config.telegramEnabled,
+            config.telegram.enabled,
             button -> {
-                config.telegramEnabled = !config.telegramEnabled;
-                updateToggleButton(telegramButton, config.telegramEnabled);
+                config.telegram.enabled = !config.telegram.enabled;
+                updateToggleButton(telegramButton, config.telegram.enabled);
             });
         currentY += ROW_HEIGHT + SECTION_SPACING;
         
@@ -400,10 +419,10 @@ public class PokeAlertConfigScreen extends Screen {
         eggTimerDurationButton = addEggTimerRow(currentY,
             "Egg Timer Duration",
             "Default egg timer duration",
-            Text.literal("Duration: " + config.eggTimerDuration + " min"),
+            Text.literal("Duration: " + config.eggTimer.duration + " min"),
             button -> {
                 // Cycle through common durations: 1, 5, 15, 30, 45, 60, 90, 120
-                int current = config.eggTimerDuration;
+                int current = config.eggTimer.duration;
                 int newDuration;
                 if (current < 5) newDuration = 5;
                 else if (current < 15) newDuration = 15;
@@ -414,7 +433,7 @@ public class PokeAlertConfigScreen extends Screen {
                 else if (current < 120) newDuration = 120;
                 else newDuration = 1;
                 
-                config.eggTimerDuration = newDuration;
+                config.eggTimer.duration = newDuration;
                 button.setMessage(Text.literal("Duration: " + newDuration + " min"));
                 // Config will be saved when user clicks "Save & Apply"
             });
@@ -438,10 +457,10 @@ public class PokeAlertConfigScreen extends Screen {
         realmReturnToggleButton = addEggTimerRow(currentY,
             "Egg Hatcher",
             "Auto-return from spawn",
-            Text.literal(config.eggHatcherEnabled ? "Enabled" : "Disabled"),
+            Text.literal(config.eggHatcher.enabled ? "Enabled" : "Disabled"),
             button -> {
-                config.eggHatcherEnabled = !config.eggHatcherEnabled;
-                button.setMessage(Text.literal(config.eggHatcherEnabled ? "Enabled" : "Disabled"));
+                config.eggHatcher.enabled = !config.eggHatcher.enabled;
+                button.setMessage(Text.literal(config.eggHatcher.enabled ? "Enabled" : "Disabled"));
                 // DM notification widgets remain enabled - users can configure them even if parent features are off
                 // Config will be saved when user clicks "Save & Apply"
             });
@@ -474,7 +493,7 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("Egg Hatcher Command")
         );
         realmReturnCommandField.setMaxLength(100);
-        realmReturnCommandField.setText(config.realmReturnCommand);
+        realmReturnCommandField.setText(config.eggHatcher.realmReturnCommand);
         realmReturnCommandField.setPlaceholder(Text.literal("/home new").formatted(Formatting.GRAY));
         addSelectableChild(realmReturnCommandField);
         addDrawableChild(realmReturnCommandField);
@@ -487,10 +506,10 @@ public class PokeAlertConfigScreen extends Screen {
         dmDetectionButton = addEggTimerRow(currentY,
             "DM Detection",
             "Detect and notify about direct messages",
-            Text.literal(config.dmDetectionEnabled ? "Enabled" : "Disabled"),
+            Text.literal(config.eggHatcher.dmDetection.enabled ? "Enabled" : "Disabled"),
             button -> {
-                config.dmDetectionEnabled = !config.dmDetectionEnabled;
-                button.setMessage(Text.literal(config.dmDetectionEnabled ? "Enabled" : "Disabled"));
+                config.eggHatcher.dmDetection.enabled = !config.eggHatcher.dmDetection.enabled;
+                button.setMessage(Text.literal(config.eggHatcher.dmDetection.enabled ? "Enabled" : "Disabled"));
                 // DM notification widgets remain enabled - users can configure them even if parent features are off
             });
         currentY += ROW_HEIGHT;
@@ -499,10 +518,10 @@ public class PokeAlertConfigScreen extends Screen {
         dmTelegramNotificationButton = addNotificationRow(currentY,
             "DM Telegram",
             "Send Telegram notifications for DMs",
-            config.dmTelegramNotification,
+            config.eggHatcher.dmDetection.telegramNotification,
             button -> {
-                config.dmTelegramNotification = !config.dmTelegramNotification;
-                updateToggleButton(dmTelegramNotificationButton, config.dmTelegramNotification);
+                config.eggHatcher.dmDetection.telegramNotification = !config.eggHatcher.dmDetection.telegramNotification;
+                updateToggleButton(dmTelegramNotificationButton, config.eggHatcher.dmDetection.telegramNotification);
             });
         currentY += ROW_HEIGHT;
         
@@ -510,10 +529,10 @@ public class PokeAlertConfigScreen extends Screen {
         dmInGameNotificationButton = addNotificationRow(currentY,
             "DM In-Game",
             "Show in-game notifications for DMs",
-            config.dmInGameNotification,
+            config.eggHatcher.dmDetection.inGameNotification,
             button -> {
-                config.dmInGameNotification = !config.dmInGameNotification;
-                updateToggleButton(dmInGameNotificationButton, config.dmInGameNotification);
+                config.eggHatcher.dmDetection.inGameNotification = !config.eggHatcher.dmDetection.inGameNotification;
+                updateToggleButton(dmInGameNotificationButton, config.eggHatcher.dmDetection.inGameNotification);
             });
         currentY += ROW_HEIGHT + SECTION_SPACING;
         
@@ -528,10 +547,10 @@ public class PokeAlertConfigScreen extends Screen {
         eggManagerEnabledButton = addEggTimerRow(currentY,
             "Egg Manager",
             "Monitor party slots for egg hatching",
-            Text.literal(config.eggManagerEnabled ? "Enabled" : "Disabled"),
+            Text.literal(config.eggManager.enabled ? "Enabled" : "Disabled"),
             button -> {
-                config.eggManagerEnabled = !config.eggManagerEnabled;
-                button.setMessage(Text.literal(config.eggManagerEnabled ? "Enabled" : "Disabled"));
+                config.eggManager.enabled = !config.eggManager.enabled;
+                button.setMessage(Text.literal(config.eggManager.enabled ? "Enabled" : "Disabled"));
             });
         currentY += ROW_HEIGHT;
         
@@ -550,10 +569,10 @@ public class PokeAlertConfigScreen extends Screen {
         eggManagerAutoStopButton = addNotificationRow(currentY,
             "Auto-stop Egg Hatcher",
             "Automatically stop Egg Hatcher when all eggs hatch",
-            config.eggManagerAutoStopEggHatcher,
+            config.eggManager.autoStopEggHatcher,
             button -> {
-                config.eggManagerAutoStopEggHatcher = !config.eggManagerAutoStopEggHatcher;
-                updateToggleButton(eggManagerAutoStopButton, config.eggManagerAutoStopEggHatcher);
+                config.eggManager.autoStopEggHatcher = !config.eggManager.autoStopEggHatcher;
+                updateToggleButton(eggManagerAutoStopButton, config.eggManager.autoStopEggHatcher);
             });
         currentY += ROW_HEIGHT;
         
@@ -561,10 +580,10 @@ public class PokeAlertConfigScreen extends Screen {
         eggManagerCheckIntervalButton = addEggTimerRow(currentY,
             "Check Interval",
             "How often to check party slots for egg hatching",
-            getCheckIntervalText(config.eggManagerCheckInterval),
+            getCheckIntervalText(config.eggManager.checkInterval),
             button -> {
                 // Cycle through common intervals: 10s, 30s, 1min, 2min, 5min, 10min
-                int current = config.eggManagerCheckInterval;
+                int current = config.eggManager.checkInterval;
                 int newInterval;
                 if (current < 30000) newInterval = 30000;      // 30 seconds
                 else if (current < 60000) newInterval = 60000; // 1 minute
@@ -573,10 +592,60 @@ public class PokeAlertConfigScreen extends Screen {
                 else if (current < 600000) newInterval = 600000; // 10 minutes
                 else newInterval = 10000; // Back to 10 seconds
                 
-                config.eggManagerCheckInterval = newInterval;
+                config.eggManager.checkInterval = newInterval;
                 button.setMessage(getCheckIntervalText(newInterval));
                 // Config will be saved when user clicks "Save & Apply"
             });
+        currentY += ROW_HEIGHT + SECTION_SPACING;
+        
+        // ========== Egg Manager Daycare Access Section ==========
+        // Daycare enabled toggle
+        eggManagerDaycareEnabledButton = addNotificationRow(currentY,
+            "Daycare Auto-Fetch",
+            "Auto-fetch eggs from daycare when Egg Timer completes",
+            config.eggManager.daycare.enabled,
+            button -> {
+                config.eggManager.daycare.enabled = !config.eggManager.daycare.enabled;
+                updateToggleButton(eggManagerDaycareEnabledButton, config.eggManager.daycare.enabled);
+            });
+        currentY += ROW_HEIGHT;
+        
+        // Daycare warp command field
+        int daycareLabelWidth = this.textRenderer.getWidth("Daycare Command:");
+        int daycareFieldWidth = this.width - (SIDE_MARGIN * 2) - daycareLabelWidth - 15;
+        int daycareFieldX = SIDE_MARGIN + daycareLabelWidth + 10;
+        
+        eggManagerDaycareCommandField = new TextFieldWidget(
+            this.textRenderer,
+            daycareFieldX,
+            currentY - (int)scrollOffset,
+            daycareFieldWidth,
+            BUTTON_HEIGHT,
+            Text.literal("Daycare Command")
+        );
+        eggManagerDaycareCommandField.setMaxLength(50);
+        eggManagerDaycareCommandField.setText(config.eggManager.daycare.warpCommand);
+        eggManagerDaycareCommandField.setPlaceholder(Text.literal("/warp daycare").formatted(Formatting.GRAY));
+        this.addDrawableChild(eggManagerDaycareCommandField);
+        currentY += ROW_HEIGHT;
+        
+        // Home command field
+        int homeLabelWidth = this.textRenderer.getWidth("Home Command:");
+        int homeFieldWidth = this.width - (SIDE_MARGIN * 2) - homeLabelWidth - 15;
+        int homeFieldX = SIDE_MARGIN + homeLabelWidth + 10;
+        
+        eggManagerHomeCommandField = new TextFieldWidget(
+            this.textRenderer,
+            homeFieldX,
+            currentY - (int)scrollOffset,
+            homeFieldWidth,
+            BUTTON_HEIGHT,
+            Text.literal("Home Command")
+        );
+        eggManagerHomeCommandField.setMaxLength(50);
+        eggManagerHomeCommandField.setText(config.eggManager.daycare.homeCommand);
+        eggManagerHomeCommandField.setPlaceholder(Text.literal("/home new").formatted(Formatting.GRAY));
+        this.addDrawableChild(eggManagerHomeCommandField);
         currentY += ROW_HEIGHT + SECTION_SPACING;
         
         // ========== Slot Coordinate Mapping Section ==========
@@ -584,10 +653,10 @@ public class PokeAlertConfigScreen extends Screen {
         visualIndicatorsToggleButton = addNotificationRow(currentY,
             "Show Visual Indicators",
             "Display coordinate mapping lines on PC GUI",
-            config.slotMapping.visualIndicatorsEnabled,
+            config.mappingLines.slotMapping.visualIndicatorsEnabled,
             button -> {
-                config.slotMapping.visualIndicatorsEnabled = !config.slotMapping.visualIndicatorsEnabled;
-                updateToggleButton(visualIndicatorsToggleButton, config.slotMapping.visualIndicatorsEnabled);
+                config.mappingLines.slotMapping.visualIndicatorsEnabled = !config.mappingLines.slotMapping.visualIndicatorsEnabled;
+                updateToggleButton(visualIndicatorsToggleButton, config.mappingLines.slotMapping.visualIndicatorsEnabled);
             });
         currentY += ROW_HEIGHT + SECTION_SPACING;
         
@@ -615,7 +684,7 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("X1")
         );
         regionX1Field.setMaxLength(10);
-        regionX1Field.setText(String.valueOf(config.antiAfkRegionX1));
+        regionX1Field.setText(String.valueOf(config.antiAfk.regionX1));
         regionX1Field.setPlaceholder(Text.literal("X coordinate").formatted(Formatting.GRAY));
         addSelectableChild(regionX1Field);
         addDrawableChild(regionX1Field);
@@ -630,7 +699,7 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("Z1")
         );
         regionZ1Field.setMaxLength(10);
-        regionZ1Field.setText(String.valueOf(config.antiAfkRegionZ1));
+        regionZ1Field.setText(String.valueOf(config.antiAfk.regionZ1));
         regionZ1Field.setPlaceholder(Text.literal("Z coordinate").formatted(Formatting.GRAY));
         addSelectableChild(regionZ1Field);
         addDrawableChild(regionZ1Field);
@@ -646,7 +715,7 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("X2")
         );
         regionX2Field.setMaxLength(10);
-        regionX2Field.setText(String.valueOf(config.antiAfkRegionX2));
+        regionX2Field.setText(String.valueOf(config.antiAfk.regionX2));
         regionX2Field.setPlaceholder(Text.literal("X coordinate").formatted(Formatting.GRAY));
         addSelectableChild(regionX2Field);
         addDrawableChild(regionX2Field);
@@ -661,7 +730,7 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("Z2")
         );
         regionZ2Field.setMaxLength(10);
-        regionZ2Field.setText(String.valueOf(config.antiAfkRegionZ2));
+        regionZ2Field.setText(String.valueOf(config.antiAfk.regionZ2));
         regionZ2Field.setPlaceholder(Text.literal("Z coordinate").formatted(Formatting.GRAY));
         addSelectableChild(regionZ2Field);
         addDrawableChild(regionZ2Field);
@@ -681,7 +750,7 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("Players to Avoid")
         );
         playersToAvoidField.setMaxLength(500);
-        playersToAvoidField.setText(String.join(", ", config.playersToAvoid));
+        playersToAvoidField.setText(String.join(", ", config.antiAfk.playerSafety.playersToAvoid));
         playersToAvoidField.setPlaceholder(Text.literal("Usernames to trigger safety stop (comma-separated)").formatted(Formatting.GRAY));
         addSelectableChild(playersToAvoidField);
         addDrawableChild(playersToAvoidField);
@@ -701,7 +770,7 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("Suspicion Top N")
         );
         playerSuspicionTopNField.setMaxLength(3);
-        playerSuspicionTopNField.setText(String.valueOf(config.playerSuspicionTopNThreshold));
+        playerSuspicionTopNField.setText(String.valueOf(config.antiAfk.playerSafety.suspicionTopNThreshold));
         playerSuspicionTopNField.setPlaceholder(Text.literal("Top N positions to trigger suspicion (1-20)").formatted(Formatting.GRAY));
         addSelectableChild(playerSuspicionTopNField);
         addDrawableChild(playerSuspicionTopNField);
@@ -712,12 +781,12 @@ public class PokeAlertConfigScreen extends Screen {
         enableHumanLikeBehaviorButton = addNotificationRow(currentY,
             "Human-like Behavior",
             "Enable random human-like actions during Anti-AFK",
-            config.enableHumanLikeBehavior,
+            config.antiAfk.humanBehavior.enabled,
             button -> {
-                config.enableHumanLikeBehavior = !config.enableHumanLikeBehavior;
-                updateToggleButton(enableHumanLikeBehaviorButton, config.enableHumanLikeBehavior);
+                config.antiAfk.humanBehavior.enabled = !config.antiAfk.humanBehavior.enabled;
+                updateToggleButton(enableHumanLikeBehaviorButton, config.antiAfk.humanBehavior.enabled);
                 // Enable/disable all sliders based on toggle
-                updateHumanLikeBehaviorWidgetsEnabled(config.enableHumanLikeBehavior);
+                updateHumanLikeBehaviorWidgetsEnabled(config.antiAfk.humanBehavior.enabled);
             });
         currentY += ROW_HEIGHT;
         
@@ -744,9 +813,9 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("Min Long Pause")
         );
         minLongPauseField.setMaxLength(6);
-        minLongPauseField.setText(String.valueOf(config.minLongPauseMs));
+        minLongPauseField.setText(String.valueOf(config.antiAfk.humanBehavior.minLongPauseMs));
         minLongPauseField.setPlaceholder(Text.literal("Minimum pause duration in ms").formatted(Formatting.GRAY));
-        minLongPauseField.active = config.enableHumanLikeBehavior;
+        minLongPauseField.active = config.antiAfk.humanBehavior.enabled;
         addSelectableChild(minLongPauseField);
         addDrawableChild(minLongPauseField);
         currentY += ROW_HEIGHT;
@@ -760,9 +829,9 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("Max Long Pause")
         );
         maxLongPauseField.setMaxLength(6);
-        maxLongPauseField.setText(String.valueOf(config.maxLongPauseMs));
+        maxLongPauseField.setText(String.valueOf(config.antiAfk.humanBehavior.maxLongPauseMs));
         maxLongPauseField.setPlaceholder(Text.literal("Maximum pause duration in ms").formatted(Formatting.GRAY));
-        maxLongPauseField.active = config.enableHumanLikeBehavior;
+        maxLongPauseField.active = config.antiAfk.humanBehavior.enabled;
         addSelectableChild(maxLongPauseField);
         addDrawableChild(maxLongPauseField);
         currentY += ROW_HEIGHT;
@@ -776,9 +845,9 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("Min Break Pause")
         );
         minBreakPauseField.setMaxLength(6);
-        minBreakPauseField.setText(String.valueOf(config.minBreakPauseMs));
+        minBreakPauseField.setText(String.valueOf(config.antiAfk.humanBehavior.minBreakPauseMs));
         minBreakPauseField.setPlaceholder(Text.literal("Minimum break pause duration in ms").formatted(Formatting.GRAY));
-        minBreakPauseField.active = config.enableHumanLikeBehavior;
+        minBreakPauseField.active = config.antiAfk.humanBehavior.enabled;
         addSelectableChild(minBreakPauseField);
         addDrawableChild(minBreakPauseField);
         currentY += ROW_HEIGHT;
@@ -792,9 +861,9 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("Max Break Pause")
         );
         maxBreakPauseField.setMaxLength(6);
-        maxBreakPauseField.setText(String.valueOf(config.maxBreakPauseMs));
+        maxBreakPauseField.setText(String.valueOf(config.antiAfk.humanBehavior.maxBreakPauseMs));
         maxBreakPauseField.setPlaceholder(Text.literal("Maximum break pause duration in ms").formatted(Formatting.GRAY));
-        maxBreakPauseField.active = config.enableHumanLikeBehavior;
+        maxBreakPauseField.active = config.antiAfk.humanBehavior.enabled;
         addSelectableChild(maxBreakPauseField);
         addDrawableChild(maxBreakPauseField);
         currentY += ROW_HEIGHT;
@@ -831,9 +900,9 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("Long Pause Chance")
         );
         longPauseChanceField.setMaxLength(10);
-        longPauseChanceField.setText(String.format("%.1f", config.longPauseChance * 100));
+        longPauseChanceField.setText(String.format("%.1f", config.antiAfk.humanBehavior.longPauseChance * 100));
         longPauseChanceField.setPlaceholder(Text.literal("Percentage (0.0-100.0)").formatted(Formatting.GRAY));
-        longPauseChanceField.active = config.enableHumanLikeBehavior;
+        longPauseChanceField.active = config.antiAfk.humanBehavior.enabled;
         addSelectableChild(longPauseChanceField);
         addDrawableChild(longPauseChanceField);
         currentY += ROW_HEIGHT;
@@ -847,9 +916,9 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("Break Pause Chance")
         );
         breakPauseChanceField.setMaxLength(10);
-        breakPauseChanceField.setText(String.format("%.1f", config.breakPauseChance * 100));
+        breakPauseChanceField.setText(String.format("%.1f", config.antiAfk.humanBehavior.breakPauseChance * 100));
         breakPauseChanceField.setPlaceholder(Text.literal("Percentage (0.0-100.0)").formatted(Formatting.GRAY));
-        breakPauseChanceField.active = config.enableHumanLikeBehavior;
+        breakPauseChanceField.active = config.antiAfk.humanBehavior.enabled;
         addSelectableChild(breakPauseChanceField);
         addDrawableChild(breakPauseChanceField);
         currentY += ROW_HEIGHT;
@@ -863,9 +932,9 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("Backtrack Chance")
         );
         backtrackChanceField.setMaxLength(10);
-        backtrackChanceField.setText(String.format("%.1f", config.backtrackChance * 100));
+        backtrackChanceField.setText(String.format("%.1f", config.antiAfk.humanBehavior.backtrackChance * 100));
         backtrackChanceField.setPlaceholder(Text.literal("Percentage (0.0-100.0)").formatted(Formatting.GRAY));
-        backtrackChanceField.active = config.enableHumanLikeBehavior;
+        backtrackChanceField.active = config.antiAfk.humanBehavior.enabled;
         addSelectableChild(backtrackChanceField);
         addDrawableChild(backtrackChanceField);
         currentY += ROW_HEIGHT;
@@ -879,9 +948,9 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("Walk Chance")
         );
         walkChanceField.setMaxLength(10);
-        walkChanceField.setText(String.format("%.1f", config.walkChance * 100));
+        walkChanceField.setText(String.format("%.1f", config.antiAfk.humanBehavior.walkChance * 100));
         walkChanceField.setPlaceholder(Text.literal("Percentage (0.0-100.0)").formatted(Formatting.GRAY));
-        walkChanceField.active = config.enableHumanLikeBehavior;
+        walkChanceField.active = config.antiAfk.humanBehavior.enabled;
         addSelectableChild(walkChanceField);
         addDrawableChild(walkChanceField);
         currentY += ROW_HEIGHT;
@@ -895,9 +964,9 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("Hotbar Switch Chance")
         );
         hotbarSwitchChanceField.setMaxLength(10);
-        hotbarSwitchChanceField.setText(String.format("%.1f", config.hotbarSwitchChance * 100));
+        hotbarSwitchChanceField.setText(String.format("%.1f", config.antiAfk.humanBehavior.hotbarSwitchChance * 100));
         hotbarSwitchChanceField.setPlaceholder(Text.literal("Percentage (0.0-100.0)").formatted(Formatting.GRAY));
-        hotbarSwitchChanceField.active = config.enableHumanLikeBehavior;
+        hotbarSwitchChanceField.active = config.antiAfk.humanBehavior.enabled;
         addSelectableChild(hotbarSwitchChanceField);
         addDrawableChild(hotbarSwitchChanceField);
         currentY += ROW_HEIGHT;
@@ -911,9 +980,9 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("Jump While Moving Chance")
         );
         jumpWhileMovingChanceField.setMaxLength(10);
-        jumpWhileMovingChanceField.setText(String.format("%.3f", config.jumpWhileMovingChance * 100));
+        jumpWhileMovingChanceField.setText(String.format("%.3f", config.antiAfk.humanBehavior.jumpWhileMovingChance * 100));
         jumpWhileMovingChanceField.setPlaceholder(Text.literal("Percentage (0.0-100.0)").formatted(Formatting.GRAY));
-        jumpWhileMovingChanceField.active = config.enableHumanLikeBehavior;
+        jumpWhileMovingChanceField.active = config.antiAfk.humanBehavior.enabled;
         addSelectableChild(jumpWhileMovingChanceField);
         addDrawableChild(jumpWhileMovingChanceField);
         currentY += ROW_HEIGHT;
@@ -927,9 +996,9 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("Look Around Chance")
         );
         lookAroundChanceField.setMaxLength(10);
-        lookAroundChanceField.setText(String.format("%.1f", config.lookAroundChance * 100));
+        lookAroundChanceField.setText(String.format("%.1f", config.antiAfk.humanBehavior.lookAroundChance * 100));
         lookAroundChanceField.setPlaceholder(Text.literal("Percentage (0.0-100.0)").formatted(Formatting.GRAY));
-        lookAroundChanceField.active = config.enableHumanLikeBehavior;
+        lookAroundChanceField.active = config.antiAfk.humanBehavior.enabled;
         addSelectableChild(lookAroundChanceField);
         addDrawableChild(lookAroundChanceField);
         currentY += ROW_HEIGHT + SECTION_SPACING;
@@ -959,7 +1028,7 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("Whitelist")
         );
         whitelistField.setMaxLength(2000);
-        whitelistField.setText(String.join(", ", config.broadcastWhitelist));
+        whitelistField.setText(String.join(", ", config.detection.whitelist));
         whitelistField.setPlaceholder(Text.literal("Additional Pokémon to track (comma-separated)").formatted(Formatting.GRAY));
         addSelectableChild(whitelistField);
         addDrawableChild(whitelistField);
@@ -975,7 +1044,7 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("Blacklist")
         );
         blacklistField.setMaxLength(2000);
-        blacklistField.setText(String.join(", ", config.broadcastBlacklist));
+        blacklistField.setText(String.join(", ", config.detection.blacklist));
         blacklistField.setPlaceholder(Text.literal("Pokémon to exclude from notifications").formatted(Formatting.GRAY));
         addSelectableChild(blacklistField);
         addDrawableChild(blacklistField);
@@ -991,9 +1060,9 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("Blacklist Character")
         );
         blacklistCharField.setMaxLength(5);
-        blacklistCharField.setText(config.blacklistCharacter != null ? config.blacklistCharacter : "-");
+        blacklistCharField.setText(config.detection.blacklistCharacter != null ? config.detection.blacklistCharacter : "-");
         blacklistCharField.setPlaceholder(Text.literal("Character to filter Pokémon names (e.g., -)").formatted(Formatting.GRAY));
-        blacklistCharField.setChangedListener(text -> config.blacklistCharacter = text);
+        blacklistCharField.setChangedListener(text -> config.detection.blacklistCharacter = text);
         addSelectableChild(blacklistCharField);
         addDrawableChild(blacklistCharField);
         currentY += 30;
@@ -1008,7 +1077,7 @@ public class PokeAlertConfigScreen extends Screen {
             Text.literal("Excluded Worlds")
         );
         excludedWorldsField.setMaxLength(500);
-        excludedWorldsField.setText(String.join(", ", config.excludedWorlds));
+        excludedWorldsField.setText(String.join(", ", config.detection.excludedWorlds));
         excludedWorldsField.setPlaceholder(Text.literal("Worlds to exclude (e.g., spawn, the_end, the_nether)").formatted(Formatting.GRAY));
         addSelectableChild(excludedWorldsField);
         addDrawableChild(excludedWorldsField);
@@ -1143,50 +1212,50 @@ public class PokeAlertConfigScreen extends Screen {
     private void resetCategory(String label, boolean value) {
         // Detection categories
         if (label.contains("Legendary")) {
-            config.broadcastAllLegendaries = value;
+            config.detection.legendaries = value;
             updateToggleButton(legendariesButton, value);
         } else if (label.contains("Mythical")) {
-            config.broadcastAllMythics = value;
+            config.detection.mythics = value;
             updateToggleButton(mythicsButton, value);
         } else if (label.contains("Starter")) {
-            config.broadcastAllStarter = false;
+            config.detection.starters = false;
             updateToggleButton(starterButton, false);
         } else if (label.contains("Baby")) {
-            config.broadcastAllBabies = false;
+            config.detection.babies = false;
             updateToggleButton(babiesButton, false);
         } else if (label.contains("Ultra")) {
-            config.broadcastAllUltraBeasts = false;
+            config.detection.ultraBeasts = false;
             updateToggleButton(ultraBeastsButton, false);
         } else if (label.contains("Shiny")) {
-            config.broadcastAllShinies = true;
+            config.detection.shinies = true;
             updateToggleButton(shiniesButton, true);
         } else if (label.contains("Paradox")) {
-            config.broadcastAllParadox = false;
+            config.detection.paradox = false;
             updateToggleButton(paradoxButton, false);
         }
         // Notification settings
         else if (label.contains("In-Game Text")) {
-            config.inGameTextEnabled = value;
+            config.notifications.textEnabled = value;
             updateToggleButton(inGameTextButton, value);
         } else if (label.contains("In-Game Sound")) {
-            config.inGameSoundEnabled = value;
+            config.notifications.soundEnabled = value;
             updateToggleButton(inGameSoundButton, value);
             if (soundVolumeSlider != null) {
                 soundVolumeSlider.active = value;
             }
         } else if (label.contains("Telegram")) {
-            config.telegramEnabled = value;
+            config.telegram.enabled = value;
             updateToggleButton(telegramButton, value);
         } else if (label.contains("DM Telegram")) {
-            config.dmTelegramNotification = value;
+            config.eggHatcher.dmDetection.telegramNotification = value;
             updateToggleButton(dmTelegramNotificationButton, value);
         } else if (label.contains("DM In-Game")) {
-            config.dmInGameNotification = value;
+            config.eggHatcher.dmDetection.inGameNotification = value;
             updateToggleButton(dmInGameNotificationButton, value);
         }
         // Human-like behavior
         else if (label.contains("Human-like Behavior")) {
-            config.enableHumanLikeBehavior = value;
+            config.antiAfk.humanBehavior.enabled = value;
             updateToggleButton(enableHumanLikeBehaviorButton, value);
             updateHumanLikeBehaviorWidgetsEnabled(value);
         }
@@ -1216,30 +1285,37 @@ public class PokeAlertConfigScreen extends Screen {
         
         // Parse whitelist
         String whitelistText = whitelistField.getText().trim();
-        config.broadcastWhitelist = parseList(whitelistText);
+        config.detection.whitelist = parseList(whitelistText);
         
         // Parse blacklist
         String blacklistText = blacklistField.getText().trim();
-        config.broadcastBlacklist = parseList(blacklistText);
+        config.detection.blacklist = parseList(blacklistText);
         
         // Parse blacklist character
         String blacklistChar = blacklistCharField.getText().trim();
-        config.blacklistCharacter = blacklistChar.isEmpty() ? "-" : blacklistChar;
+        config.detection.blacklistCharacter = blacklistChar.isEmpty() ? "-" : blacklistChar;
         
         // Parse excluded worlds
         String worldsText = excludedWorldsField.getText().trim();
-        config.excludedWorlds = parseList(worldsText);
+        config.detection.excludedWorlds = parseList(worldsText);
         
         // Parse egg hatcher command
         String realmCmd = realmReturnCommandField.getText().trim();
-        config.realmReturnCommand = realmCmd.isEmpty() ? "/home new" : realmCmd;
+        config.eggHatcher.realmReturnCommand = realmCmd.isEmpty() ? "/home new" : realmCmd;
+        
+        // Parse Egg Manager daycare commands
+        String daycareCmd = eggManagerDaycareCommandField.getText().trim();
+        config.eggManager.daycare.warpCommand = daycareCmd.isEmpty() ? "/warp daycare" : daycareCmd;
+        
+        String homeCmd = eggManagerHomeCommandField.getText().trim();
+        config.eggManager.daycare.homeCommand = homeCmd.isEmpty() ? "/home new" : homeCmd;
         
         // v3.0.0: Parse Anti-AFK region coordinates
         try {
-            config.antiAfkRegionX1 = Integer.parseInt(regionX1Field.getText().trim());
-            config.antiAfkRegionZ1 = Integer.parseInt(regionZ1Field.getText().trim());
-            config.antiAfkRegionX2 = Integer.parseInt(regionX2Field.getText().trim());
-            config.antiAfkRegionZ2 = Integer.parseInt(regionZ2Field.getText().trim());
+            config.antiAfk.regionX1 = Integer.parseInt(regionX1Field.getText().trim());
+            config.antiAfk.regionZ1 = Integer.parseInt(regionZ1Field.getText().trim());
+            config.antiAfk.regionX2 = Integer.parseInt(regionX2Field.getText().trim());
+            config.antiAfk.regionZ2 = Integer.parseInt(regionZ2Field.getText().trim());
         } catch (NumberFormatException e) {
             // Keep existing values if parsing fails
             PokeAlertClient.LOGGER.warn("Invalid region coordinates, keeping existing values");
@@ -1247,35 +1323,35 @@ public class PokeAlertConfigScreen extends Screen {
         
         // Parse players to avoid
         String playersText = playersToAvoidField.getText().trim();
-        config.playersToAvoid = parseList(playersText);
+        config.antiAfk.playerSafety.playersToAvoid = parseList(playersText);
         
         // Parse player suspicion top N threshold
         try {
             int topN = Integer.parseInt(playerSuspicionTopNField.getText().trim());
-            config.playerSuspicionTopNThreshold = Math.max(1, Math.min(20, topN));
+            config.antiAfk.playerSafety.suspicionTopNThreshold = Math.max(1, Math.min(20, topN));
         } catch (NumberFormatException e) {
             PokeAlertClient.LOGGER.warn("Invalid suspicion top N threshold, keeping existing value");
         }
         
         // Parse human-like behavior settings
         try {
-            config.minLongPauseMs = Integer.parseInt(minLongPauseField.getText().trim());
-            config.maxLongPauseMs = Integer.parseInt(maxLongPauseField.getText().trim());
-            config.minBreakPauseMs = Integer.parseInt(minBreakPauseField.getText().trim());
-            config.maxBreakPauseMs = Integer.parseInt(maxBreakPauseField.getText().trim());
+            config.antiAfk.humanBehavior.minLongPauseMs = Integer.parseInt(minLongPauseField.getText().trim());
+            config.antiAfk.humanBehavior.maxLongPauseMs = Integer.parseInt(maxLongPauseField.getText().trim());
+            config.antiAfk.humanBehavior.minBreakPauseMs = Integer.parseInt(minBreakPauseField.getText().trim());
+            config.antiAfk.humanBehavior.maxBreakPauseMs = Integer.parseInt(maxBreakPauseField.getText().trim());
         } catch (NumberFormatException e) {
             PokeAlertClient.LOGGER.warn("Invalid pause duration values, keeping existing values");
         }
         
         // Parse chance values from text fields (percentage to decimal)
         try {
-            config.longPauseChance = Math.max(0.0, Math.min(1.0, Double.parseDouble(longPauseChanceField.getText().trim()) / 100.0));
-            config.breakPauseChance = Math.max(0.0, Math.min(1.0, Double.parseDouble(breakPauseChanceField.getText().trim()) / 100.0));
-            config.backtrackChance = Math.max(0.0, Math.min(1.0, Double.parseDouble(backtrackChanceField.getText().trim()) / 100.0));
-            config.walkChance = Math.max(0.0, Math.min(1.0, Double.parseDouble(walkChanceField.getText().trim()) / 100.0));
-            config.hotbarSwitchChance = Math.max(0.0, Math.min(1.0, Double.parseDouble(hotbarSwitchChanceField.getText().trim()) / 100.0));
-            config.jumpWhileMovingChance = Math.max(0.0, Math.min(1.0, Double.parseDouble(jumpWhileMovingChanceField.getText().trim()) / 100.0));
-            config.lookAroundChance = Math.max(0.0, Math.min(1.0, Double.parseDouble(lookAroundChanceField.getText().trim()) / 100.0));
+            config.antiAfk.humanBehavior.longPauseChance = Math.max(0.0, Math.min(1.0, Double.parseDouble(longPauseChanceField.getText().trim()) / 100.0));
+            config.antiAfk.humanBehavior.breakPauseChance = Math.max(0.0, Math.min(1.0, Double.parseDouble(breakPauseChanceField.getText().trim()) / 100.0));
+            config.antiAfk.humanBehavior.backtrackChance = Math.max(0.0, Math.min(1.0, Double.parseDouble(backtrackChanceField.getText().trim()) / 100.0));
+            config.antiAfk.humanBehavior.walkChance = Math.max(0.0, Math.min(1.0, Double.parseDouble(walkChanceField.getText().trim()) / 100.0));
+            config.antiAfk.humanBehavior.hotbarSwitchChance = Math.max(0.0, Math.min(1.0, Double.parseDouble(hotbarSwitchChanceField.getText().trim()) / 100.0));
+            config.antiAfk.humanBehavior.jumpWhileMovingChance = Math.max(0.0, Math.min(1.0, Double.parseDouble(jumpWhileMovingChanceField.getText().trim()) / 100.0));
+            config.antiAfk.humanBehavior.lookAroundChance = Math.max(0.0, Math.min(1.0, Double.parseDouble(lookAroundChanceField.getText().trim()) / 100.0));
         } catch (NumberFormatException e) {
             PokeAlertClient.LOGGER.warn("Invalid chance values, keeping existing values");
         }
@@ -1327,12 +1403,12 @@ public class PokeAlertConfigScreen extends Screen {
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         // Sync button states with current config (in case changed via keybind)
         if (realmReturnToggleButton != null) {
-            realmReturnToggleButton.setMessage(Text.literal(config.eggHatcherEnabled ? "Enabled" : "Disabled"));
+            realmReturnToggleButton.setMessage(Text.literal(config.eggHatcher.enabled ? "Enabled" : "Disabled"));
         }
         
         // Sync DM detection button state
         if (dmDetectionButton != null) {
-            dmDetectionButton.setMessage(Text.literal(config.dmDetectionEnabled ? "Enabled" : "Disabled"));
+            dmDetectionButton.setMessage(Text.literal(config.eggHatcher.dmDetection.enabled ? "Enabled" : "Disabled"));
         }
         
         // DM notification widgets are always enabled for configuration
@@ -1434,7 +1510,7 @@ public class PokeAlertConfigScreen extends Screen {
         currentY += ROW_HEIGHT;
         
         // Draw volume label if sound is enabled
-        if (config.inGameSoundEnabled) {
+        if (config.notifications.soundEnabled) {
             context.drawTextWithShadow(
                 this.textRenderer,
                 Text.literal("Sound Volume"),
@@ -1547,6 +1623,42 @@ public class PokeAlertConfigScreen extends Screen {
         drawCategoryWithDescription(context, "Auto-stop Egg Hatcher", "Automatically stop Egg Hatcher when all eggs hatch", currentY);
         currentY += ROW_HEIGHT;
         drawCategoryWithDescription(context, "Check Interval", "How often to check party slots for egg hatching", currentY);
+        currentY += ROW_HEIGHT + SECTION_SPACING;
+        
+        // Draw separator line
+        drawHorizontalSeparator(context, currentY - 10);
+        
+        // Daycare Access header
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("Daycare Access").formatted(Formatting.AQUA),
+            SIDE_MARGIN,
+            currentY - 15,
+            COLOR_WHITE
+        );
+        
+        // Daycare auto-fetch label
+        drawCategoryWithDescription(context, "Daycare Auto-Fetch", "Auto-fetch eggs from daycare when Egg Timer completes", currentY);
+        currentY += ROW_HEIGHT;
+        
+        // Daycare command label
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("Daycare Command:"),
+            SIDE_MARGIN,
+            currentY + 2,
+            COLOR_WHITE
+        );
+        currentY += ROW_HEIGHT;
+        
+        // Home command label
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("Home Command:"),
+            SIDE_MARGIN,
+            currentY + 2,
+            COLOR_WHITE
+        );
         currentY += ROW_HEIGHT + SECTION_SPACING;
         
         // Draw separator line
@@ -2327,7 +2439,7 @@ public class PokeAlertConfigScreen extends Screen {
         
         @Override
         protected void applyValue() {
-            config.inGameSoundVolume = (float) this.value;
+            config.notifications.soundVolume = (float) this.value;
         }
     }
     
