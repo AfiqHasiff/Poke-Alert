@@ -266,6 +266,10 @@ public class EggHatcher {
         // Reset Anti-AFK movement tracking on connect to ensure clean baseline
         AntiAfkManager.resetTracking();
         
+        // Check Egg Manager status on reconnect (with 10 second delay)
+        EggManager.getInstance().setScheduler(scheduler);
+        EggManager.getInstance().checkEggHatchStatusOnReconnect();
+        
         // START STATE MONITORING IMMEDIATELY!
         // Anti-AFK starts at 0s, so we need to collect movement data from the start
         // By the time resource pack finishes (10s), we'll have 10 seconds of reliable data
@@ -281,6 +285,10 @@ public class EggHatcher {
             // By now, we have 10 seconds of movement data!
             if (mode == AutomationMode.AUTO) {
                 startMonitoring();
+                
+                // Start Egg Manager monitoring
+                EggManager.getInstance().setScheduler(scheduler);
+                EggManager.getInstance().startMonitoring();
                 
                 // Also start safety monitor if not already running
                 if (safetyMonitorTask == null || safetyMonitorTask.isDone()) {
@@ -346,6 +354,10 @@ public class EggHatcher {
             sendNotification("Egg Hatcher", "Enabled", Formatting.GREEN);
             startMonitoring();
             
+            // Start Egg Manager monitoring
+            EggManager.getInstance().setScheduler(scheduler);
+            EggManager.getInstance().startMonitoring();
+            
             // Start safety monitor if not already running
             if (safetyMonitorTask == null || safetyMonitorTask.isDone()) {
                 PokeAlertClient.LOGGER.info("Starting safety monitor for AUTO mode");
@@ -405,6 +417,9 @@ public class EggHatcher {
             // stopAutomation() handles all notifications when mode is DISABLED
             stopAutomation();
             
+            // Stop Egg Manager monitoring
+            EggManager.getInstance().stopMonitoring();
+            
             // No need to send separate "Disabled" notification - stopAutomation() handles it
             // It sends "Stopped and disabled" if wasRunning, or nothing if not running
             // (we don't send "Disabled" separately to avoid duplicate notifications)
@@ -420,12 +435,17 @@ public class EggHatcher {
     public void disableCompletely() {
         PokeAlertConfig config = PokeAlertClient.getInstance().config;
         
+        // Check if automation was running BEFORE we change anything
+        boolean wasRunning = isAutomationRunning || antiAfkActive || currentState != State.IDLE || spawnDetectionTime > 0;
+        
         // Set mode to DISABLED first so stopAutomation() knows it's being disabled
         mode = AutomationMode.DISABLED;
         
-        // Stop all automation (will show "stopped and disabled" if was running)
-        // stopAutomation() handles all notifications when mode is DISABLED
-        stopAutomation();
+        // Stop all automation (skip notification here, we'll send it ourselves)
+        stopAutomation(true);
+        
+        // Stop Egg Manager monitoring
+        EggManager.getInstance().stopMonitoring();
         
         // Stop PlayerSuspicionMonitor when completely disabling
         stopPlayerSuspicionMonitor();
@@ -434,9 +454,12 @@ public class EggHatcher {
         config.eggHatcherEnabled = false;
         ConfigManager.saveSettings(config);
         
-        // No need to send separate "Disabled" notification - stopAutomation() handles it
-        // It sends "Stopped and disabled" if wasRunning, or nothing if not running
-        // (we don't send "Disabled" separately to avoid duplicate notifications)
+        // Send single notification based on whether it was running
+        if (wasRunning) {
+            sendNotification("Egg Hatcher", "Stopped and disabled", Formatting.RED);
+        } else {
+            sendNotification("Egg Hatcher", "Disabled", Formatting.RED);
+        }
         
         PokeAlertClient.LOGGER.info("Egg Hatcher: Completely disabled");
     }
@@ -2207,9 +2230,19 @@ public class EggHatcher {
     /**
      * Stop all automation tasks
      * v3.0.0: Also stops Baritone Anti-AFK
+     * @param skipNotification If true, skip sending notification (used when disableCompletely calls this)
      */
     public void stopAutomation() {
-        // Check if automation was actually running
+        stopAutomation(false);
+    }
+    
+    /**
+     * Stop all automation tasks
+     * v3.0.0: Also stops Baritone Anti-AFK
+     * @param skipNotification If true, skip sending notification (used when disableCompletely calls this)
+     */
+    private void stopAutomation(boolean skipNotification) {
+        // Check if automation was actually running BEFORE we stop it
         boolean wasRunning = isAutomationRunning || antiAfkActive || currentState != State.IDLE || spawnDetectionTime > 0;
         
         isAutomationRunning = false;
@@ -2260,20 +2293,25 @@ public class EggHatcher {
         // Reset state to IDLE after cleanup
         currentState = State.IDLE;
         
-        // Send notification if we actually cancelled something
-        if (wasRunning) {
-            // Check if mode is DISABLED - if so, show "stopped and disabled" in one line
-            if (mode == AutomationMode.DISABLED) {
-                sendNotification("Egg Hatcher", "Stopped and disabled", Formatting.RED);
+        // Stop Egg Manager monitoring when automation stops
+        EggManager.getInstance().stopMonitoring();
+        
+        // Send notification if we actually cancelled something and not skipping
+        if (!skipNotification) {
+            if (wasRunning) {
+                // Check if mode is DISABLED - if so, show "stopped and disabled" in one line
+                if (mode == AutomationMode.DISABLED) {
+                    sendNotification("Egg Hatcher", "Stopped and disabled", Formatting.RED);
+                } else {
+                    // Automation stopped but not disabled (e.g., error recovery, manual cancel)
+                    sendNotification("Egg Hatcher", "Automation stopped", Formatting.YELLOW);
+                }
             } else {
-                // Automation stopped but not disabled (e.g., error recovery, manual cancel)
-                sendNotification("Egg Hatcher", "Automation stopped", Formatting.YELLOW);
-            }
-        } else {
-            // Automation wasn't running - only send notification if being disabled
-            // This handles the case where user disables without automation running
-            if (mode == AutomationMode.DISABLED) {
-                sendNotification("Egg Hatcher", "Disabled", Formatting.RED);
+                // Automation wasn't running - only send notification if being disabled
+                // This handles the case where user disables without automation running
+                if (mode == AutomationMode.DISABLED) {
+                    sendNotification("Egg Hatcher", "Disabled", Formatting.RED);
+                }
             }
         }
     }
@@ -2445,6 +2483,28 @@ public class EggHatcher {
      */
     public AutomationMode getMode() {
         return mode;
+    }
+    
+    /**
+     * Set mode (for Egg Manager integration)
+     */
+    public void setMode(AutomationMode newMode) {
+        mode = newMode;
+    }
+    
+    /**
+     * Get scheduler (for Egg Manager integration)
+     */
+    public ScheduledExecutorService getScheduler() {
+        return scheduler;
+    }
+    
+    /**
+     * Check if Step 5 (Completion) has been completed
+     * Used by Egg Manager to ensure proper sequencing
+     */
+    public boolean isStep5Completed() {
+        return locationQueue.isStep5Completed();
     }
     
     /**

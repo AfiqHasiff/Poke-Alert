@@ -35,6 +35,7 @@ import com.afiqhasiff.pokealert.client.notification.PokemonSpawnData;
 import com.afiqhasiff.pokealert.client.notification.TelegramNotification;
 import com.afiqhasiff.pokealert.client.notification.EggTimerManager;
 import com.afiqhasiff.pokealert.client.automation.EggHatcher;
+import com.afiqhasiff.pokealert.client.automation.EggManager;
 import com.afiqhasiff.pokealert.client.util.DmDetector;
 import com.afiqhasiff.pokealert.client.telegram.TelegramCommandReceiver;
 
@@ -59,6 +60,7 @@ public class PokeAlertClient implements ClientModInitializer {
     public static KeyBinding toggleModKey;
     public static KeyBinding startEggTimerKey;
     public static KeyBinding eggHatcherKey;
+    public static KeyBinding eggManagerKey;
     // v3.0.0: antiAfkKeybind REMOVED - now using internal Baritone-based Anti-AFK
     
     // Confirmation tracking for disabling with running modules
@@ -146,6 +148,13 @@ public class PokeAlertClient implements ClientModInitializer {
             "key.pokealert.egghatcher",
             InputUtil.Type.KEYSYM,
             GLFW.GLFW_KEY_HOME, // Home key for egg hatcher automation
+            "key.categories.pokealert"
+        ));
+        
+        eggManagerKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+            "key.pokealert.eggmanager",
+            InputUtil.Type.KEYSYM,
+            GLFW.GLFW_KEY_END, // End key for egg manager toggle
             "key.categories.pokealert"
         ));
         
@@ -356,6 +365,61 @@ public class PokeAlertClient implements ClientModInitializer {
                 } else {
                     // Not running - just toggle enable/disabled normally
                     eggHatcher.toggleAutomation();
+                }
+            }
+            
+            // Process Egg Manager keybinding
+            while (eggManagerKey.wasPressed()) {
+                // Check if mod is disabled
+                if (!config.modEnabled) {
+                    if (client.player != null && config.inGameTextEnabled) {
+                        Text message = Text.literal("[")
+                            .formatted(Formatting.GRAY)
+                            .append(Text.literal("PokeAlert").formatted(Formatting.RED))
+                            .append(Text.literal("] ").formatted(Formatting.GRAY))
+                            .append(Text.literal("Egg Manager disabled - Enable PokeAlert first").formatted(Formatting.YELLOW));
+                        client.player.sendMessage(message, false);
+                    }
+                    continue;
+                }
+                
+                // Toggle Egg Manager
+                config.eggManagerEnabled = !config.eggManagerEnabled;
+                ConfigManager.updateConfig(config);
+                reloadConfig();
+                
+                EggManager eggManager = EggManager.getInstance();
+                
+                if (config.eggManagerEnabled) {
+                    // Start monitoring if Egg Hatcher is running
+                    EggHatcher eggHatcher = EggHatcher.getInstance();
+                    if (eggHatcher.getMode() == EggHatcher.AutomationMode.AUTO) {
+                        eggManager.setScheduler(eggHatcher.getScheduler());
+                        eggManager.startMonitoring();
+                    }
+                    
+                    if (client.player != null && config.inGameTextEnabled) {
+                        Text message = Text.literal("[")
+                            .formatted(Formatting.GRAY)
+                            .append(Text.literal("PokeAlert").formatted(Formatting.RED))
+                            .append(Text.literal("] ").formatted(Formatting.GRAY))
+                            .append(Text.literal("Egg Manager: ").formatted(Formatting.WHITE))
+                            .append(Text.literal("Enabled").formatted(Formatting.GREEN));
+                        client.player.sendMessage(message, false);
+                    }
+                } else {
+                    // Stop monitoring
+                    eggManager.stopMonitoring();
+                    
+                    if (client.player != null && config.inGameTextEnabled) {
+                        Text message = Text.literal("[")
+                            .formatted(Formatting.GRAY)
+                            .append(Text.literal("PokeAlert").formatted(Formatting.RED))
+                            .append(Text.literal("] ").formatted(Formatting.GRAY))
+                            .append(Text.literal("Egg Manager: ").formatted(Formatting.WHITE))
+                            .append(Text.literal("Disabled").formatted(Formatting.RED));
+                        client.player.sendMessage(message, false);
+                    }
                 }
             }
             

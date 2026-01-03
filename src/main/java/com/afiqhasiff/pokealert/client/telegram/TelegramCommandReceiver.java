@@ -6,6 +6,7 @@ import com.afiqhasiff.pokealert.client.config.PokeAlertConfig;
 import com.afiqhasiff.pokealert.client.util.PokemonLists;
 import com.afiqhasiff.pokealert.client.notification.EggTimerManager;
 import com.afiqhasiff.pokealert.client.automation.EggHatcher;
+import com.afiqhasiff.pokealert.client.automation.EggManager;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -803,6 +804,17 @@ public class TelegramCommandReceiver {
                     return executeEggHatcherStatus();
                 }
             }
+            
+            // Egg Manager commands
+            if (cmd.equals("eggmanager") || cmd.equals("eggmgr") || cmd.equals("em")) {
+                if (subCmd.equals("enable") || subCmd.equals("on")) {
+                    return executeEggManagerEnable(true);
+                } else if (subCmd.equals("disable") || subCmd.equals("off")) {
+                    return executeEggManagerEnable(false);
+                } else if (subCmd.equals("status") || subCmd.equals("stat")) {
+                    return executeEggManagerStatus();
+                }
+            }
         }
         
         return "❌ <b>Command</b>\n• <b>Status:</b> <i>Error</i>\n• <b>Reason:</b> Unknown command: <code>" + escapeHtml(command) + "</code>\n• <b>Help:</b> Use /pahelp to see available commands";
@@ -840,7 +852,12 @@ public class TelegramCommandReceiver {
         sb.append("<b>Egg Hatcher:</b>\n");
         sb.append("/pa egghatcher enable - Enable Egg Hatcher\n");
         sb.append("/pa egghatcher disable - Disable Egg Hatcher\n");
-        sb.append("/pa egghatcher status - Show Egg Hatcher status\n");
+        sb.append("/pa egghatcher status - Show Egg Hatcher status\n\n");
+        
+        sb.append("<b>Egg Manager:</b>\n");
+        sb.append("/pa eggmanager enable - Enable Egg Manager\n");
+        sb.append("/pa eggmanager disable - Disable Egg Manager\n");
+        sb.append("/pa eggmanager status - Show Egg Manager status\n");
         
         return sb.toString();
     }
@@ -1485,6 +1502,46 @@ public class TelegramCommandReceiver {
         net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
         if (manager.isAtSpawn() && client != null && client.player != null) {
             sb.append("• <b>Location:</b> <i>Spawn world</i>");
+        }
+        
+        return sb.toString();
+    }
+    
+    private String executeEggManagerEnable(boolean enabled) {
+        PokeAlertConfig config = ConfigManager.getConfig();
+        
+        config.eggManagerEnabled = enabled;
+        ConfigManager.updateConfig(config);
+        PokeAlertClient.getInstance().reloadConfig();
+        
+        if (enabled) {
+            // Start monitoring if Egg Hatcher is running
+            EggHatcher eggHatcher = EggHatcher.getInstance();
+            if (eggHatcher.getMode() == EggHatcher.AutomationMode.AUTO) {
+                EggManager.getInstance().setScheduler(eggHatcher.getScheduler());
+                EggManager.getInstance().startMonitoring();
+            }
+        } else {
+            // Stop monitoring
+            EggManager.getInstance().stopMonitoring();
+        }
+        
+        return "✅ <b>Egg Manager</b>\n• <b>Status:</b> <i>" + (enabled ? "Enabled" : "Disabled") + "</i>";
+    }
+    
+    private String executeEggManagerStatus() {
+        PokeAlertConfig config = ConfigManager.getConfig();
+        EggManager eggManager = EggManager.getInstance();
+        
+        StringBuilder sb = new StringBuilder();
+        sb.append("ℹ️ <b>Egg Manager</b>\n");
+        sb.append("• <b>Status:</b> <i>").append(config.eggManagerEnabled ? "Enabled" : "Disabled").append("</i>\n");
+        
+        if (config.eggManagerEnabled) {
+            sb.append("• <b>Monitoring:</b> <i>").append(eggManager.isMonitoring() ? "Yes" : "No").append("</i>\n");
+            if (eggManager.isMonitoring()) {
+                sb.append("• <b>State:</b> ").append(eggManager.getStatus()).append("\n");
+            }
         }
         
         return sb.toString();

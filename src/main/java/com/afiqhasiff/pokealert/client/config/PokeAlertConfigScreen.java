@@ -81,6 +81,16 @@ public class PokeAlertConfigScreen extends Screen {
     private ButtonWidget dmTelegramNotificationButton;
     private ButtonWidget dmInGameNotificationButton;
     
+    // Egg Manager settings
+    private ButtonWidget eggManagerEnabledButton;
+    private ButtonWidget eggManagerAutoStopButton;
+    private ButtonWidget eggManagerKeybindButton;
+    private ButtonWidget eggManagerCheckIntervalButton;
+    private boolean waitingForEggManagerKey = false;
+    
+    // Slot Coordinate Mapping settings
+    private ButtonWidget visualIndicatorsToggleButton;
+    
     // v3.0.0: Anti-AFK Region settings
     private TextFieldWidget regionX1Field;
     private TextFieldWidget regionZ1Field;
@@ -180,6 +190,16 @@ public class PokeAlertConfigScreen extends Screen {
         // Egg hatcher settings
         copy.eggHatcherEnabled = original.eggHatcherEnabled;
         copy.realmReturnCommand = original.realmReturnCommand;
+        
+        // Egg Manager settings
+        copy.eggManagerEnabled = original.eggManagerEnabled;
+        copy.eggManagerCheckInterval = original.eggManagerCheckInterval;
+        copy.eggManagerConfirmationChecks = original.eggManagerConfirmationChecks;
+        copy.eggManagerAutoStopEggHatcher = original.eggManagerAutoStopEggHatcher;
+        
+        // Slot Coordinate Mapping settings
+        copy.slotMapping.visualIndicatorsEnabled = original.slotMapping.visualIndicatorsEnabled;
+        // Note: Individual slot coordinates are not copied here - they should be set via commands
         
         // v3.0.0: Anti-AFK Region settings
         copy.antiAfkRegionX1 = original.antiAfkRegionX1;
@@ -458,7 +478,10 @@ public class PokeAlertConfigScreen extends Screen {
         realmReturnCommandField.setPlaceholder(Text.literal("/home new").formatted(Formatting.GRAY));
         addSelectableChild(realmReturnCommandField);
         addDrawableChild(realmReturnCommandField);
-        currentY += ROW_HEIGHT;
+        currentY += ROW_HEIGHT + SECTION_SPACING;
+        
+        // ========== Egg Hatcher DM Section ==========
+        // (Separator drawn in render() method)
         
         // DM Detection toggle button
         dmDetectionButton = addEggTimerRow(currentY,
@@ -497,6 +520,76 @@ public class PokeAlertConfigScreen extends Screen {
         // Initialize DM notification widgets enabled state
         // Always allow configuration - settings just won't take effect until Egg Hatcher and DM Detection are enabled
         updateDmNotificationWidgetsEnabled(true);
+        
+        // ========== Egg Manager Section ==========
+        // (Separator drawn in render() method)
+        
+        // Egg Manager toggle button
+        eggManagerEnabledButton = addEggTimerRow(currentY,
+            "Egg Manager",
+            "Monitor party slots for egg hatching",
+            Text.literal(config.eggManagerEnabled ? "Enabled" : "Disabled"),
+            button -> {
+                config.eggManagerEnabled = !config.eggManagerEnabled;
+                button.setMessage(Text.literal(config.eggManagerEnabled ? "Enabled" : "Disabled"));
+            });
+        currentY += ROW_HEIGHT;
+        
+        // Egg Manager keybind button
+        eggManagerKeybindButton = addEggTimerRow(currentY,
+            "Toggle Key",
+            "Enable/disable Egg Manager",
+            getEggManagerKeybindText(),
+            button -> {
+                waitingForEggManagerKey = true;
+                button.setMessage(Text.literal("> Press a key <").formatted(Formatting.YELLOW));
+            });
+        currentY += ROW_HEIGHT;
+        
+        // Auto-stop Egg Hatcher toggle
+        eggManagerAutoStopButton = addNotificationRow(currentY,
+            "Auto-stop Egg Hatcher",
+            "Automatically stop Egg Hatcher when all eggs hatch",
+            config.eggManagerAutoStopEggHatcher,
+            button -> {
+                config.eggManagerAutoStopEggHatcher = !config.eggManagerAutoStopEggHatcher;
+                updateToggleButton(eggManagerAutoStopButton, config.eggManagerAutoStopEggHatcher);
+            });
+        currentY += ROW_HEIGHT;
+        
+        // Check interval button - cycles through common intervals
+        eggManagerCheckIntervalButton = addEggTimerRow(currentY,
+            "Check Interval",
+            "How often to check party slots for egg hatching",
+            getCheckIntervalText(config.eggManagerCheckInterval),
+            button -> {
+                // Cycle through common intervals: 10s, 30s, 1min, 2min, 5min, 10min
+                int current = config.eggManagerCheckInterval;
+                int newInterval;
+                if (current < 30000) newInterval = 30000;      // 30 seconds
+                else if (current < 60000) newInterval = 60000; // 1 minute
+                else if (current < 120000) newInterval = 120000; // 2 minutes
+                else if (current < 300000) newInterval = 300000; // 5 minutes
+                else if (current < 600000) newInterval = 600000; // 10 minutes
+                else newInterval = 10000; // Back to 10 seconds
+                
+                config.eggManagerCheckInterval = newInterval;
+                button.setMessage(getCheckIntervalText(newInterval));
+                // Config will be saved when user clicks "Save & Apply"
+            });
+        currentY += ROW_HEIGHT + SECTION_SPACING;
+        
+        // ========== Slot Coordinate Mapping Section ==========
+        // Visual indicators toggle
+        visualIndicatorsToggleButton = addNotificationRow(currentY,
+            "Show Visual Indicators",
+            "Display coordinate mapping lines on PC GUI",
+            config.slotMapping.visualIndicatorsEnabled,
+            button -> {
+                config.slotMapping.visualIndicatorsEnabled = !config.slotMapping.visualIndicatorsEnabled;
+                updateToggleButton(visualIndicatorsToggleButton, config.slotMapping.visualIndicatorsEnabled);
+            });
+        currentY += ROW_HEIGHT + SECTION_SPACING;
         
         // ========== v3.0.0: Anti-AFK Region Section ==========
         // Corner 1 (X1, Z1) - full width inputs
@@ -1412,7 +1505,19 @@ public class PokeAlertConfigScreen extends Screen {
             currentY + 2,
             COLOR_WHITE
         );
-        currentY += 30;
+        currentY += 30 + SECTION_SPACING;
+        
+        // Draw separator line
+        drawHorizontalSeparator(context, currentY - 10);
+        
+        // Egg Hatcher DM header
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("Egg Hatcher DM").formatted(Formatting.AQUA),
+            SIDE_MARGIN,
+            currentY - 15,
+            COLOR_WHITE
+        );
         
         // DM Detection labels
         drawCategoryWithDescription(context, "DM Detection", "Detect and notify about direct messages", currentY);
@@ -1420,6 +1525,44 @@ public class PokeAlertConfigScreen extends Screen {
         drawCategoryWithDescription(context, "DM Telegram", "Send Telegram notifications for DMs", currentY);
         currentY += ROW_HEIGHT;
         drawCategoryWithDescription(context, "DM In-Game", "Show in-game notifications for DMs", currentY);
+        currentY += ROW_HEIGHT + SECTION_SPACING;
+        
+        // Draw separator line
+        drawHorizontalSeparator(context, currentY - 10);
+        
+        // Egg Manager header
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("Egg Manager").formatted(Formatting.AQUA),
+            SIDE_MARGIN,
+            currentY - 15,
+            COLOR_WHITE
+        );
+        
+        // Egg Manager labels
+        drawCategoryWithDescription(context, "Egg Manager", "Monitor party slots for egg hatching", currentY);
+        currentY += ROW_HEIGHT;
+        drawCategoryWithDescription(context, "Toggle Key", "Enable/disable Egg Manager", currentY);
+        currentY += ROW_HEIGHT;
+        drawCategoryWithDescription(context, "Auto-stop Egg Hatcher", "Automatically stop Egg Hatcher when all eggs hatch", currentY);
+        currentY += ROW_HEIGHT;
+        drawCategoryWithDescription(context, "Check Interval", "How often to check party slots for egg hatching", currentY);
+        currentY += ROW_HEIGHT + SECTION_SPACING;
+        
+        // Draw separator line
+        drawHorizontalSeparator(context, currentY - 10);
+        
+        // Slot Coordinate Mapping header
+        context.drawTextWithShadow(
+            this.textRenderer,
+            Text.literal("Slot Coordinate Mapping").formatted(Formatting.AQUA),
+            SIDE_MARGIN,
+            currentY - 15,
+            COLOR_WHITE
+        );
+        
+        // Visual indicators label
+        drawCategoryWithDescription(context, "Show Visual Indicators", "Display coordinate mapping lines on PC GUI", currentY);
         currentY += ROW_HEIGHT + SECTION_SPACING;
         
         // Draw separator line
@@ -2069,10 +2212,27 @@ public class PokeAlertConfigScreen extends Screen {
             return true;
         }
         
+        // Handle keybind setting for egg manager
+        if (waitingForEggManagerKey) {
+            // Don't rebind to Escape key
+            if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                waitingForEggManagerKey = false;
+                eggManagerKeybindButton.setMessage(getEggManagerKeybindText());
+                return true;
+            }
+            
+            // Update the egg manager keybinding
+            PokeAlertClient.eggManagerKey.setBoundKey(InputUtil.Type.KEYSYM.createFromCode(keyCode));
+            KeyBinding.updateKeysByCode();
+            waitingForEggManagerKey = false;
+            eggManagerKeybindButton.setMessage(getEggManagerKeybindText());
+            return true;
+        }
+        
         // v3.0.0: Anti-AFK keybind handling REMOVED
         
         // Allow escape to close the screen when not setting keybind
-        if (keyCode == GLFW.GLFW_KEY_ESCAPE && !waitingForKey && !waitingForEggTimerKey && !waitingForRealmReturnKey) {
+        if (keyCode == GLFW.GLFW_KEY_ESCAPE && !waitingForKey && !waitingForEggTimerKey && !waitingForRealmReturnKey && !waitingForEggManagerKey) {
             this.close();
             return true;
         }
@@ -2108,6 +2268,24 @@ public class PokeAlertConfigScreen extends Screen {
         String keyName = PokeAlertClient.eggHatcherKey.getBoundKeyLocalizedText().getString();
         return Text.literal("Key: ").formatted(Formatting.WHITE)
             .append(Text.literal(keyName).formatted(Formatting.YELLOW));
+    }
+    
+    private Text getEggManagerKeybindText() {
+        String keyName = PokeAlertClient.eggManagerKey.getBoundKeyLocalizedText().getString();
+        return Text.literal("Key: ").formatted(Formatting.WHITE)
+            .append(Text.literal(keyName).formatted(Formatting.YELLOW));
+    }
+    
+    private Text getCheckIntervalText(int intervalMs) {
+        String display;
+        if (intervalMs < 60000) {
+            display = (intervalMs / 1000) + " seconds";
+        } else {
+            int minutes = intervalMs / 60000;
+            display = minutes + (minutes == 1 ? " minute" : " minutes");
+        }
+        return Text.literal("Interval: ").formatted(Formatting.WHITE)
+            .append(Text.literal(display).formatted(Formatting.YELLOW));
     }
     
     // v3.0.0: getAntiAfkKeybindText() REMOVED - no longer using external Anti-AFK keybind

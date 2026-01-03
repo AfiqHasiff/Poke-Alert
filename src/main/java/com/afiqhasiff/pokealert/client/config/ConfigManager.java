@@ -196,6 +196,8 @@ public class ConfigManager {
      * Update and save configuration
      */
     public static void updateConfig(PokeAlertConfig newConfig) {
+        // Update currentConfig reference BEFORE saving to ensure getConfig() returns updated config
+        currentConfig = newConfig;
         saveSettings(newConfig);
     }
 

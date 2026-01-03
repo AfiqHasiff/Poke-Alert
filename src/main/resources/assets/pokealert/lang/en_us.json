@@ -4,5 +4,6 @@
     "key.pokealert.toggle": "Toggle Mod",
     "key.pokealert.eggtimer": "Start Egg Timer",
     "key.pokealert.egghatcher": "Toggle Egg Hatcher",
-    "key.pokealert.antiafk": "Anti-AFK Toggle (for automation)"
+    "key.pokealert.eggmanager": "Toggle Egg Manager",
+    "key.pokealert.antiafk": "Anti-AFK Toggle"
 }

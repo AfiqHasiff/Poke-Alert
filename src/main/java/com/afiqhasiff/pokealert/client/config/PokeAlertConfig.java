@@ -57,6 +57,20 @@ public class PokeAlertConfig {
     public boolean eggHatcherEnabled = true;
     public String realmReturnCommand = "/home new"; // Default command to return to main realm for egg hatching
     
+    // Egg Manager Settings
+    public boolean eggManagerEnabled = true;  // Master toggle for Egg Manager
+    public int eggManagerCheckInterval = 60000;  // Milliseconds between checks (default: 60 seconds / 1 minute)
+    public int eggManagerConfirmationChecks = 2;  // Number of checks before confirming hatch (1-5)
+    public boolean eggManagerAutoStopEggHatcher = true;  // Auto-stop Egg Hatcher when all eggs hatch
+    public boolean eggManagerPCDiscoveryMode = false;  // Enable comprehensive logging for PC transfer API discovery (DEBUG ONLY)
+    
+    // Egg Manager Phase 2 Settings
+    public boolean eggManagerIVTrackingEnabled = true;  // Track and report IV stats when eggs hatch
+    public boolean eggManagerAutoTransferToPC = true;  // Auto-transfer hatched Pokemon to PC
+    public boolean eggManagerAutoFillFromPC = true;  // Auto-fill empty party slots with eggs from PC
+    public boolean eggManagerBoxOrganizationEnabled = true;  // Organize Pokemon into boxes based on IVs
+    public boolean eggManagerCompletionCheckPC = true;  // Check PC boxes for eggs when determining completion
+    
     // Egg Hatcher DM Detection Settings
     public boolean dmDetectionEnabled = true; // Master toggle for DM detection (requires eggHatcherEnabled)
     public boolean dmTelegramNotification = true; // Send Telegram notifications for DMs
@@ -276,4 +290,12 @@ public class PokeAlertConfig {
     private double clamp(double value, double min, double max) {
         return Math.max(min, Math.min(max, value));
     }
+    
+    // ========== PC Transfer Debug Coordinate Mapping ==========
+    
+    /**
+     * Coordinate mapping for PC and Party slots.
+     * Used for manual calibration of slot positions for accurate drag-and-drop transfers.
+     */
+    public SlotCoordinateMapping slotMapping = new SlotCoordinateMapping();
 }
