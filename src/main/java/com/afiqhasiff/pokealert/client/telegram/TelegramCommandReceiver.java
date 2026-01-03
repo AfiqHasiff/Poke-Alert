@@ -963,6 +963,49 @@ public class TelegramCommandReceiver {
                 sb.append("• <b>Location:</b> <i>Spawn world</i>\n");
             }
         }
+        sb.append("\n");
+        
+        // Egg Manager Status
+        EggManager eggManager = EggManager.getInstance();
+        sb.append("<b>Egg Manager</b>\n");
+        boolean isEggManagerEnabled = config.eggManager.enabled;
+        boolean isMonitoring = eggManager != null && eggManager.isMonitoring();
+        
+        sb.append("• <b>Status:</b> <i>").append(isEggManagerEnabled ? "Enabled" : "Disabled").append("</i>\n");
+        
+        if (isEggManagerEnabled) {
+            if (isMonitoring) {
+                sb.append("• <b>State:</b> <i>Monitoring</i>\n");
+                int eggCount = eggManager.getEggCount();
+                sb.append("• <b>Tracked Eggs:</b> <code>").append(eggCount).append("</code>\n");
+                
+                // Get status string for more details
+                String status = eggManager.getStatus();
+                if (status != null && !status.equals("Not monitoring")) {
+                    sb.append("• <b>Details:</b> <code>").append(status).append("</code>\n");
+                }
+                
+                // Check if daycare is running (via reflection)
+                try {
+                    java.lang.reflect.Field daycareStateField = EggManager.class.getDeclaredField("daycareState");
+                    daycareStateField.setAccessible(true);
+                    Object daycareState = daycareStateField.get(eggManager);
+                    String stateName = daycareState.toString();
+                    
+                    // Check if daycare is active (not IDLE)
+                    if (!stateName.equals("IDLE") && !stateName.equals("COMPLETED") && !stateName.equals("FAILED")) {
+                        // Format state name nicely
+                        stateName = stateName.replace("_", " ").toLowerCase();
+                        stateName = stateName.substring(0, 1).toUpperCase() + stateName.substring(1);
+                        sb.append("• <b>Daycare:</b> <i>").append(stateName).append("</i>\n");
+                    }
+                } catch (Exception e) {
+                    // If reflection fails, skip daycare state
+                }
+            } else {
+                sb.append("• <b>State:</b> <i>Not Monitoring</i>\n");
+            }
+        }
         
         return sb.toString();
     }
