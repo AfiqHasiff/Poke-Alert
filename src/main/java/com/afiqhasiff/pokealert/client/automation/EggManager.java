@@ -835,8 +835,19 @@ public class EggManager {
                 Object targetBoxInfo = null;
                 if (config.eggManager.phase2.autoTransferToPC) {
                     targetBoxInfo = transferHatchedPokemonToPC(finalSlot, ivs);
+                    
+                    // CRITICAL: Close PC interface after transfer (with delay to allow transfer to complete)
+                    // fillPartySlotsWithEggs opens its own PC, so we always close after transfer
+                    if (scheduler == null) {
+                        scheduler = java.util.concurrent.Executors.newScheduledThreadPool(2);
+                    }
+                    scheduler.schedule(() -> {
+                        closePCInterface();
+                    }, 2000, TimeUnit.MILLISECONDS); // Delay 2 seconds to allow transfer to complete
+                    
                     if (targetBoxInfo != null && config.eggManager.phase2.autoFillFromPC) {
                         // Fill empty party slots with eggs from PC (async to avoid blocking)
+                        // Note: fillPartySlotsWithEggs will open its own PC when it runs
                         if (scheduler != null) {
                             scheduler.execute(() -> fillPartySlotsWithEggs());
                         }
@@ -1668,12 +1679,45 @@ public class EggManager {
                     java.lang.reflect.Method getNameMethod = box.getClass().getMethod("getName");
                     Object name = getNameMethod.invoke(box);
                     if (name != null) {
-                        // Handle Text objects
-                        if (name.getClass().getName().contains("Text")) {
+                        // Handle Minecraft Text objects (including MutableText, LiteralTextContent, etc.)
+                        // Check if the object or any of its superclasses/interfaces is a Text
+                        try {
+                            // Try getString() method first - this is the proper way to get plain text
                             java.lang.reflect.Method getStringMethod = name.getClass().getMethod("getString");
-                            return (String) getStringMethod.invoke(name);
+                            String result = (String) getStringMethod.invoke(name);
+                            if (result != null && !result.isEmpty()) {
+                                return result;
+                            }
+                        } catch (NoSuchMethodException e) {
+                            // Try alternate method names for different Text implementations
+                            try {
+                                java.lang.reflect.Method asStringMethod = name.getClass().getMethod("asString");
+                                String result = (String) asStringMethod.invoke(name);
+                                if (result != null && !result.isEmpty()) {
+                                    return result;
+                                }
+                            } catch (NoSuchMethodException e2) {
+                                // Last resort: check if it's a net.minecraft.text.Text and cast
+                                if (name instanceof net.minecraft.text.Text) {
+                                    return ((net.minecraft.text.Text) name).getString();
+                                }
+                            }
                         }
-                        return name.toString();
+                        // Fallback - avoid raw toString() for Text objects as it includes style info
+                        String nameStr = name.toString();
+                        // Clean up if toString() returns literal{...} format
+                        if (nameStr.startsWith("literal{") && nameStr.contains("}")) {
+                            // Extract content between "literal{" and the first "[" or "}"
+                            int startIdx = "literal{".length();
+                            int endIdx = nameStr.indexOf("[");
+                            if (endIdx == -1) {
+                                endIdx = nameStr.indexOf("}");
+                            }
+                            if (endIdx > startIdx) {
+                                return nameStr.substring(startIdx, endIdx);
+                            }
+                        }
+                        return nameStr;
                     }
                 }
             }
@@ -5757,7 +5801,23 @@ public class EggManager {
             return "All eggs hatched";
         }
         
-        return String.format("%d/%d eggs remaining", trackedEggSlots.size(), initialEggSlots.size());
+        // Only show eggs remaining if we have a valid count
+        int remaining = trackedEggSlots.size();
+        int hatched = initialEggSlots.size() - remaining;
+        if (hatched < 0) {
+            // New eggs were added to tracking after initial scan
+            return String.format("%d eggs in party", remaining);
+        }
+        return String.format("%d eggs in party (%d hatched)", remaining, hatched);
+    }
+    
+    /**
+     * Get count of eggs in PC that are eligible for transfer to party
+     * (excludes breedject boxes and reserved boxes)
+     */
+    public int getAvailableEggsInPC() {
+        List<Object> eggs = findAllEggsInPC();
+        return eggs.size();
     }
     
     public boolean isMonitoring() {

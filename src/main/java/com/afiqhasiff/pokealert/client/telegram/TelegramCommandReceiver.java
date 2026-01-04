@@ -979,11 +979,9 @@ public class TelegramCommandReceiver {
                 int eggCount = eggManager.getEggCount();
                 sb.append("• <b>Tracked Eggs:</b> <code>").append(eggCount).append("</code>\n");
                 
-                // Get status string for more details
-                String status = eggManager.getStatus();
-                if (status != null && !status.equals("Not monitoring")) {
-                    sb.append("• <b>Details:</b> <code>").append(status).append("</code>\n");
-                }
+                // Show available eggs in PC that can be transferred to party
+                int availableEggs = eggManager.getAvailableEggsInPC();
+                sb.append("• <b>Available Eggs:</b> <code>").append(availableEggs).append("</code>\n");
                 
                 // Check if daycare is running (via reflection)
                 try {
