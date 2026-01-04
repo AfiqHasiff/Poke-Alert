@@ -24,7 +24,6 @@ public class PokeAlertConfig {
     public EggHatcherConfig eggHatcher = new EggHatcherConfig();
     public EggManagerConfig eggManager = new EggManagerConfig();
     public AntiAfkConfig antiAfk = new AntiAfkConfig();
-    public MappingLinesConfig mappingLines = new MappingLinesConfig();
     
     // ============ LEGACY FIELDS FOR MIGRATION ============
     // These fields are kept for backward compatibility during migration
@@ -126,8 +125,6 @@ public class PokeAlertConfig {
     @Deprecated public Double jumpWhileMovingChance = null;
     @Deprecated public Double lookAroundChance = null;
     
-    // Legacy: Mapping Lines (migrate to mappingLines.*)
-    @Deprecated public SlotCoordinateMapping slotMapping = null;
     
     // ============ NESTED CLASS DEFINITIONS ============
     
@@ -286,10 +283,6 @@ public class PokeAlertConfig {
         }
     }
     
-    public static class MappingLinesConfig {
-        public SlotCoordinateMapping slotMapping = new SlotCoordinateMapping();
-    }
-    
     // ============ MIGRATION LOGIC ============
     
     /**
@@ -396,9 +389,6 @@ public class PokeAlertConfig {
         if (jumpWhileMovingChance != null) { antiAfk.humanBehavior.jumpWhileMovingChance = jumpWhileMovingChance; migrated = true; }
         if (lookAroundChance != null) { antiAfk.humanBehavior.lookAroundChance = lookAroundChance; migrated = true; }
         
-        // Migrate mapping lines settings
-        if (slotMapping != null) { mappingLines.slotMapping = slotMapping; migrated = true; }
-        
         // Clear legacy fields after migration
         if (migrated) {
             clearLegacyFields();
@@ -493,7 +483,6 @@ public class PokeAlertConfig {
         hotbarSwitchChance = null;
         jumpWhileMovingChance = null;
         lookAroundChance = null;
-        slotMapping = null;
     }
     
     // ============ HELPER METHODS ============

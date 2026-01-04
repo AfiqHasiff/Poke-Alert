@@ -3,7 +3,6 @@ package com.afiqhasiff.pokealert.client.automation;
 import com.afiqhasiff.pokealert.client.PokeAlertClient;
 import com.afiqhasiff.pokealert.client.config.ConfigManager;
 import com.afiqhasiff.pokealert.client.config.PokeAlertConfig;
-import com.afiqhasiff.pokealert.client.config.SlotCoordinateMapping;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.text.Text;
@@ -88,11 +87,11 @@ public class EggManager {
         
         /**
          * Format IVs for Telegram notification
-         * Format: HP-XX ATT-XX DEF-XX SPATT-XX SPDEF-XX SPD-XX Y-31
+         * Format: HP-XX Att-XX Def-XX SpAtt-XX SpDef-XX Spd-XX Yx31
          * where Y is the count of perfect (31) IVs
          */
         String toTelegramFormat() {
-            return String.format("HP-%02d ATT-%02d DEF-%02d SPATT-%02d SPDEF-%02d SPD-%02d %d-31",
+            return String.format("HP-%02d Att-%02d Def-%02d SpAtt-%02d SpDef-%02d Spd-%02d %dx31",
                 hp, attack, defense, spAttack, spDefense, speed, getPerfectCount());
         }
         
@@ -325,6 +324,135 @@ public class EggManager {
             PokeAlertClient.LOGGER.info("EggManager: Tracking {} initial egg slots: {}", 
                 trackedEggSlots.size(), formatSlots(trackedEggSlots));
         }
+        
+        // Phase 2: Scan for already hatched Pokemon that need to be transferred to PC
+        // This handles the case where Egg Manager was off when eggs hatched
+        PokeAlertConfig config = ConfigManager.getConfig();
+        if (config.eggManager.phase2.autoTransferToPC) {
+            scanAndTransferHatchedPokemon();
+        }
+    }
+    
+    /**
+     * Phase 2: Scan for already hatched Pokemon in party (slots 2-6) and transfer them to PC
+     * This is called on startup to handle Pokemon that hatched while Egg Manager was disabled
+     */
+    private void scanAndTransferHatchedPokemon() {
+        PokeAlertClient.LOGGER.info("EggManager: Scanning for already hatched Pokemon to transfer...");
+        
+        try {
+            Object party = getPlayerParty();
+            if (party == null) {
+                PokeAlertClient.LOGGER.warn("EggManager: Cannot scan for hatched Pokemon - party not available");
+                return;
+            }
+            
+            java.lang.reflect.Method getMethod = partyGetMethod;
+            if (getMethod == null) {
+                getMethod = party.getClass().getMethod("get", int.class);
+            }
+            
+            List<Integer> hatchedSlotsToTransfer = new ArrayList<>();
+            
+            // Check slots 1-5 (0-indexed) - slot 0 is usually reserved for lead Pokemon
+            // We check slots 1-5 because slot 0 might be a non-egg Pokemon
+            for (int slot = 1; slot < 6; slot++) {
+                Object pokemon = getMethod.invoke(party, slot);
+                if (pokemon == null) {
+                    continue; // Empty slot
+                }
+                
+                // Check if this is an egg
+                boolean isEgg = false;
+                try {
+                    // Try multiple methods to check if it's an egg
+                    try {
+                        java.lang.reflect.Method isEggMethod = pokemon.getClass().getMethod("isEgg");
+                        isEgg = (Boolean) isEggMethod.invoke(pokemon);
+                    } catch (NoSuchMethodException e) {
+                        // Try Species.isEgg() via getSpecies()
+                        java.lang.reflect.Method getSpeciesMethod = pokemon.getClass().getMethod("getSpecies");
+                        Object species = getSpeciesMethod.invoke(pokemon);
+                        if (species != null) {
+                            java.lang.reflect.Method speciesIsEggMethod = species.getClass().getMethod("isEgg");
+                            isEgg = (Boolean) speciesIsEggMethod.invoke(species);
+                        }
+                    }
+                } catch (Exception e) {
+                    PokeAlertClient.LOGGER.debug("EggManager: Error checking if slot {} is egg: {}", slot + 1, e.getMessage());
+                }
+                
+                // If NOT an egg, it's a hatched Pokemon that needs transfer
+                if (!isEgg) {
+                    // Skip if this is already being tracked as an egg (shouldn't happen, but be safe)
+                    if (!trackedEggSlots.contains(slot)) {
+                        hatchedSlotsToTransfer.add(slot);
+                        PokeAlertClient.LOGGER.info("EggManager: Found already hatched Pokemon in slot {} - queuing for transfer", slot + 1);
+                    }
+                }
+            }
+            
+            if (hatchedSlotsToTransfer.isEmpty()) {
+                PokeAlertClient.LOGGER.info("EggManager: No already hatched Pokemon found to transfer");
+                return;
+            }
+            
+            PokeAlertClient.LOGGER.info("EggManager: Found {} already hatched Pokemon to transfer: {}", 
+                hatchedSlotsToTransfer.size(), hatchedSlotsToTransfer);
+            
+            // Transfer each hatched Pokemon on a background thread
+            if (scheduler != null) {
+                scheduler.execute(() -> {
+                    for (Integer slot : hatchedSlotsToTransfer) {
+                        try {
+                            PokeAlertClient.LOGGER.info("EggManager: Transferring already hatched Pokemon from slot {} to PC", slot + 1);
+                            
+                            // Extract IVs if IV tracking is enabled
+                            PokeAlertConfig config = ConfigManager.getConfig();
+                            PokemonIVs ivs = null;
+                            if (config.eggManager.phase2.ivTrackingEnabled) {
+                                // Get Pokemon again on this thread
+                                Object partyNow = getPlayerParty();
+                                if (partyNow != null) {
+                                    java.lang.reflect.Method getMethodNow = partyNow.getClass().getMethod("get", int.class);
+                                    Object pokemonNow = getMethodNow.invoke(partyNow, slot);
+                                    if (pokemonNow != null) {
+                                        ivs = extractIVs(pokemonNow);
+                                    }
+                                }
+                            }
+                            
+                            // Transfer to PC
+                            Object result = transferHatchedPokemonToPC(slot, ivs);
+                            if (result != null) {
+                                PokeAlertClient.LOGGER.info("EggManager: ✅ Successfully transferred hatched Pokemon from slot {} to PC", slot + 1);
+                            } else {
+                                PokeAlertClient.LOGGER.warn("EggManager: ⚠️ Transfer of hatched Pokemon from slot {} may have failed", slot + 1);
+                            }
+                            
+                            // Wait between transfers to avoid overwhelming the server
+                            try {
+                                Thread.sleep(2000); // 2 second delay between transfers
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                                break;
+                            }
+                        } catch (Exception e) {
+                            PokeAlertClient.LOGGER.error("EggManager: Error transferring hatched Pokemon from slot {}", slot + 1, e);
+                        }
+                    }
+                    
+                    // After transferring hatched Pokemon, fill empty slots with eggs from PC
+                    PokeAlertConfig config = ConfigManager.getConfig();
+                    if (config.eggManager.phase2.autoFillFromPC) {
+                        fillPartySlotsWithEggs();
+                    }
+                });
+            }
+            
+        } catch (Exception e) {
+            PokeAlertClient.LOGGER.error("EggManager: Error scanning for hatched Pokemon", e);
+        }
     }
     
     /**
@@ -467,14 +595,42 @@ public class EggManager {
                     slot + 1, confirmCount, config.eggManager.confirmationChecks);
                 
                 if (confirmCount >= config.eggManager.confirmationChecks) {
-                    // Confirmed hatch
-                    trackedEggSlots.remove(slot);
-                    hatchedSlots.add(slot); // Track for notification
-                    hatchConfirmationCount.remove(slot);
-                    PokeAlertClient.LOGGER.info("EggManager: Slot {} confirmed hatched (was egg, now Pokemon)", slot + 1);
+                    // CRITICAL FIX: Verify the slot ACTUALLY contains a Pokemon before confirming hatch
+                    // Previously, empty slots were incorrectly marked as "hatched"
+                    boolean slotHasPokemon = false;
+                    try {
+                        Object party = getPlayerParty();
+                        if (party != null) {
+                            java.lang.reflect.Method getMethod = partyGetMethod;
+                            if (getMethod == null) {
+                                getMethod = party.getClass().getMethod("get", int.class);
+                            }
+                            Object pokemon = getMethod.invoke(party, slot);
+                            slotHasPokemon = (pokemon != null);
+                            if (!slotHasPokemon) {
+                                PokeAlertClient.LOGGER.warn("EggManager: Slot {} was tracked as egg but is now EMPTY (not hatched) - skipping", slot + 1);
+                            }
+                        }
+                    } catch (Exception e) {
+                        PokeAlertClient.LOGGER.debug("EggManager: Error verifying slot {} content: {}", slot + 1, e.getMessage());
+                        slotHasPokemon = true; // Assume hatched on error to avoid losing track
+                    }
                     
-                    // Phase 2: Handle hatch with IV extraction, transfer, and notification
-                    onEggHatched(slot);
+                    if (slotHasPokemon) {
+                        // Confirmed hatch - slot has a Pokemon (not an egg)
+                        trackedEggSlots.remove(slot);
+                        hatchedSlots.add(slot); // Track for notification
+                        hatchConfirmationCount.remove(slot);
+                        PokeAlertClient.LOGGER.info("EggManager: Slot {} confirmed hatched (was egg, now Pokemon)", slot + 1);
+                        
+                        // Phase 2: Handle hatch with IV extraction, transfer, and notification
+                        onEggHatched(slot);
+                    } else {
+                        // Slot is empty - not a real hatch, just remove from tracking
+                        trackedEggSlots.remove(slot);
+                        hatchConfirmationCount.remove(slot);
+                        PokeAlertClient.LOGGER.info("EggManager: Slot {} removed from tracking (empty, not hatched)", slot + 1);
+                    }
                 }
             }
         }
@@ -501,12 +657,25 @@ public class EggManager {
                 return; // Don't fill slots until Step 5 is complete
             }
             
-            // Check for empty party slots
+            // Check for ACTUALLY empty party slots (not just non-eggs)
+            // CRITICAL FIX: Previously used currentEggSlots which incorrectly counted hatched Pokemon as "empty"
             int emptySlotCount = 0;
-            for (int slot = 0; slot < 6; slot++) {
-                if (!currentEggSlots.contains(slot)) {
-                    emptySlotCount++;
+            try {
+                Object party = getPlayerParty();
+                if (party != null) {
+                    java.lang.reflect.Method getMethod = partyGetMethod;
+                    if (getMethod == null) {
+                        getMethod = party.getClass().getMethod("get", int.class);
+                    }
+                    for (int slot = 0; slot < 6; slot++) {
+                        Object pokemon = getMethod.invoke(party, slot);
+                        if (pokemon == null) {
+                            emptySlotCount++;
+                        }
+                    }
                 }
+            } catch (Exception e) {
+                PokeAlertClient.LOGGER.debug("EggManager: Error counting empty slots: {}", e.getMessage());
             }
             
             if (emptySlotCount > 0) {
@@ -1025,50 +1194,103 @@ public class EggManager {
             final BoxInfo[] resultBoxInfo = {finalBoxNumber > 0 && finalBoxSlot > 0 ? 
                 new BoxInfo(finalBoxNumber, finalBoxName, finalBoxSlot) : null};
             
+            PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: Starting transfer - Party Slot {} → PC Box {} Slot {}", 
+                finalPartySlot + 1, finalBoxNumber, finalBoxSlot);
+            
+            // ========== STEP 1: Check if PC is open (quick check on render thread) ==========
+            final boolean[] pcWasOpen = {false};
+            java.util.concurrent.CountDownLatch checkLatch = new java.util.concurrent.CountDownLatch(1);
             client.execute(() -> {
                 try {
-                    PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: Starting transfer - Party Slot {} → PC Box {} Slot {}", 
-                        finalPartySlot + 1, finalBoxNumber, finalBoxSlot);
-                    
-                    // Step 1: Open PC GUI if not already open
-                    boolean pcWasOpen = false;
                     if (client.currentScreen != null) {
                         String screenClassName = client.currentScreen.getClass().getName();
                         if (screenClassName.equals("com.cobblemon.mod.common.client.gui.pc.PCGUI")) {
-                            pcWasOpen = true;
+                            pcWasOpen[0] = true;
                             PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: PC GUI already open");
                         }
                     }
-                    
-                    if (!pcWasOpen) {
-                        // WARNING: Give player 10 seconds notice before opening PC
-                        sendPCWarningNotification(10, 1);
-                        PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: Sending 10 second warning before PC transfer");
-                        
+                } finally {
+                    checkLatch.countDown();
+                }
+            });
+            try { checkLatch.await(1, java.util.concurrent.TimeUnit.SECONDS); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+            
+            // ========== STEP 2: Warning wait (runs on BACKGROUND thread - no freeze!) ==========
+            if (!pcWasOpen[0]) {
+                sendPCWarningNotification(10);
+                PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: Sending 10 second warning before PC transfer (background thread)");
+                
+                try {
+                    Thread.sleep(10000); // Wait 10 seconds - runs on background thread, no freeze!
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    PokeAlertClient.LOGGER.warn("🔍 [TRANSFER] transferHatchedPokemonToPC: PC warning wait interrupted");
+                }
+                
+                // ========== STEP 3: Open PC (quick command on render thread) ==========
+                PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: Opening PC GUI...");
+                sendPCTransferNotification("Opening PC...");
+                client.execute(() -> {
+                    if (client.player != null && client.player.networkHandler != null) {
+                        String command = "pc";
+                        client.player.networkHandler.sendChatCommand(command);
+                        PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: Sent /pc command");
+                    }
+                });
+                
+                // ========== STEP 4: Wait for PC GUI to load (polling on BACKGROUND thread - no freeze!) ==========
+                PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: Waiting for PC GUI to fully load...");
+                boolean pcGuiReady = false;
+                long startTime = System.currentTimeMillis();
+                long timeout = 3000; // 3 second timeout
+                
+                while (!pcGuiReady && (System.currentTimeMillis() - startTime) < timeout) {
+                    final boolean[] ready = {false};
+                    java.util.concurrent.CountDownLatch readyLatch = new java.util.concurrent.CountDownLatch(1);
+                    client.execute(() -> {
                         try {
-                            Thread.sleep(10000); // Wait 10 seconds
+                            if (client.currentScreen != null) {
+                                String screenClassName = client.currentScreen.getClass().getName();
+                                if (screenClassName.equals("com.cobblemon.mod.common.client.gui.pc.PCGUI")) {
+                                    java.lang.reflect.Field storageWidgetField = client.currentScreen.getClass().getDeclaredField("storageWidget");
+                                    storageWidgetField.setAccessible(true);
+                                    Object sw = storageWidgetField.get(client.currentScreen);
+                                    if (sw != null) {
+                                        ready[0] = true;
+                                    }
+                                }
+                            }
+                        } catch (Exception e) {
+                            // Not ready yet
+                        } finally {
+                            readyLatch.countDown();
+                        }
+                    });
+                    try { readyLatch.await(100, java.util.concurrent.TimeUnit.MILLISECONDS); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+                    pcGuiReady = ready[0];
+                    
+                    if (!pcGuiReady) {
+                        try {
+                            Thread.sleep(100); // Poll every 100ms - runs on background thread
                         } catch (InterruptedException e) {
                             Thread.currentThread().interrupt();
-                            PokeAlertClient.LOGGER.warn("🔍 [TRANSFER] transferHatchedPokemonToPC: PC warning wait interrupted");
-                        }
-                        
-                        PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: Opening PC GUI...");
-                        sendPCTransferNotification("Opening PC...");
-                        if (client.player != null && client.player.networkHandler != null) {
-                            String command = "pc";
-                            client.player.networkHandler.sendChatCommand(command);
-                            PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: Sent /pc command");
-                            
-                            // Wait for PC to open
-                            try {
-                                Thread.sleep(500);
-                            } catch (InterruptedException e) {
-                                Thread.currentThread().interrupt();
-                            }
+                            break;
                         }
                     }
-                    
-                    // Step 2: Get StorageWidget
+                }
+                
+                if (pcGuiReady) {
+                    long elapsed = System.currentTimeMillis() - startTime;
+                    PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: ✅ PC GUI is ready (took {}ms)", elapsed);
+                } else {
+                    PokeAlertClient.LOGGER.error("🔍 [TRANSFER] transferHatchedPokemonToPC: ❌ PC GUI not ready after 3s timeout");
+                }
+            }
+            
+            // ========== STEP 5: Perform the actual transfer (on render thread) ==========
+            client.execute(() -> {
+                try {
+                    // Get StorageWidget
                     Object storageWidget = null;
                     try {
                         if (client.currentScreen != null) {
@@ -1089,7 +1311,7 @@ public class EggManager {
                         PokeAlertClient.LOGGER.error("🔍 [TRANSFER] transferHatchedPokemonToPC: ❌ Error getting StorageWidget", e);
                     }
                     
-                    // Step 3: Use two-click transfer at configured coordinates
+                    // Perform transfer
                     boolean transferViaGUI = false;
                     if (storageWidget != null && finalBoxNumber > 0 && finalBoxSlot > 0) {
                         try {
@@ -1099,7 +1321,7 @@ public class EggManager {
                             PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: Target - Party Slot {} → PC Box {} (index {}), Slot {}", 
                                 finalPartySlot + 1, finalBoxNumber, targetBoxIndex, finalBoxSlot);
                             
-                            // Navigate to target box
+                            // Navigate to target box using setBox (no sleeps needed - instant)
                             PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: Step 1 - Navigating to box {}", targetBoxIndex);
                             boolean navigationSuccess = navigateToBox(storageWidget, targetBoxIndex);
                             
@@ -1107,82 +1329,42 @@ public class EggManager {
                                 PokeAlertClient.LOGGER.warn("🔍 [TRANSFER] transferHatchedPokemonToPC: ⚠️ Box navigation may have failed, continuing anyway");
                             }
                             
-                            // CRITICAL: Wait for GUI to stabilize after navigation before starting transfer
-                            // This prevents the box from being in a transition state during the transfer
-                            try {
-                                Thread.sleep(300); // 300ms delay for GUI stabilization
-                                PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: Waited 300ms for GUI stabilization");
-                            } catch (InterruptedException e) {
-                                Thread.currentThread().interrupt();
-                            }
-                            
-                            // Verify we're still on the correct box after stabilization
+                            // Verify box (no sleep needed - just check)
                             int verifyBox = getCurrentVisibleBox(storageWidget);
                             if (verifyBox != targetBoxIndex) {
-                                PokeAlertClient.LOGGER.warn("🔍 [TRANSFER] transferHatchedPokemonToPC: ⚠️ Box changed after stabilization! Expected {}, got {}", 
+                                PokeAlertClient.LOGGER.warn("🔍 [TRANSFER] transferHatchedPokemonToPC: ⚠️ Box mismatch! Expected {}, got {}", 
                                     targetBoxIndex, verifyBox);
-                                // Re-navigate if the box changed
-                                if (verifyBox != -1) {
-                                    PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: Re-navigating to target box...");
-                                    navigationSuccess = navigateToBox(storageWidget, targetBoxIndex);
-                                    // Wait again after re-navigation
-                                    try {
-                                        Thread.sleep(300);
-                                    } catch (InterruptedException e) {
-                                        Thread.currentThread().interrupt();
-                                    }
-                                }
                             } else {
-                                PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: ✅ Box verified at {} after stabilization", targetBoxIndex);
+                                PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: ✅ Box verified at {}", targetBoxIndex);
                             }
                             
-                            // Get configured coordinates (we don't use widgets - only configured coordinates)
-                            PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: Step 2 - Getting configured coordinates");
+                            // ITERATION 36: Use widget-based bidirectional transfer (no coordinates needed!)
+                            PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: Step 2 - Using widget-based transfer (Party → PC)");
                             
-                            // Calculate positions using configured coordinates
-                            int[] partySlotPos = calculateSlotPosition(finalPartySlot, false); // false = Party slot
-                            int[] pcSlotPos = calculateSlotPosition(pcSlotIndex, true); // true = PC slot
+                            // Perform widget-based transfer (Party → PC)
+                            boolean clickSuccess = performTransferWithWidgetsBidirectional(storageWidget, finalPartySlot, pcSlotIndex, true);
                             
-                            if (partySlotPos == null) {
-                                PokeAlertClient.LOGGER.error("🔍 [TRANSFER] transferHatchedPokemonToPC: ❌ Party slot {} not mapped", finalPartySlot + 1);
-                            } else if (pcSlotPos == null) {
-                                PokeAlertClient.LOGGER.error("🔍 [TRANSFER] transferHatchedPokemonToPC: ❌ PC slot {} not mapped", pcSlotIndex + 1);
-                            } else {
-                                // Perform two-click transfer (Party → PC)
-                                PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: Step 3 - Performing two-click transfer");
+                            if (clickSuccess) {
+                                transferViaGUI = true;
+                                PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: ✅ Widget-based transfer completed");
                                 
-                                if (partySlotPos != null && pcSlotPos != null) {
-                                    PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: Calculated positions - Party: ({}, {}), PC: ({}, {})", 
-                                        partySlotPos[0], partySlotPos[1], pcSlotPos[0], pcSlotPos[1]);
-                                    
-                                    // Two-click transfer using configured coordinates
-                                    boolean clickSuccess = performTwoClickTransfer(partySlotPos, pcSlotPos, "Party → PC");
-                                    
-                                if (clickSuccess) {
-                                    transferViaGUI = true;
-                                    PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: ✅ Two-click transfer completed");
-                                    
-                                    // Wait for server sync
-                                    try {
-                                        Thread.sleep(2000);
-                                    } catch (InterruptedException e) {
-                                        Thread.currentThread().interrupt();
-                                    }
-                                } else {
-                                    PokeAlertClient.LOGGER.error("🔍 [TRANSFER] transferHatchedPokemonToPC: ❌ Two-click transfer failed");
-                                    }
-                                } else {
-                                    PokeAlertClient.LOGGER.error("🔍 [TRANSFER] transferHatchedPokemonToPC: ❌ Could not calculate slot positions");
+                                // Wait for server sync
+                                try {
+                                    Thread.sleep(2000);
+                                } catch (InterruptedException e) {
+                                    Thread.currentThread().interrupt();
                                 }
+                            } else {
+                                PokeAlertClient.LOGGER.error("🔍 [TRANSFER] transferHatchedPokemonToPC: ❌ Widget-based transfer failed");
                             }
                         } catch (Exception guiException) {
                             PokeAlertClient.LOGGER.error("🔍 [TRANSFER] transferHatchedPokemonToPC: ❌ GUI-based transfer failed", guiException);
                         }
                     }
                     
-                    // No fallback - GUI transfer is required (setPCPokemon/moveInPC are client-side only and don't work)
+                    // No fallback - GUI transfer is required
                     if (!transferViaGUI) {
-                        PokeAlertClient.LOGGER.error("GUI transfer failed - no fallback available. Please ensure slot coordinates are mapped.");
+                        PokeAlertClient.LOGGER.error("Widget-based GUI transfer failed - no fallback available.");
                             resultBoxInfo[0] = null;
                             return;
                     }
@@ -1311,21 +1493,27 @@ public class EggManager {
         try {
             Object pcStore = getPlayerPCStore();
             if (pcStore == null) {
+                PokeAlertClient.LOGGER.error("[BOX-FIND] Cannot find target box - PC store not available");
                 return null;
             }
             
             PokeAlertConfig config = ConfigManager.getConfig();
+            PokeAlertClient.LOGGER.info("[BOX-FIND] boxOrganizationEnabled: {}", config.eggManager.phase2.boxOrganizationEnabled);
+            
             if (!config.eggManager.phase2.boxOrganizationEnabled) {
-                // Just find any empty slot
+                PokeAlertClient.LOGGER.info("[BOX-FIND] Box organization disabled, finding any empty slot...");
                 return findEmptyPCSlot(pcStore);
             }
             
             // Check if perfect IV
             boolean isPerfect = ivs != null && ivs.isPerfect();
+            PokeAlertClient.LOGGER.info("[BOX-FIND] Pokemon IVs: {} | Perfect: {}", ivs, isPerfect);
             
             if (isPerfect) {
+                PokeAlertClient.LOGGER.info("[BOX-FIND] Looking for perfect IV box...");
                 return findPerfectIVBox(pcStore);
             } else {
+                PokeAlertClient.LOGGER.info("[BOX-FIND] Looking for breedject box...");
                 return findBreedjectBox(pcStore);
             }
             
@@ -1336,24 +1524,40 @@ public class EggManager {
     }
     
     /**
-     * Phase 2: Find breedject box (boxes 25-1)
-     * Box indices are 0-based: Box 1 = index 0, Box 25 = index 24
+     * Phase 2: Find breedject box
+     * 
+     * Box Organization:
+     * - Box 30-28: RESERVED (never use)
+     * - Box 27-26: "Breedgems 1/2" for perfect 6x31 IV Pokemon (handled by findPerfectIVBox)
+     * - Box 25-15: "Breedjects X" for non-perfect hatched Pokemon
+     * 
+     * Strategy: Fill from HIGHEST index first (Box 25 → 15)
+     * Within each box, fill the first empty slot (slot 0 → 29)
+     * 
+     * Box indices are 0-based: Box 25 = index 24, Box 15 = index 14
      */
     private Object findBreedjectBox(Object pcStore) {
         try {
-            // Check boxes 25 down to 1 (indices 24 down to 0)
-            for (int boxNumber = 25; boxNumber >= 1; boxNumber--) {
+            PokeAlertClient.LOGGER.info("[BOX-FIND] Starting breedject box search (Box 25 → 15)...");
+            
+            // Search boxes 25 down to 15 (indices 24 down to 14)
+            // Fill from highest index first (Box 25 first, then 24, 23... down to 15)
+            for (int boxNumber = 25; boxNumber >= 15; boxNumber--) {
                 int boxIndex = boxNumber - 1; // Convert to 0-based index
+                String boxName = getBoxName(pcStore, boxIndex);
                 Object position = findEmptySlotInBox(pcStore, boxIndex);
+                
                 if (position != null) {
-                    // Verify box name matches expected pattern (optional)
-                    String boxName = getBoxName(pcStore, boxIndex);
-                    String expectedName = "Breedject " + (26 - boxNumber);
-                    if (boxName == null || boxName.isEmpty() || boxName.equals(expectedName) || boxName.startsWith("Breedject")) {
-                        return position;
-                    }
+                    PokeAlertClient.LOGGER.info("[BOX-FIND] ✅ Found empty slot in Box {} '{}' (Breedjects {})", 
+                        boxNumber, boxName != null ? boxName : "(unnamed)", 26 - boxNumber);
+                    return position;
+                } else {
+                    PokeAlertClient.LOGGER.debug("[BOX-FIND] Box {} '{}' is full, checking next...", 
+                        boxNumber, boxName != null ? boxName : "(unnamed)");
                 }
             }
+            
+            PokeAlertClient.LOGGER.warn("[BOX-FIND] ❌ No empty slots found in breedject boxes (25-15)");
             return null;
         } catch (Exception e) {
             PokeAlertClient.LOGGER.error("EggManager: Error finding breedject box", e);
@@ -1362,19 +1566,37 @@ public class EggManager {
     }
     
     /**
-     * Phase 2: Find perfect IV box (boxes 27, 26)
-     * Box indices are 0-based: Box 26 = index 25, Box 27 = index 26
+     * Phase 2: Find perfect IV box ("Breedgems" boxes 27-26)
+     * 
+     * Box Organization:
+     * - Box 27: "Breedgems 1" - first perfect IV box
+     * - Box 26: "Breedgems 2" - second perfect IV box
+     * 
+     * Strategy: Fill from HIGHEST index first (Box 27 → 26)
+     * 
+     * Box indices are 0-based: Box 27 = index 26, Box 26 = index 25
      */
     private Object findPerfectIVBox(Object pcStore) {
         try {
+            PokeAlertClient.LOGGER.info("[BOX-FIND] Starting perfect IV (Breedgems) box search (Box 27 → 26)...");
+            
             // Check boxes 27 and 26 (indices 26 and 25)
             for (int boxNumber = 27; boxNumber >= 26; boxNumber--) {
                 int boxIndex = boxNumber - 1; // Convert to 0-based index
+                String boxName = getBoxName(pcStore, boxIndex);
                 Object position = findEmptySlotInBox(pcStore, boxIndex);
+                
                 if (position != null) {
+                    PokeAlertClient.LOGGER.info("[BOX-FIND] ✅ Found empty slot in Box {} '{}' (Breedgems {})", 
+                        boxNumber, boxName != null ? boxName : "(unnamed)", 28 - boxNumber);
                     return position;
+                } else {
+                    PokeAlertClient.LOGGER.debug("[BOX-FIND] Box {} '{}' is full, checking next...", 
+                        boxNumber, boxName != null ? boxName : "(unnamed)");
                 }
             }
+            
+            PokeAlertClient.LOGGER.warn("[BOX-FIND] ❌ No empty slots found in Breedgems boxes (27-26)");
             return null;
         } catch (Exception e) {
             PokeAlertClient.LOGGER.error("EggManager: Error finding perfect IV box", e);
@@ -1530,28 +1752,20 @@ public class EggManager {
             
             PokeAlertClient.LOGGER.info("EggManager: Found {} empty party slots, checking PC for eggs...", emptySlots.size());
             
-            // Find eggs in PC sequentially starting from box 1, stopping at breedject boxes
-            // Use sequential search: get one egg at a time starting from box 1
-            List<Object> eggPositions = new ArrayList<>();
-            for (int i = 0; i < emptySlots.size(); i++) {
-                Object eggPosition = findNextEggInPC();
-                if (eggPosition == null) {
-                    // No more eggs found before breedject boxes
-                    break;
-                }
-                eggPositions.add(eggPosition);
-            }
-            
-            if (eggPositions.isEmpty()) {
+            // SIMPLIFIED: Only transfer ONE egg per check (called every minute)
+            // This prevents batch transfer issues and aligns with the natural 1-minute check cycle
+            Object eggPosition = findNextEggInPC();
+            if (eggPosition == null) {
                 PokeAlertClient.LOGGER.debug("EggManager: No eggs found in PC to fill empty slots (searched from box 1, stopped at breedject boxes)");
                 return;
             }
             
-            PokeAlertClient.LOGGER.info("EggManager: Found {} eggs in PC (searched from box 1, stopped at breedject boxes), transferring to fill {} empty slots", 
-                eggPositions.size(), emptySlots.size());
+            // Get first empty slot for the single egg transfer
+            int targetPartySlot = emptySlots.get(0);
+            PokeAlertClient.LOGGER.info("EggManager: Found egg in PC, transferring to party slot {}", targetPartySlot + 1);
             
             // WARNING: Give player 10 seconds notice before opening PC
-            sendPCWarningNotification(10, eggPositions.size());
+            sendPCWarningNotification(10);
             PokeAlertClient.LOGGER.info("EggManager: Sending 10 second warning before PC transfer");
             
             try {
@@ -1562,9 +1776,8 @@ public class EggManager {
                 return;
             }
             
-            // CRITICAL: Open PC interface ONCE before all transfers
-            // This ensures all transfers happen while PC is open
-            PokeAlertClient.LOGGER.info("EggManager: Opening PC interface for batch transfer");
+            // CRITICAL: Open PC interface for egg transfer
+            PokeAlertClient.LOGGER.info("EggManager: Opening PC interface for egg transfer");
             sendPCTransferNotification("Opening PC...");
             client.execute(() -> {
                 if (client.player != null && client.player.networkHandler != null) {
@@ -1596,6 +1809,9 @@ public class EggManager {
                                 pcGuiReady = true;
                                 long elapsed = System.currentTimeMillis() - startTime;
                                 PokeAlertClient.LOGGER.info("EggManager: ✅ PC GUI is ready (took {}ms)", elapsed);
+                                
+                                // DIAGNOSTIC: Scan StorageWidget fields and methods for navigation discovery
+                                logStorageWidgetDiagnostics(storageWidget);
                                 break;
                             }
                         }
@@ -1618,55 +1834,31 @@ public class EggManager {
                 PokeAlertClient.LOGGER.warn("EggManager: ⚠️ PC GUI may not be fully loaded, but proceeding anyway");
             }
             
-            // Transfer eggs to fill empty slots (PC is already open)
-            // Clear transferred eggs set at start of batch transfer
+            // SIMPLIFIED: Transfer single egg (PC is already open)
+            // Clear transferred eggs set
             transferredEggUuids.clear();
-            PokeAlertClient.LOGGER.info("EggManager: Cleared transferred eggs tracking set for new batch transfer");
             
-            int transferred = 0;
-            for (int i = 0; i < Math.min(emptySlots.size(), eggPositions.size()); i++) {
-                Object eggPosition = eggPositions.get(i);
-                int partySlot = emptySlots.get(i);
-                
-                // Get egg UUID to check for duplicates
-                try {
-                    Object pcStore = getPlayerPCStore();
-                    if (pcStore != null) {
-                        java.lang.reflect.Method pcGetMethod = pcStore.getClass().getMethod("get", pcPositionClass);
-                        Object egg = pcGetMethod.invoke(pcStore, eggPosition);
-                        if (egg != null) {
-                            java.lang.reflect.Method getUuidMethod = egg.getClass().getMethod("getUuid");
-                            UUID eggUuid = (UUID) getUuidMethod.invoke(egg);
-                            
-                            // Check if this egg has already been transferred
-                            if (transferredEggUuids.contains(eggUuid)) {
-                                PokeAlertClient.LOGGER.warn("EggManager: ⚠️ Skipping egg {} - already transferred in this batch", eggUuid);
-                                continue; // Skip this egg, try next one
-                            }
-                            
-                            // Use the version that doesn't open/close PC (since it's already open)
-                            if (transferEggFromPCToPartyWithoutOpening(eggPosition, partySlot)) {
-                                // Mark egg as transferred
-                                transferredEggUuids.add(eggUuid);
-                                transferred++;
-                                PokeAlertClient.LOGGER.info("EggManager: ✅ Transferred egg {} to party slot {} (total transferred: {})", 
-                                    eggUuid, partySlot + 1, transferred);
-                                
-                                // CRITICAL: Delay between transfers to allow server sync
-                                // Without this delay, the next transfer starts before the server processes the previous one
-                                try {
-                                    Thread.sleep(1000); // 1 second delay between transfers for proper server sync
-                                    PokeAlertClient.LOGGER.info("EggManager: Waiting 1s for server sync before next transfer...");
-                                } catch (InterruptedException e) {
-                                    Thread.currentThread().interrupt();
-                                    PokeAlertClient.LOGGER.warn("EggManager: Batch transfer delay interrupted");
-                                }
-                            }
+            boolean transferred = false;
+            try {
+                Object pcStore = getPlayerPCStore();
+                if (pcStore != null) {
+                    java.lang.reflect.Method pcGetMethod = pcStore.getClass().getMethod("get", pcPositionClass);
+                    Object egg = pcGetMethod.invoke(pcStore, eggPosition);
+                    if (egg != null) {
+                        java.lang.reflect.Method getUuidMethod = egg.getClass().getMethod("getUuid");
+                        UUID eggUuid = (UUID) getUuidMethod.invoke(egg);
+                        
+                        // Use the version that doesn't open/close PC (since it's already open)
+                        if (transferEggFromPCToPartyWithoutOpening(eggPosition, targetPartySlot)) {
+                            transferredEggUuids.add(eggUuid);
+                            transferred = true;
+                            PokeAlertClient.LOGGER.info("EggManager: ✅ Transferred egg {} to party slot {}", 
+                                eggUuid, targetPartySlot + 1);
                         }
                     }
-                } catch (Exception e) {
-                    PokeAlertClient.LOGGER.error("EggManager: Error checking egg UUID before transfer", e);
                 }
+            } catch (Exception e) {
+                PokeAlertClient.LOGGER.error("EggManager: Error during single egg transfer", e);
             }
             
             // CRITICAL: Schedule PC close after delay to allow drag sequences to complete
@@ -1676,12 +1868,12 @@ public class EggManager {
             }
             scheduler.schedule(() -> {
                 closePCInterface();
-            }, 2000, TimeUnit.MILLISECONDS); // Delay 2 seconds to allow all drag sequences to complete
+            }, 2000, TimeUnit.MILLISECONDS); // Delay 2 seconds to allow drag sequence to complete
             
-            if (transferred > 0) {
-                PokeAlertClient.LOGGER.info("EggManager: ✅ Filled {} empty party slots with eggs from PC", transferred);
+            if (transferred) {
+                PokeAlertClient.LOGGER.info("EggManager: ✅ Transferred egg to party slot {}", targetPartySlot + 1);
             } else {
-                PokeAlertClient.LOGGER.warn("EggManager: Failed to transfer any eggs from PC to party");
+                PokeAlertClient.LOGGER.warn("EggManager: Failed to transfer egg from PC to party");
             }
             
         } catch (Exception e) {
@@ -1842,7 +2034,7 @@ public class EggManager {
             UUID playerUuid = client.player.getUuid();
             
             // WARNING: Give player 10 seconds notice before opening PC
-            sendPCWarningNotification(10, 1);
+            sendPCWarningNotification(10);
             PokeAlertClient.LOGGER.info("EggManager: Sending 10 second warning before PC transfer (egg from PC to party)");
             
             try {
@@ -2348,36 +2540,7 @@ public class EggManager {
                                         }
                                     }
                                 
-                                // Step 2: Calculate slot positions
-                                PokeAlertClient.LOGGER.info("🔍 [TRANSFER] ========== STEP 2: POSITION CALCULATION ==========");
-                                
-                                // Get configured coordinates (we don't use widgets - only configured coordinates)
-                                int[] pcSlotPos = calculateSlotPosition(pcSlotIndex, true); // true = PC slot
-                                int[] partySlotPos = calculateSlotPosition(finalPartySlot, false); // false = Party slot
-                                        
-                                        if (pcSlotPos != null && partySlotPos != null) {
-                                    PokeAlertClient.LOGGER.info("🔍 [TRANSFER] Calculated positions (for reference only - using widget-based transfer):");
-                                    PokeAlertClient.LOGGER.info("🔍 [TRANSFER]   PC Slot {} (0-based: {}): ({}, {})", pcSlotIndex + 1, pcSlotIndex, pcSlotPos[0], pcSlotPos[1]);
-                                    PokeAlertClient.LOGGER.info("🔍 [TRANSFER]   Party Slot {}: ({}, {})", finalPartySlot + 1, partySlotPos[0], partySlotPos[1]);
-                                    double distance = Math.sqrt(Math.pow(pcSlotPos[0] - partySlotPos[0], 2) + Math.pow(pcSlotPos[1] - partySlotPos[1], 2));
-                                    PokeAlertClient.LOGGER.info("🔍 [TRANSFER]   Distance: {} pixels", String.format("%.2f", distance));
-                                    
-                                    // Validate positions are within screen bounds
-                                    int windowWidth = client.getWindow().getScaledWidth();
-                                    int windowHeight = client.getWindow().getScaledHeight();
-                                    boolean pcPosValid = pcSlotPos[0] >= 0 && pcSlotPos[0] <= windowWidth && 
-                                                       pcSlotPos[1] >= 0 && pcSlotPos[1] <= windowHeight;
-                                    boolean partyPosValid = partySlotPos[0] >= 0 && partySlotPos[0] <= windowWidth && 
-                                                           partySlotPos[1] >= 0 && partySlotPos[1] <= windowHeight;
-                                    PokeAlertClient.LOGGER.info("🔍 [TRANSFER] Position validation:");
-                                    PokeAlertClient.LOGGER.info("🔍 [TRANSFER]   PC position valid: {} (within {}x{})", pcPosValid, windowWidth, windowHeight);
-                                    PokeAlertClient.LOGGER.info("🔍 [TRANSFER]   Party position valid: {} (within {}x{})", partyPosValid, windowWidth, windowHeight);
-                                    
-                                    if (!pcPosValid || !partyPosValid) {
-                                        PokeAlertClient.LOGGER.warn("🔍 [TRANSFER] ⚠️ WARNING: Calculated positions are outside screen bounds!");
-                                    }
-                                    
-                                    // Step 3: Widget-based transfer (Iteration 35)
+                                // Step 2: Widget-based transfer (no coordinates needed)
                                     // Uses onStorageSlotClicked() with actual widget instances
                                     // This is the CORRECT approach that sets grabbedSlot properly
                                     PokeAlertClient.LOGGER.info("🔍 [TRANSFER] ========== STEP 3: WIDGET-BASED TRANSFER (Iteration 35) ==========");
@@ -2451,18 +2614,9 @@ public class EggManager {
                                         // CRITICAL: Don't block render thread - server sync happens asynchronously
                                         PokeAlertClient.LOGGER.info("🔍 [TRANSFER] Server sync will happen asynchronously (no freeze!)");
                                     } else {
-                                        PokeAlertClient.LOGGER.warn("🔍 [TRANSFER] ⚠️ Mouse drag-and-drop failed");
+                                        PokeAlertClient.LOGGER.warn("🔍 [TRANSFER] ⚠️ Widget-based transfer failed");
                                     }
-                                } else {
-                                    PokeAlertClient.LOGGER.warn("🔍 [TRANSFER] ⚠️ Could not calculate slot positions");
-                                    if (pcSlotPos == null) {
-                                        PokeAlertClient.LOGGER.error("🔍 [TRANSFER]   PC slot position calculation failed");
-                                }
-                                    if (partySlotPos == null) {
-                                        PokeAlertClient.LOGGER.error("🔍 [TRANSFER]   Party slot position calculation failed");
-                            }
-                                }
-                            }
+                                    }
                             PokeAlertClient.LOGGER.info("═══════════════════════════════════════════════════════════════");
                         } catch (Exception guiException) {
                             PokeAlertClient.LOGGER.error("🔍 [TRANSFER] transferEggFromPCToPartyWithoutOpening: ❌ GUI-based transfer failed", guiException);
@@ -2652,106 +2806,21 @@ public class EggManager {
     }
 
     /**
-     * Calculate slot position using mapped coordinates from config
-     * Returns [x, y] center coordinates, or null if not mapped
-     * NOTE: We don't use StorageWidget - only configured coordinates from manual mapping
+     * DEPRECATED: No longer needed with widget-based transfers
+     * Kept as stub to avoid breaking existing code paths that may call it
      */
     private int[] calculateSlotPosition(int slotIndex, boolean isPCSlot) {
-        PokeAlertConfig config = ConfigManager.getConfig();
-        SlotCoordinateMapping mapping = config.mappingLines.slotMapping;
-        
-        // Try mapped coordinates first
-        SlotCoordinateMapping.SlotCoordinate mappedCoord;
-        if (isPCSlot) {
-            mappedCoord = mapping.getBoxSlot(slotIndex + 1); // Convert 0-indexed to 1-indexed
-        } else {
-            mappedCoord = mapping.getPartySlot(slotIndex + 1); // Convert 0-indexed to 1-indexed
-        }
-        
-        if (mappedCoord.isMapped()) {
-            return new int[]{mappedCoord.x, mappedCoord.y};
-        }
-        
-        // No fallback - mapped coordinates are required
-        PokeAlertClient.LOGGER.warn("Slot {} {} not mapped - please set coordinates using /pokealert mappingLines set", 
-            isPCSlot ? "PC" : "Party", slotIndex + 1);
-            return null;
+        PokeAlertClient.LOGGER.debug("calculateSlotPosition called but coordinate mapping is deprecated - using widget-based transfers");
+        return null;
     }
     
     /**
-     * Two-click transfer: Simple click-click approach matching Iteration 11
-     * Mimics actual user clicking at configured coordinates
-     * 
-     * Approach:
-     * 1. GUI State Verification (verify PC GUI is ready)
-     * 2. PRIMARY: Simple mouseClicked() at source, then destination
-     * 
-     * Based on Iteration 11: User confirmed manual transfer works with just two clicks
-     * - Click once on source slot
-     * - Click once on destination slot
-     * - No drag-and-drop needed
-     * 
-     * Coordinate System:
-     * - User-provided coordinates are in SCALED coordinates (GUI coordinates)
-     * - Screen.mouseClicked() expects SCALED coordinates (double)
+     * DEPRECATED: No longer needed with widget-based transfers
+     * Kept as stub to avoid breaking existing code paths that may call it
      */
     private boolean performTwoClickTransfer(int[] sourcePos, int[] destPos, String transferType) {
-        if (sourcePos == null || destPos == null) {
-            PokeAlertClient.LOGGER.error("🔍 [TRANSFER] ❌ Invalid positions - source: {}, dest: {}", sourcePos, destPos);
-            return false;
-        }
-        
-        try {
-            // Verify we have a screen to click on
-            if (client.currentScreen == null) {
-                PokeAlertClient.LOGGER.error("🔍 [TRANSFER] ❌ Current screen is null");
-                return false;
-            }
-            
-            // OPTION 4: GUI State Verification
-            PokeAlertClient.LOGGER.info("🔍 [TRANSFER] ========== OPTION 4: GUI STATE VERIFICATION ==========");
-            boolean guiReady = verifyPCGUIState();
-            if (!guiReady) {
-                PokeAlertClient.LOGGER.warn("🔍 [TRANSFER] ⚠️ GUI state verification failed, but continuing with transfer attempts");
-            }
-            
-            // Get configurable timing delays from config
-            PokeAlertConfig config = ConfigManager.getConfig();
-            int delayBetweenClicks = 1000; // Delay between first and second click (configurable)
-            int delayAfterTransfer = 1000; // Delay after second click for server sync (configurable)
-            
-            // Convert int coordinates to double (Screen methods use double)
-            double sourceX = (double) sourcePos[0];
-            double sourceY = (double) sourcePos[1];
-            double destX = (double) destPos[0];
-            double destY = (double) destPos[1];
-            
-            // PRIMARY METHOD: Minecraft Mouse.onMouseButton() Handler
-            // CRITICAL: Screen.mouseClicked() was tried in Iterations 13, 15, 31 and CONSISTENTLY FAILED
-            // This NEW approach uses Minecraft's internal Mouse.onMouseButton() handler (NEVER TRIED BEFORE)
-            // Uses same code path as real hardware clicks - ensures proper event propagation through widget hierarchy
-            PokeAlertClient.LOGGER.info("🔍 [TRANSFER] ========== PRIMARY METHOD: MINECRAFT Mouse.onMouseButton() HANDLER ==========");
-            PokeAlertClient.LOGGER.info("🔍 [TRANSFER] ⚠️ CRITICAL: Screen.mouseClicked() was tried MULTIPLE TIMES and FAILED");
-            PokeAlertClient.LOGGER.info("🔍 [TRANSFER] This is a NEW approach using Minecraft's internal mouse handler (never tried before)");
-            boolean screenSuccess = performClickWithScreenMousePressedReleased(sourceX, sourceY, destX, destY, delayBetweenClicks);
-            
-            if (screenSuccess) {
-                PokeAlertClient.LOGGER.info("🔍 [TRANSFER] ✅ Transfer completed using Mouse.onMouseButton() handler");
-                return true;
-            }
-            
-            PokeAlertClient.LOGGER.error("🔍 [TRANSFER] ❌ Mouse.onMouseButton() handler method failed");
-            return false;
-            
-        } catch (Exception e) {
-            PokeAlertClient.LOGGER.error("🔍 [TRANSFER] ❌ Error during two-click transfer", e);
-            PokeAlertClient.LOGGER.error("🔍 [TRANSFER] Exception type: {}", e.getClass().getName());
-            PokeAlertClient.LOGGER.error("🔍 [TRANSFER] Exception message: {}", e.getMessage());
-            if (e.getCause() != null) {
-                PokeAlertClient.LOGGER.error("🔍 [TRANSFER] Caused by: {}", e.getCause().getMessage());
-            }
-            return false;
-        }
+        PokeAlertClient.LOGGER.debug("performTwoClickTransfer called but coordinate-based transfers are deprecated - using widget-based transfers");
+        return false;
     }
     
     /**
@@ -3265,7 +3334,10 @@ public class EggManager {
             }
             
             // STEP 6: Click source slot (GRAB)
-            PokeAlertClient.LOGGER.debug("[WIDGET-TRANSFER] Clicking source slot (PC Slot {}) to GRAB...", pcSlotIndex);
+            PokeAlertClient.LOGGER.info("[WIDGET-TRANSFER] Clicking source slot (PC Slot {}) to GRAB...", pcSlotIndex);
+            PokeAlertClient.LOGGER.info("[WIDGET-TRANSFER] PC slot widget type: {}", pcSlotWidget.getClass().getName());
+            PokeAlertClient.LOGGER.info("[WIDGET-TRANSFER] Party slot widget type: {}", partySlotWidget.getClass().getName());
+            PokeAlertClient.LOGGER.info("[WIDGET-TRANSFER] Method parameter type: {}", onStorageSlotClickedMethod.getParameterTypes()[0].getName());
             
             final java.lang.reflect.Method finalMethod = onStorageSlotClickedMethod;
             final Object finalPcSlotWidget = pcSlotWidget;
@@ -3273,12 +3345,19 @@ public class EggManager {
             
             try {
                 // Call onStorageSlotClicked to initiate grab
+                PokeAlertClient.LOGGER.info("[WIDGET-TRANSFER] Invoking onStorageSlotClicked with PC slot...");
                 finalMethod.invoke(storageWidget, finalPcSlotWidget);
+                PokeAlertClient.LOGGER.info("[WIDGET-TRANSFER] onStorageSlotClicked invoked successfully");
             } catch (java.lang.reflect.InvocationTargetException ite) {
                 PokeAlertClient.LOGGER.error("[WIDGET-TRANSFER] Method threw exception: {}", ite.getCause());
+                ite.getCause().printStackTrace();
+                return false;
+            } catch (IllegalArgumentException iae) {
+                PokeAlertClient.LOGGER.error("[WIDGET-TRANSFER] IllegalArgumentException - type mismatch! Expected: {}, Got: {}",
+                    onStorageSlotClickedMethod.getParameterTypes()[0].getName(), pcSlotWidget.getClass().getName());
                 return false;
             } catch (Exception e) {
-                PokeAlertClient.LOGGER.error("[WIDGET-TRANSFER] Failed to click source slot: {}", e.getMessage());
+                PokeAlertClient.LOGGER.error("[WIDGET-TRANSFER] Failed to click source slot: {} ({})", e.getMessage(), e.getClass().getName());
                 return false;
             }
             
@@ -3287,55 +3366,13 @@ public class EggManager {
             try {
                 if (grabbedSlotField != null) {
                     grabbedSlotAfterGrab = grabbedSlotField.get(storageWidget);
+                    PokeAlertClient.LOGGER.info("[WIDGET-TRANSFER] grabbedSlot AFTER click: {}", grabbedSlotAfterGrab);
                     
                     if (grabbedSlotAfterGrab == null) {
-                        PokeAlertClient.LOGGER.debug("[WIDGET-TRANSFER] grabbedSlot still null after grab, trying alternatives...");
+                        PokeAlertClient.LOGGER.warn("[WIDGET-TRANSFER] grabbedSlot still null after grab - click did not register!");
                         
-                        // STEP 6B: Try calling mouseClicked on slot widget (fallback)
-                        try {
-                            PokeAlertConfig config = ConfigManager.getConfig();
-                            SlotCoordinateMapping mapping = config.mappingLines.slotMapping;
-                            SlotCoordinateMapping.SlotCoordinate pcCoord = mapping.getBoxSlot(pcSlotIndex + 1);
-                            
-                            if (pcCoord.isMapped()) {
-                                // Try known mouseClicked method names (including obfuscated)
-                                java.lang.reflect.Method mouseClickedMethod = null;
-                                String[] mouseClickedNames = {"mouseClicked", "method_25402", "method_1595"};
-                                
-                                for (String methodName : mouseClickedNames) {
-                                    try {
-                                        mouseClickedMethod = pcSlotWidget.getClass().getMethod(methodName, double.class, double.class, int.class);
-                                        break;
-                                    } catch (NoSuchMethodException e) {
-                                        // Try next
-                                    }
-                                }
-                                
-                                // Scan for (double, double, int) -> boolean methods
-                                if (mouseClickedMethod == null) {
-                                    for (java.lang.reflect.Method m : pcSlotWidget.getClass().getMethods()) {
-                                        Class<?>[] params = m.getParameterTypes();
-                                        if (params.length == 3 && 
-                                            params[0] == double.class && 
-                                            params[1] == double.class && 
-                                            params[2] == int.class &&
-                                            m.getReturnType() == boolean.class &&
-                                            (m.getName().startsWith("method_") || m.getName().equals("mouseClicked"))) {
-                                            mouseClickedMethod = m;
-                                            break;
-                                        }
-                                    }
-                                }
-                                
-                                if (mouseClickedMethod != null) {
-                                    mouseClickedMethod.setAccessible(true);
-                                    mouseClickedMethod.invoke(pcSlotWidget, (double)pcCoord.x, (double)pcCoord.y, 0);
-                                    grabbedSlotAfterGrab = grabbedSlotField.get(storageWidget);
-                                }
-                            }
-                        } catch (Exception altE) {
-                            PokeAlertClient.LOGGER.debug("[WIDGET-TRANSFER] Alternative mouseClicked failed: {}", altE.getMessage());
-                        }
+                        // REMOVED: Coordinate-based fallback no longer needed
+                        // Widget-based approach should work without coordinate mapping
                         
                         // STEP 6C: MIXIN WORKAROUND - Directly set grabbedSlot
                         // Bypasses mixin interference from "more_cobblemon_tweaks" mod
@@ -3368,18 +3405,34 @@ public class EggManager {
             }
             
             // STEP 8: Click destination slot (DROP)
+            PokeAlertClient.LOGGER.info("[WIDGET-TRANSFER] Clicking destination slot (Party Slot {}) to DROP...", partySlotIndex + 1);
             try {
                 finalMethod.invoke(storageWidget, finalPartySlotWidget);
+                PokeAlertClient.LOGGER.info("[WIDGET-TRANSFER] DROP click invoked successfully");
             } catch (Exception e) {
-                PokeAlertClient.LOGGER.error("[WIDGET-TRANSFER] Failed to click destination slot: {}", e.getMessage());
+                PokeAlertClient.LOGGER.error("[WIDGET-TRANSFER] Failed to click destination slot: {} ({})", e.getMessage(), e.getClass().getName());
                 return false;
             }
             
-            // STEP 9: Wait for drop to complete and server to sync
+            // STEP 9: Check grabbedSlot AFTER drop - should be null if drop succeeded
+            try {
+                if (grabbedSlotField != null) {
+                    Object grabbedSlotAfterDrop = grabbedSlotField.get(storageWidget);
+                    if (grabbedSlotAfterDrop == null) {
+                        PokeAlertClient.LOGGER.info("[WIDGET-TRANSFER] ✅ grabbedSlot is NULL after drop - transfer likely succeeded!");
+                    } else {
+                        PokeAlertClient.LOGGER.warn("[WIDGET-TRANSFER] ⚠️ grabbedSlot still SET after drop: {} - drop may have failed", grabbedSlotAfterDrop);
+                    }
+                }
+            } catch (Exception e) {
+                PokeAlertClient.LOGGER.debug("[WIDGET-TRANSFER] Could not check grabbedSlot after drop: {}", e.getMessage());
+            }
+            
+            // STEP 10: Wait for drop to complete and server to sync
             // CRITICAL: Without this delay, verification happens before server processes the transfer
             try {
-                Thread.sleep(200); // 200ms delay for server sync
-                PokeAlertClient.LOGGER.debug("[WIDGET-TRANSFER] Waited 200ms for server sync");
+                Thread.sleep(500); // Increased to 500ms delay for server sync
+                PokeAlertClient.LOGGER.debug("[WIDGET-TRANSFER] Waited 500ms for server sync");
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
@@ -3389,6 +3442,228 @@ public class EggManager {
             
         } catch (Exception e) {
             PokeAlertClient.LOGGER.error("[WIDGET-TRANSFER] Error in widget-based transfer: {}", e.getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * ITERATION 36: Bidirectional widget-based transfer (Party → PC or PC → Party)
+     * 
+     * Uses the same onStorageSlotClicked() approach as PC → Party, but works for both directions.
+     * This eliminates the need for manually configured coordinates.
+     * 
+     * The key insight is that onStorageSlotClicked() is the universal click handler for both
+     * PC slots and Party slots - it handles grab/drop state automatically.
+     * 
+     * @param storageWidget The StorageWidget instance
+     * @param partySlotIndex 0-based party slot index (0-5)
+     * @param pcSlotIndex 0-based PC slot index (0-29) within the currently visible box
+     * @param partyToPC true if transferring from Party to PC, false for PC to Party
+     * @return true if transfer was initiated successfully
+     */
+    private boolean performTransferWithWidgetsBidirectional(Object storageWidget, int partySlotIndex, int pcSlotIndex, boolean partyToPC) {
+        String direction = partyToPC ? "Party → PC" : "PC → Party";
+        PokeAlertClient.LOGGER.info("[WIDGET-TRANSFER-BIDIR] Starting {} transfer: Party Slot {} {} PC Slot {}", 
+            direction, partySlotIndex + 1, partyToPC ? "→" : "←", pcSlotIndex);
+        
+        try {
+            if (storageWidget == null) {
+                PokeAlertClient.LOGGER.error("[WIDGET-TRANSFER-BIDIR] ❌ StorageWidget is null");
+                return false;
+            }
+            
+            // STEP 1: Access boxSlots list from StorageWidget
+            java.util.List<?> boxSlots = null;
+            String[] boxSlotFieldNames = {"boxSlots", "pcSlots", "storageSlots", "slots"};
+            for (String fieldName : boxSlotFieldNames) {
+                try {
+                    java.lang.reflect.Field field = storageWidget.getClass().getDeclaredField(fieldName);
+                    field.setAccessible(true);
+                    Object fieldValue = field.get(storageWidget);
+                    if (fieldValue instanceof java.util.List) {
+                        boxSlots = (java.util.List<?>) fieldValue;
+                        PokeAlertClient.LOGGER.debug("[WIDGET-TRANSFER-BIDIR] Found boxSlots via field '{}' - size: {}", fieldName, boxSlots.size());
+                        break;
+                    }
+                } catch (NoSuchFieldException e) {
+                    // Field not found, try next
+                }
+            }
+            
+            if (boxSlots == null) {
+                PokeAlertClient.LOGGER.error("[WIDGET-TRANSFER-BIDIR] Could not find boxSlots field");
+                return false;
+            }
+            
+            // STEP 2: Access partySlots list from StorageWidget
+            java.util.List<?> partySlots = null;
+            String[] partySlotFieldNames = {"partySlots", "partyStorageSlots"};
+            for (String fieldName : partySlotFieldNames) {
+                try {
+                    java.lang.reflect.Field field = storageWidget.getClass().getDeclaredField(fieldName);
+                    field.setAccessible(true);
+                    Object fieldValue = field.get(storageWidget);
+                    if (fieldValue instanceof java.util.List) {
+                        partySlots = (java.util.List<?>) fieldValue;
+                        PokeAlertClient.LOGGER.debug("[WIDGET-TRANSFER-BIDIR] Found partySlots via field '{}' - size: {}", fieldName, partySlots.size());
+                        break;
+                    }
+                } catch (NoSuchFieldException e) {
+                    // Field not found, try next
+                }
+            }
+            
+            if (partySlots == null) {
+                PokeAlertClient.LOGGER.error("[WIDGET-TRANSFER-BIDIR] Could not find partySlots field");
+                return false;
+            }
+            
+            // STEP 3: Validate indices and get slot widgets
+            if (pcSlotIndex < 0 || pcSlotIndex >= boxSlots.size()) {
+                PokeAlertClient.LOGGER.error("[WIDGET-TRANSFER-BIDIR] Invalid pcSlotIndex: {} (boxSlots size: {})", pcSlotIndex, boxSlots.size());
+                return false;
+            }
+            
+            if (partySlotIndex < 0 || partySlotIndex >= partySlots.size()) {
+                PokeAlertClient.LOGGER.error("[WIDGET-TRANSFER-BIDIR] Invalid partySlotIndex: {} (partySlots size: {})", partySlotIndex, partySlots.size());
+                return false;
+            }
+            
+            Object pcSlotWidget = boxSlots.get(pcSlotIndex);
+            Object partySlotWidget = partySlots.get(partySlotIndex);
+            
+            if (pcSlotWidget == null || partySlotWidget == null) {
+                PokeAlertClient.LOGGER.error("[WIDGET-TRANSFER-BIDIR] Slot widget is null");
+                return false;
+            }
+            
+            // Determine source and destination based on direction
+            Object sourceWidget = partyToPC ? partySlotWidget : pcSlotWidget;
+            Object destWidget = partyToPC ? pcSlotWidget : partySlotWidget;
+            
+            PokeAlertClient.LOGGER.info("[WIDGET-TRANSFER-BIDIR] Source widget: {}, Dest widget: {}", 
+                sourceWidget.getClass().getSimpleName(), destWidget.getClass().getSimpleName());
+            
+            // STEP 4: Find onStorageSlotClicked method
+            java.lang.reflect.Method onStorageSlotClickedMethod = null;
+            
+            // Try to find the method with different parameter types
+            Class<?>[] paramClasses = {Object.class, sourceWidget.getClass(), pcSlotWidget.getClass(), partySlotWidget.getClass()};
+            for (Class<?> paramClass : paramClasses) {
+                try {
+                    onStorageSlotClickedMethod = storageWidget.getClass().getDeclaredMethod("onStorageSlotClicked", paramClass);
+                    onStorageSlotClickedMethod.setAccessible(true);
+                    PokeAlertClient.LOGGER.debug("[WIDGET-TRANSFER-BIDIR] Found onStorageSlotClicked with param type: {}", paramClass.getSimpleName());
+                    break;
+                } catch (NoSuchMethodException e) {
+                    // Try next
+                }
+            }
+            
+            // Scan for slot click handler if not found
+            if (onStorageSlotClickedMethod == null) {
+                for (java.lang.reflect.Method m : storageWidget.getClass().getDeclaredMethods()) {
+                    String methodName = m.getName().toLowerCase();
+                    if (methodName.contains("slot") && methodName.contains("click") && m.getParameterCount() == 1) {
+                        m.setAccessible(true);
+                        onStorageSlotClickedMethod = m;
+                        PokeAlertClient.LOGGER.debug("[WIDGET-TRANSFER-BIDIR] Found slot click method via scan: {}", m.getName());
+                        break;
+                    }
+                }
+            }
+            
+            if (onStorageSlotClickedMethod == null) {
+                PokeAlertClient.LOGGER.error("[WIDGET-TRANSFER-BIDIR] Could not find onStorageSlotClicked method");
+                return false;
+            }
+            
+            // STEP 5: Get grabbedSlot field for diagnostics
+            java.lang.reflect.Field grabbedSlotField = null;
+            try {
+                grabbedSlotField = storageWidget.getClass().getDeclaredField("grabbedSlot");
+                grabbedSlotField.setAccessible(true);
+            } catch (Exception e) {
+                PokeAlertClient.LOGGER.debug("[WIDGET-TRANSFER-BIDIR] Could not access grabbedSlot field: {}", e.getMessage());
+            }
+            
+            // STEP 6: Click source slot (GRAB)
+            PokeAlertClient.LOGGER.info("[WIDGET-TRANSFER-BIDIR] Step 1: Clicking source slot to GRAB...");
+            PokeAlertClient.LOGGER.info("[WIDGET-TRANSFER-BIDIR] Source widget type: {}", sourceWidget.getClass().getName());
+            PokeAlertClient.LOGGER.info("[WIDGET-TRANSFER-BIDIR] Dest widget type: {}", destWidget.getClass().getName());
+            
+            try {
+                onStorageSlotClickedMethod.invoke(storageWidget, sourceWidget);
+                PokeAlertClient.LOGGER.info("[WIDGET-TRANSFER-BIDIR] ✅ Source slot clicked (grab initiated)");
+            } catch (java.lang.reflect.InvocationTargetException ite) {
+                PokeAlertClient.LOGGER.error("[WIDGET-TRANSFER-BIDIR] Method threw exception: {}", ite.getCause());
+                return false;
+            } catch (Exception e) {
+                PokeAlertClient.LOGGER.error("[WIDGET-TRANSFER-BIDIR] Failed to click source slot: {}", e.getMessage());
+                return false;
+            }
+            
+            // Check grabbedSlot after GRAB
+            try {
+                if (grabbedSlotField != null) {
+                    Object grabbedSlotAfterGrab = grabbedSlotField.get(storageWidget);
+                    if (grabbedSlotAfterGrab != null) {
+                        PokeAlertClient.LOGGER.info("[WIDGET-TRANSFER-BIDIR] grabbedSlot AFTER grab: {}", grabbedSlotAfterGrab);
+                    } else {
+                        PokeAlertClient.LOGGER.warn("[WIDGET-TRANSFER-BIDIR] ⚠️ grabbedSlot is NULL after grab - click may not have registered!");
+                    }
+                }
+            } catch (Exception e) {
+                PokeAlertClient.LOGGER.debug("[WIDGET-TRANSFER-BIDIR] Could not check grabbedSlot: {}", e.getMessage());
+            }
+            
+            // STEP 7: Wait for grab to register
+            try {
+                Thread.sleep(200); // 200ms delay for UI to process grab state
+                PokeAlertClient.LOGGER.debug("[WIDGET-TRANSFER-BIDIR] Waited 200ms for grab to register");
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            
+            // STEP 8: Click destination slot (DROP)
+            PokeAlertClient.LOGGER.info("[WIDGET-TRANSFER-BIDIR] Step 2: Clicking destination slot to DROP...");
+            
+            try {
+                onStorageSlotClickedMethod.invoke(storageWidget, destWidget);
+                PokeAlertClient.LOGGER.info("[WIDGET-TRANSFER-BIDIR] ✅ Destination slot clicked (drop completed)");
+            } catch (Exception e) {
+                PokeAlertClient.LOGGER.error("[WIDGET-TRANSFER-BIDIR] Failed to click destination slot: {}", e.getMessage());
+                return false;
+            }
+            
+            // Check grabbedSlot after DROP - should be null if drop succeeded
+            try {
+                if (grabbedSlotField != null) {
+                    Object grabbedSlotAfterDrop = grabbedSlotField.get(storageWidget);
+                    if (grabbedSlotAfterDrop == null) {
+                        PokeAlertClient.LOGGER.info("[WIDGET-TRANSFER-BIDIR] ✅ grabbedSlot is NULL after drop - transfer likely succeeded!");
+                    } else {
+                        PokeAlertClient.LOGGER.warn("[WIDGET-TRANSFER-BIDIR] ⚠️ grabbedSlot still SET after drop: {} - drop may have failed", grabbedSlotAfterDrop);
+                    }
+                }
+            } catch (Exception e) {
+                PokeAlertClient.LOGGER.debug("[WIDGET-TRANSFER-BIDIR] Could not check grabbedSlot after drop: {}", e.getMessage());
+            }
+            
+            // STEP 9: Wait for server sync
+            try {
+                Thread.sleep(500); // Increased to 500ms delay for server sync
+                PokeAlertClient.LOGGER.debug("[WIDGET-TRANSFER-BIDIR] Waited 500ms for server sync");
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            
+            PokeAlertClient.LOGGER.info("[WIDGET-TRANSFER-BIDIR] ✅ Transfer completed: {} (Party Slot {} {} PC Slot {})", 
+                direction, partySlotIndex + 1, partyToPC ? "→" : "←", pcSlotIndex);
+            return true;
+            
+        } catch (Exception e) {
+            PokeAlertClient.LOGGER.error("[WIDGET-TRANSFER-BIDIR] Error in bidirectional transfer: {}", e.getMessage());
             return false;
         }
     }
@@ -3466,7 +3741,11 @@ public class EggManager {
     }
     
     /**
-     * Navigate to target box using mapped arrow coordinates
+     * Navigate to target box using widget-based or coordinate-based approach
+     * 
+     * ITERATION 36: First tries widget-based navigation (setBox method or arrow widgets)
+     * Falls back to coordinate-based arrow clicking if widget approach unavailable
+     * 
      * Returns true if navigation successful or already on target box
      */
     private boolean navigateToBox(Object storageWidget, int targetBoxIndex) {
@@ -3496,77 +3775,76 @@ public class EggManager {
             }
         }
         
-        // Get mapped arrow coordinates
-        PokeAlertConfig config = ConfigManager.getConfig();
-        SlotCoordinateMapping mapping = config.mappingLines.slotMapping;
+        // ==================== WIDGET-BASED NAVIGATION (ITERATION 36) ====================
+        // CONFIRMED from diagnostic: StorageWidget has setBox(int) method!
+        // This allows direct box navigation without clicking arrows
         
-        if (!mapping.isBoxArrowLeftMapped() || !mapping.isBoxArrowRightMapped()) {
-            PokeAlertClient.LOGGER.error("[BOX-NAV] navigateToBox: ❌ Arrow coordinates not mapped - please set using /pokealert mappingLines set box arrow-left/right");
-            return false;
+        // Method 1: Try direct setBox() method (CONFIRMED TO EXIST)
+        try {
+            java.lang.reflect.Method setBoxMethod = storageWidget.getClass().getDeclaredMethod("setBox", int.class);
+            setBoxMethod.setAccessible(true);
+            setBoxMethod.invoke(storageWidget, targetBoxIndex);
+            
+            // Small delay to let the GUI update
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+            }
+            
+            // Verify the box changed
+            int newBox = getCurrentVisibleBox(storageWidget);
+            if (newBox == targetBoxIndex) {
+                PokeAlertClient.LOGGER.info("[BOX-NAV] navigateToBox: ✅ Successfully navigated using setBox({}) method", targetBoxIndex);
+                return true;
+            } else {
+                PokeAlertClient.LOGGER.warn("[BOX-NAV] navigateToBox: setBox() called but box is {} instead of {}", newBox, targetBoxIndex);
+            }
+        } catch (NoSuchMethodException e) {
+            PokeAlertClient.LOGGER.debug("[BOX-NAV] navigateToBox: setBox(int) method not found, trying alternatives...");
+        } catch (Exception e) {
+            PokeAlertClient.LOGGER.warn("[BOX-NAV] navigateToBox: setBox() failed: {}", e.getMessage());
         }
         
-        int[] leftArrowPos = new int[]{mapping.boxArrowLeft.x, mapping.boxArrowLeft.y};
-        int[] rightArrowPos = new int[]{mapping.boxArrowRight.x, mapping.boxArrowRight.y};
-        
-        PokeAlertClient.LOGGER.info("[BOX-NAV] navigateToBox: Need to navigate from box {} to box {}", currentBox, targetBoxIndex);
-        PokeAlertClient.LOGGER.info("[BOX-NAV] navigateToBox: Using mapped arrow coordinates - Left: ({}, {}), Right: ({}, {})", 
-            leftArrowPos[0], leftArrowPos[1], rightArrowPos[0], rightArrowPos[1]);
-        
-        // Calculate number of clicks needed
-        int clicksNeeded = targetBoxIndex - currentBox;
-        boolean clickRight = clicksNeeded > 0;
-        int absClicks = Math.abs(clicksNeeded);
-        
-        PokeAlertClient.LOGGER.info("[BOX-NAV] navigateToBox: Need to click {} arrow {} times", clickRight ? "right" : "left", absClicks);
-        
-        // Click arrows to navigate
-        // NOTE: Arrow clicking uses Screen.mouseClicked() which WORKS for arrows (direct Screen children)
-        // CRITICAL: Add delays between clicks to prevent over-clicking and allow GUI to update
-        for (int i = 0; i < absClicks; i++) {
-            int[] arrowPos = clickRight ? rightArrowPos : leftArrowPos;
+        // Method 2: Try incrementBox/decrementBox methods
+        try {
+            boolean goingRight = targetBoxIndex > currentBox;
+            String methodName = goingRight ? "incrementBox" : "decrementBox";
+            java.lang.reflect.Method navMethod = null;
             
-            // Click the arrow (arrows work with Screen.mouseClicked because they're direct children)
-            try {
-                boolean clicked = client.currentScreen.mouseClicked(arrowPos[0], arrowPos[1], 0);
-                PokeAlertClient.LOGGER.info("[BOX-NAV] navigateToBox: Clicked {} arrow at ({}, {}) - returned: {}", 
-                    clickRight ? "right" : "left", arrowPos[0], arrowPos[1], clicked);
-                
-                // CRITICAL: Add delay between arrow clicks to allow GUI to update
-                // Without this, the clicks happen too fast and the box field doesn't update in time
+            // Try common method names
+            String[] methodNames = {methodName, goingRight ? "nextBox" : "previousBox", goingRight ? "right" : "left"};
+            for (String name : methodNames) {
                 try {
-                    Thread.sleep(100); // 100ms delay per arrow click
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
+                    navMethod = storageWidget.getClass().getDeclaredMethod(name);
+                    navMethod.setAccessible(true);
+                    break;
+                } catch (NoSuchMethodException ex) {
+                    // Try next name
+                }
+            }
+            
+            if (navMethod != null) {
+                int clicks = Math.abs(targetBoxIndex - currentBox);
+                for (int i = 0; i < clicks; i++) {
+                    navMethod.invoke(storageWidget);
+                    Thread.sleep(100); // Small delay between clicks
                 }
                 
-                // Verify box changed
-                int newCurrentBox = getCurrentVisibleBox(storageWidget);
-                if (newCurrentBox != currentBox) {
-                    currentBox = newCurrentBox;
-                    PokeAlertClient.LOGGER.info("[BOX-NAV] navigateToBox: Box changed to {} (click {}/{})", currentBox, i + 1, absClicks);
-                    
-                    if (currentBox == targetBoxIndex) {
-                        PokeAlertClient.LOGGER.info("[BOX-NAV] navigateToBox: ✅ Successfully navigated to target box {}", targetBoxIndex);
-                        return true;
-                    }
-                    
-                    // CRITICAL: Check for wrap-around - if we passed the target, stop immediately
-                    // This prevents the box from cycling all the way around
-                    if (clickRight && currentBox < targetBoxIndex && currentBox < currentBox - 1) {
-                        PokeAlertClient.LOGGER.warn("[BOX-NAV] navigateToBox: ⚠️ Box wrapped around, stopping navigation");
-                        break;
-                    }
-                    if (!clickRight && currentBox > targetBoxIndex && currentBox > currentBox + 1) {
-                        PokeAlertClient.LOGGER.warn("[BOX-NAV] navigateToBox: ⚠️ Box wrapped around, stopping navigation");
-                        break;
-                    }
-                } else {
-                    PokeAlertClient.LOGGER.warn("[BOX-NAV] navigateToBox: ⚠️ Box did not change after click");
+                int newBox = getCurrentVisibleBox(storageWidget);
+                if (newBox == targetBoxIndex) {
+                    PokeAlertClient.LOGGER.info("[BOX-NAV] navigateToBox: ✅ Successfully navigated using {}() method to box {}", methodName, targetBoxIndex);
+                    return true;
                 }
-            } catch (Exception e) {
-                PokeAlertClient.LOGGER.error("[BOX-NAV] navigateToBox: ❌ Error clicking arrow: {}", e.getMessage());
-                return false;
             }
+        } catch (Exception e) {
+            PokeAlertClient.LOGGER.debug("[BOX-NAV] navigateToBox: increment/decrement methods not found or failed: {}", e.getMessage());
+        }
+        
+        // Method 3: Try to find and click arrow widgets directly
+        boolean widgetNavSuccess = navigateToBoxViaWidgets(storageWidget, currentBox, targetBoxIndex);
+        if (widgetNavSuccess) {
+            return true;
         }
         
         // Final verification
@@ -3578,6 +3856,226 @@ public class EggManager {
             PokeAlertClient.LOGGER.warn("[BOX-NAV] navigateToBox: ⚠️ Navigation incomplete - current box: {}, target: {}", finalBox, targetBoxIndex);
             return false;
         }
+    }
+    
+    /**
+     * ITERATION 36: Widget-based box navigation using arrow button widgets
+     * 
+     * Searches for arrow button widgets in StorageWidget or PCGUI and clicks them directly.
+     * This approach doesn't require manually configured coordinates.
+     * 
+     * @param storageWidget The StorageWidget instance
+     * @param currentBox Current visible box index (0-based)
+     * @param targetBox Target box index (0-based)
+     * @return true if navigation was successful
+     */
+    private boolean navigateToBoxViaWidgets(Object storageWidget, int currentBox, int targetBox) {
+        PokeAlertClient.LOGGER.info("[BOX-NAV-WIDGET] Attempting widget-based box navigation from {} to {}", currentBox, targetBox);
+        
+        try {
+            // Look for arrow button widgets in StorageWidget
+            Object leftArrowWidget = null;
+            Object rightArrowWidget = null;
+            
+            // Common field names for arrow buttons
+            String[] leftFieldNames = {"leftArrow", "leftButton", "previousButton", "boxLeft", "arrowLeft"};
+            String[] rightFieldNames = {"rightArrow", "rightButton", "nextButton", "boxRight", "arrowRight"};
+            
+            // Try to find left arrow widget
+            for (String fieldName : leftFieldNames) {
+                try {
+                    java.lang.reflect.Field field = storageWidget.getClass().getDeclaredField(fieldName);
+                    field.setAccessible(true);
+                    leftArrowWidget = field.get(storageWidget);
+                    if (leftArrowWidget != null) {
+                        PokeAlertClient.LOGGER.info("[BOX-NAV-WIDGET] Found left arrow widget via field '{}'", fieldName);
+                        break;
+                    }
+                } catch (NoSuchFieldException e) {
+                    // Try next field name
+                }
+            }
+            
+            // Try to find right arrow widget
+            for (String fieldName : rightFieldNames) {
+                try {
+                    java.lang.reflect.Field field = storageWidget.getClass().getDeclaredField(fieldName);
+                    field.setAccessible(true);
+                    rightArrowWidget = field.get(storageWidget);
+                    if (rightArrowWidget != null) {
+                        PokeAlertClient.LOGGER.info("[BOX-NAV-WIDGET] Found right arrow widget via field '{}'", fieldName);
+                        break;
+                    }
+                } catch (NoSuchFieldException e) {
+                    // Try next field name
+                }
+            }
+            
+            // If arrow widgets not found in StorageWidget, try PCGUI
+            if (leftArrowWidget == null || rightArrowWidget == null) {
+                if (client.currentScreen != null) {
+                    for (String fieldName : leftFieldNames) {
+                        try {
+                            java.lang.reflect.Field field = client.currentScreen.getClass().getDeclaredField(fieldName);
+                            field.setAccessible(true);
+                            leftArrowWidget = field.get(client.currentScreen);
+                            if (leftArrowWidget != null) {
+                                PokeAlertClient.LOGGER.info("[BOX-NAV-WIDGET] Found left arrow widget via PCGUI field '{}'", fieldName);
+                                break;
+                            }
+                        } catch (NoSuchFieldException e) {
+                            // Try next field name
+                        }
+                    }
+                    
+                    for (String fieldName : rightFieldNames) {
+                        try {
+                            java.lang.reflect.Field field = client.currentScreen.getClass().getDeclaredField(fieldName);
+                            field.setAccessible(true);
+                            rightArrowWidget = field.get(client.currentScreen);
+                            if (rightArrowWidget != null) {
+                                PokeAlertClient.LOGGER.info("[BOX-NAV-WIDGET] Found right arrow widget via PCGUI field '{}'", fieldName);
+                                break;
+                            }
+                        } catch (NoSuchFieldException e) {
+                            // Try next field name
+                        }
+                    }
+                }
+            }
+            
+            // If we found arrow widgets, try to click them
+            if (leftArrowWidget != null && rightArrowWidget != null) {
+                Object arrowWidget = targetBox > currentBox ? rightArrowWidget : leftArrowWidget;
+                int clicks = Math.abs(targetBox - currentBox);
+                
+                PokeAlertClient.LOGGER.info("[BOX-NAV-WIDGET] Using {} arrow widget, clicking {} times", 
+                    targetBox > currentBox ? "right" : "left", clicks);
+                
+                // Find a click method on the arrow widget
+                java.lang.reflect.Method clickMethod = null;
+                String[] clickMethodNames = {"onClick", "mouseClicked", "onPress", "click", "method_25402"};
+                
+                for (String methodName : clickMethodNames) {
+                    try {
+                        // Try no-arg version first
+                        clickMethod = arrowWidget.getClass().getDeclaredMethod(methodName);
+                        clickMethod.setAccessible(true);
+                        break;
+                    } catch (NoSuchMethodException e) {
+                        // Try double, double, int version (mouseClicked)
+                        try {
+                            clickMethod = arrowWidget.getClass().getDeclaredMethod(methodName, double.class, double.class, int.class);
+                            clickMethod.setAccessible(true);
+                            break;
+                        } catch (NoSuchMethodException e2) {
+                            // Try next method name
+                        }
+                    }
+                }
+                
+                if (clickMethod != null) {
+                    for (int i = 0; i < clicks; i++) {
+                        try {
+                            if (clickMethod.getParameterCount() == 0) {
+                                clickMethod.invoke(arrowWidget);
+                            } else {
+                                // For mouseClicked(double, double, int) - pass 0,0,0 as we're clicking the widget directly
+                                clickMethod.invoke(arrowWidget, 0.0, 0.0, 0);
+                            }
+                            Thread.sleep(100); // Small delay between clicks
+                        } catch (Exception e) {
+                            PokeAlertClient.LOGGER.warn("[BOX-NAV-WIDGET] Click failed: {}", e.getMessage());
+                        }
+                    }
+                    
+                    // Verify navigation worked
+                    int newBox = getCurrentVisibleBox(storageWidget);
+                    if (newBox == targetBox) {
+                        PokeAlertClient.LOGGER.info("[BOX-NAV-WIDGET] ✅ Successfully navigated to box {} via widget clicks", targetBox);
+                        return true;
+                    }
+                }
+            }
+            
+            // Log available fields for debugging
+            PokeAlertClient.LOGGER.debug("[BOX-NAV-WIDGET] Arrow widgets not found. Available StorageWidget fields:");
+            for (java.lang.reflect.Field f : storageWidget.getClass().getDeclaredFields()) {
+                PokeAlertClient.LOGGER.debug("[BOX-NAV-WIDGET]   - {} ({})", f.getName(), f.getType().getSimpleName());
+            }
+            
+        } catch (Exception e) {
+            PokeAlertClient.LOGGER.debug("[BOX-NAV-WIDGET] Widget navigation failed: {}", e.getMessage());
+        }
+        
+        PokeAlertClient.LOGGER.info("[BOX-NAV-WIDGET] Widget-based navigation not available");
+        return false;
+    }
+    
+    /**
+     * DIAGNOSTIC: Log all fields and methods available on StorageWidget
+     * This helps discover what Cobblemon exposes for widget-based navigation
+     * 
+     * Run when PC GUI is opened to see available navigation options in the logs
+     */
+    private void logStorageWidgetDiagnostics(Object storageWidget) {
+        if (storageWidget == null) return;
+        
+        PokeAlertClient.LOGGER.info("========== STORAGEWIDGET DIAGNOSTIC SCAN ==========");
+        PokeAlertClient.LOGGER.info("[DIAGNOSTIC] StorageWidget class: {}", storageWidget.getClass().getName());
+        
+        // Log all declared fields
+        PokeAlertClient.LOGGER.info("[DIAGNOSTIC] === FIELDS ===");
+        for (java.lang.reflect.Field f : storageWidget.getClass().getDeclaredFields()) {
+            String fieldInfo = String.format("  %s %s", f.getType().getSimpleName(), f.getName());
+            
+            // Check if it's a potential navigation-related field
+            String nameLower = f.getName().toLowerCase();
+            if (nameLower.contains("arrow") || nameLower.contains("button") || 
+                nameLower.contains("left") || nameLower.contains("right") ||
+                nameLower.contains("box") || nameLower.contains("nav")) {
+                fieldInfo += " ⭐ (potential navigation)";
+            }
+            
+            PokeAlertClient.LOGGER.info("[DIAGNOSTIC] {}", fieldInfo);
+        }
+        
+        // Log declared methods that might be navigation-related
+        PokeAlertClient.LOGGER.info("[DIAGNOSTIC] === METHODS (navigation-related) ===");
+        for (java.lang.reflect.Method m : storageWidget.getClass().getDeclaredMethods()) {
+            String nameLower = m.getName().toLowerCase();
+            if (nameLower.contains("box") || nameLower.contains("arrow") || 
+                nameLower.contains("left") || nameLower.contains("right") ||
+                nameLower.contains("next") || nameLower.contains("prev") ||
+                nameLower.contains("increment") || nameLower.contains("decrement") ||
+                nameLower.contains("navigate") || nameLower.contains("click") ||
+                nameLower.contains("slot")) {
+                
+                StringBuilder params = new StringBuilder();
+                for (Class<?> p : m.getParameterTypes()) {
+                    if (params.length() > 0) params.append(", ");
+                    params.append(p.getSimpleName());
+                }
+                
+                PokeAlertClient.LOGGER.info("[DIAGNOSTIC]   {}({}) -> {}", 
+                    m.getName(), params.toString(), m.getReturnType().getSimpleName());
+            }
+        }
+        
+        // Also scan PCGUI for navigation widgets
+        if (client.currentScreen != null) {
+            PokeAlertClient.LOGGER.info("[DIAGNOSTIC] === PCGUI FIELDS (navigation-related) ===");
+            for (java.lang.reflect.Field f : client.currentScreen.getClass().getDeclaredFields()) {
+                String nameLower = f.getName().toLowerCase();
+                if (nameLower.contains("arrow") || nameLower.contains("button") || 
+                    nameLower.contains("left") || nameLower.contains("right") ||
+                    nameLower.contains("box") || nameLower.contains("nav")) {
+                    PokeAlertClient.LOGGER.info("[DIAGNOSTIC]   {} {} ⭐", f.getType().getSimpleName(), f.getName());
+                }
+            }
+        }
+        
+        PokeAlertClient.LOGGER.info("========== END DIAGNOSTIC SCAN ==========");
     }
     
     /**
@@ -4235,14 +4733,10 @@ public class EggManager {
                             // Get current screen and check if it's PC GUI
                             if (client.currentScreen != null && 
                                 client.currentScreen.getClass().getName().equals("com.cobblemon.mod.common.client.gui.pc.PCGUI")) {
-                                
-                                // Try to get DrawContext from screen's render method
-                                // This is tricky - we need to intercept the render call
-                                // For now, we'll use a different approach: store positions and render via mixin
-                                // See instructions in renderDebugIndicators() method
+                                // PC GUI detected - discovery mode can log widget positions
                             }
                         } catch (Exception e) {
-                            // Ignore - rendering will be handled by mixin
+                            // Ignore discovery errors
                         }
                     });
                 }, 0, 100, TimeUnit.MILLISECONDS); // Check every 100ms
@@ -5271,669 +5765,115 @@ public class EggManager {
     }
     
     /**
+     * TEST COMMAND: Simulate hatched Pokemon transfer to PC.
+     * This allows testing the Party → PC transfer without waiting for eggs to hatch.
+     * 
+     * IMPORTANT: This runs on a BACKGROUND THREAD to avoid freezing the game during sleeps.
+     * 
+     * Usage: /pokealert eggmanager test-transfer <slot>
+     * 
+     * @param partySlot 0-based party slot index (0-5)
+     * @return true if transfer was initiated (runs async, so this returns immediately)
+     */
+    public boolean testTransferHatchedPokemonToPC(int partySlot) {
+        PokeAlertClient.LOGGER.info("🧪 [TEST] testTransferHatchedPokemonToPC: Testing transfer for party slot {}", partySlot + 1);
+        
+        // CRITICAL: Run on background thread to avoid freezing the game
+        // The transfer method contains Thread.sleep() calls that would freeze the render thread
+        java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newSingleThreadExecutor();
+        executor.submit(() -> {
+            try {
+                // Check if there's a Pokemon in the specified slot
+                Object party = getPlayerParty();
+                if (party == null) {
+                    PokeAlertClient.LOGGER.error("🧪 [TEST] Party not available");
+                    return;
+                }
+                
+                java.lang.reflect.Method getMethod = partyGetMethod;
+                if (getMethod == null) {
+                    getMethod = party.getClass().getMethod("get", int.class);
+                }
+                
+                Object pokemon = getMethod.invoke(party, partySlot);
+                if (pokemon == null) {
+                    PokeAlertClient.LOGGER.error("🧪 [TEST] No Pokemon in slot {} - please put a Pokemon there first", partySlot + 1);
+                    sendTestResultNotification(false, "No Pokemon in slot " + (partySlot + 1));
+                    return;
+                }
+                
+                // Check if it's an egg (we want a hatched Pokemon, not an egg)
+                if (isEgg(pokemon)) {
+                    PokeAlertClient.LOGGER.warn("🧪 [TEST] Slot {} contains an EGG, not a hatched Pokemon. Transfer will proceed anyway for testing.", partySlot + 1);
+                }
+                
+                // Get Pokemon name for logging
+                String pokemonName = getPokemonName(pokemon);
+                PokeAlertClient.LOGGER.info("🧪 [TEST] Found Pokemon: {} in slot {}", pokemonName, partySlot + 1);
+                
+                // Extract IVs if IV tracking is enabled
+                PokeAlertConfig config = ConfigManager.getConfig();
+                PokemonIVs ivs = null;
+                if (config.eggManager.phase2.ivTrackingEnabled) {
+                    ivs = extractIVs(pokemon);
+                    if (ivs != null) {
+                        PokeAlertClient.LOGGER.info("🧪 [TEST] Extracted IVs: {}", ivs);
+                    } else {
+                        PokeAlertClient.LOGGER.warn("🧪 [TEST] Could not extract IVs, using default");
+                        ivs = new PokemonIVs(15, 15, 15, 15, 15, 15); // Default IVs for testing
+                    }
+                } else {
+                    PokeAlertClient.LOGGER.info("🧪 [TEST] IV tracking disabled, using default IVs");
+                    ivs = new PokemonIVs(15, 15, 15, 15, 15, 15); // Default IVs for testing
+                }
+                
+                // Call the actual transfer method (this contains sleeps, but we're on background thread now)
+                PokeAlertClient.LOGGER.info("🧪 [TEST] Calling transferHatchedPokemonToPC (running on background thread)...");
+                BoxInfo result = transferHatchedPokemonToPC(partySlot, ivs);
+                
+                if (result != null) {
+                    PokeAlertClient.LOGGER.info("🧪 [TEST] ✅ Transfer result: Box {} ({}), Slot {}", 
+                        result.boxNumber, result.boxName, result.slot);
+                    sendTestResultNotification(true, "Transferred to Box " + result.boxNumber + ", Slot " + result.slot);
+                } else {
+                    PokeAlertClient.LOGGER.error("🧪 [TEST] ❌ Transfer returned null - transfer may have failed");
+                    sendTestResultNotification(false, "Transfer failed - check logs");
+                }
+                
+            } catch (Exception e) {
+                PokeAlertClient.LOGGER.error("🧪 [TEST] Error in testTransferHatchedPokemonToPC: {}", e.getMessage());
+                e.printStackTrace();
+                sendTestResultNotification(false, "Error: " + e.getMessage());
+            }
+        });
+        executor.shutdown();
+        
+        // Return true to indicate the async task was started
+        return true;
+    }
+    
+    /**
+     * Send test result notification to player
+     */
+    private void sendTestResultNotification(boolean success, String message) {
+        client.execute(() -> {
+            if (client.player != null) {
+                String prefix = success ? "✅" : "❌";
+                client.player.sendMessage(
+                    net.minecraft.text.Text.literal("[PokéAlert] " + prefix + " Test: " + message)
+                        .formatted(success ? net.minecraft.util.Formatting.GREEN : net.minecraft.util.Formatting.RED),
+                    false
+                );
+            }
+        });
+    }
+    
+    /**
      * Get scheduler from EggHatcher (for external access)
      */
     public ScheduledExecutorService getScheduler() {
         return scheduler;
     }
-    
-    /**
-     * Add a visual debugging position indicator
-     * This will draw a colored box at the specified coordinates for 5 seconds
-     */
-    
-    /**
-     * Render visual debugging indicators on the screen using mapped coordinates from config
-     * Called from PCGUIMixin when PC GUI is open
-     */
-    public void renderDebugIndicators(DrawContext context, int mouseX, int mouseY) {
-        try {
-            if (client == null) {
-                return;
-            }
-            
-            PokeAlertConfig config = ConfigManager.getConfig();
-            SlotCoordinateMapping mapping = config.mappingLines.slotMapping;
-            
-            // Debug: Log config instance to check if it's the same
-            PokeAlertClient.LOGGER.debug("EggManager: renderDebugIndicators - config instance: {}", System.identityHashCode(config));
-            
-            // Check if visual indicators are enabled
-            if (!mapping.visualIndicatorsEnabled) {
-                return;
-            }
-            
-            // Render debug indicators regardless of which screen is open
-            // They should appear on top of everything, including PC GUI
-            
-            // Initialize default coordinates if this is first time enabling
-            // Only initialize unmapped slots - don't overwrite existing coordinates
-            // IMPORTANT: Do this BEFORE handling mouse events to avoid race conditions
-            initializeDefaultCoordinates();
-            
-            // Handle mouse events for drag-and-drop by polling mouse state
-            // Pass the config instance to ensure we're using the same one throughout
-            handleMouseEventsForDragAndDrop(mouseX, mouseY, config);
-            
-            int circleRadius = 6; // Smaller circle radius
-            int borderWidth = 1; // Thinner border for circle
-            
-            int renderedCount = 0;
-            
-            // Render PC Box Slots (Red) - use defaults if not mapped
-            for (int i = 1; i <= 30; i++) {
-                SlotCoordinateMapping.SlotCoordinate coord = mapping.getBoxSlot(i);
-                int x = coord.isMapped() ? coord.x : getDefaultBoxSlotX(i);
-                int y = coord.isMapped() ? coord.y : getDefaultBoxSlotY(i);
-                
-                // Update position if dragging
-                if (draggedBoxId != null && draggedBoxId.equals("box-slot" + i)) {
-                    x = mouseX - dragOffsetX;
-                    y = mouseY - dragOffsetY;
-                }
-                
-                renderSlotIndicator(context, x, y, circleRadius * 2, circleRadius, borderWidth, 
-                    0xFFFF0000, "PC Slot " + i); // Red
-                renderedCount++;
-            }
-            
-            // Render Party Slots (Green) - use defaults if not mapped
-            for (int i = 1; i <= 6; i++) {
-                SlotCoordinateMapping.SlotCoordinate coord = mapping.getPartySlot(i);
-                int x = coord.isMapped() ? coord.x : getDefaultPartySlotX(i);
-                int y = coord.isMapped() ? coord.y : getDefaultPartySlotY(i);
-                
-                // Update position if dragging
-                if (draggedBoxId != null && draggedBoxId.equals("party-slot" + i)) {
-                    x = mouseX - dragOffsetX;
-                    y = mouseY - dragOffsetY;
-                }
-                
-                renderSlotIndicator(context, x, y, circleRadius * 2, circleRadius, borderWidth, 
-                    0xFF00FF00, "Party Slot " + i); // Green
-                renderedCount++;
-            }
-            
-            // Render Box Arrows (Yellow) - use defaults if not mapped
-            int leftX = mapping.isBoxArrowLeftMapped() ? mapping.boxArrowLeft.x : getDefaultArrowLeftX();
-            int leftY = mapping.isBoxArrowLeftMapped() ? mapping.boxArrowLeft.y : getDefaultArrowLeftY();
-            if (draggedBoxId != null && draggedBoxId.equals("arrow-left")) {
-                leftX = mouseX - dragOffsetX;
-                leftY = mouseY - dragOffsetY;
-            }
-            renderSlotIndicator(context, leftX, leftY, circleRadius * 2, circleRadius, borderWidth, 
-                0xFFFFFF00, "Arrow Left"); // Yellow
-            renderedCount++;
-            
-            int rightX = mapping.isBoxArrowRightMapped() ? mapping.boxArrowRight.x : getDefaultArrowRightX();
-            int rightY = mapping.isBoxArrowRightMapped() ? mapping.boxArrowRight.y : getDefaultArrowRightY();
-            if (draggedBoxId != null && draggedBoxId.equals("arrow-right")) {
-                rightX = mouseX - dragOffsetX;
-                rightY = mouseY - dragOffsetY;
-            }
-            renderSlotIndicator(context, rightX, rightY, circleRadius * 2, circleRadius, borderWidth, 
-                0xFFFFFF00, "Arrow Right"); // Yellow
-            renderedCount++;
-            
-            // Log if no indicators were rendered (for debugging)
-            if (renderedCount == 0) {
-                // Only log once per second to avoid spam
-                long currentTime = System.currentTimeMillis();
-                if (lastNoIndicatorsLogTime == 0 || currentTime - lastNoIndicatorsLogTime > 1000) {
-                    PokeAlertClient.LOGGER.info("EggManager: Visual indicators enabled but no coordinates mapped. Use /pokealert mappingLines set to map coordinates.");
-                    lastNoIndicatorsLogTime = currentTime;
-                }
-            } else {
-                // Log when indicators are rendered (first time only)
-                if (renderedCount > 0 && lastNoIndicatorsLogTime == 0) {
-                    PokeAlertClient.LOGGER.debug("EggManager: Rendering {} visual indicators", renderedCount);
-                }
-            }
-        } catch (Exception e) {
-            PokeAlertClient.LOGGER.error("EggManager: Error in renderDebugIndicators", e);
-        }
-    }
-    
-    private long lastNoIndicatorsLogTime = 0;
-    
-    // Drag-and-drop state tracking
-    private String draggedBoxId = null; // Format: "box-slot1", "party-slot1", "arrow-left", "arrow-right"
-    private int dragStartX = 0;
-    private int dragStartY = 0;
-    private int dragOffsetX = 0;
-    private int dragOffsetY = 0;
-    private boolean wasMouseDown = false;
-    private int lastMouseX = 0;
-    private int lastMouseY = 0;
-    
-    /**
-     * Handle mouse events for drag-and-drop by polling mouse state in render method
-     * This works around Screen class not having accessible mouse event methods
-     * @param config The config instance to use (must be the same one from renderDebugIndicators)
-     */
-    private void handleMouseEventsForDragAndDrop(int mouseX, int mouseY, PokeAlertConfig config) {
-        if (client == null || client.getWindow() == null) {
-            return;
-        }
-        
-        try {
-            // Check if left mouse button is pressed using GLFW
-            long windowHandle = client.getWindow().getHandle();
-            boolean isMouseDown = org.lwjgl.glfw.GLFW.glfwGetMouseButton(
-                windowHandle, 
-                org.lwjgl.glfw.GLFW.GLFW_MOUSE_BUTTON_LEFT
-            ) == org.lwjgl.glfw.GLFW.GLFW_PRESS;
-            
-            // Handle mouse click (button just pressed)
-            if (isMouseDown && !wasMouseDown) {
-                handleDebugBoxClick(mouseX, mouseY, 0);
-            }
-            
-            // Handle mouse drag (button held and mouse moved)
-            if (isMouseDown && draggedBoxId != null && (mouseX != lastMouseX || mouseY != lastMouseY)) {
-                handleDebugBoxDrag(mouseX, mouseY, 0);
-            }
-            
-            // Handle mouse release (button just released)
-            if (!isMouseDown && wasMouseDown && draggedBoxId != null) {
-                try {
-                    PokeAlertClient.LOGGER.debug("EggManager: Detected mouse release for {}", draggedBoxId);
-                    handleDebugBoxRelease(mouseX, mouseY, 0, config);
-                } catch (Exception e) {
-                    // If release fails, still clear drag state to prevent stuck dragging
-                    PokeAlertClient.LOGGER.error("EggManager: Error handling mouse release for {}, clearing drag state", draggedBoxId, e);
-                    draggedBoxId = null;
-                    dragStartX = 0;
-                    dragStartY = 0;
-                    dragOffsetX = 0;
-                    dragOffsetY = 0;
-                }
-            }
-            
-            // Safety mechanism: If mouse is released but we're still dragging, force clear
-            // This prevents stuck dragging if release detection fails
-            if (!isMouseDown && draggedBoxId != null) {
-                PokeAlertClient.LOGGER.warn("EggManager: Mouse is released but draggedBoxId is still set ({}), force clearing", draggedBoxId);
-                draggedBoxId = null;
-                dragStartX = 0;
-                dragStartY = 0;
-                dragOffsetX = 0;
-                dragOffsetY = 0;
-            }
-            
-            // Update state
-            wasMouseDown = isMouseDown;
-            lastMouseX = mouseX;
-            lastMouseY = mouseY;
-        } catch (Exception e) {
-            // Silently handle errors - don't break rendering
-            PokeAlertClient.LOGGER.debug("EggManager: Error handling mouse events for drag-and-drop", e);
-        }
-    }
-    
-    /**
-     * Initialize default center coordinates for all slots
-     * Called when visual indicators are first enabled
-     */
-    private void initializeDefaultCoordinates() {
-        if (client == null || client.getWindow() == null) {
-            return;
-        }
-        
-        int screenWidth = client.getWindow().getScaledWidth();
-        int screenHeight = client.getWindow().getScaledHeight();
-        int centerX = screenWidth / 2;
-        int centerY = screenHeight / 2;
-        
-        // Get config - use the same instance that renderDebugIndicators uses
-        PokeAlertConfig config = ConfigManager.getConfig();
-        SlotCoordinateMapping mapping = config.mappingLines.slotMapping;
-        
-        // Debug: Log config instance to check if it's the same
-        PokeAlertClient.LOGGER.debug("EggManager: initializeDefaultCoordinates - config instance: {}", System.identityHashCode(config));
-        
-        // PC Box slots: 5 rows × 6 columns
-        // Typical PC GUI layout: slots start around center-left
-        int pcStartX = centerX - 200; // Left of center
-        int pcStartY = centerY - 100; // Above center
-        int pcSlotSpacingX = 40; // Horizontal spacing between slots
-        int pcSlotSpacingY = 40; // Vertical spacing between slots
-        
-        boolean initializedAny = false;
-        
-        // Initialize PC slots (only if not already mapped)
-        for (int row = 0; row < 5; row++) {
-            for (int col = 0; col < 6; col++) {
-                int slotIndex = row * 6 + col + 1; // 1-30
-                SlotCoordinateMapping.SlotCoordinate coord = mapping.getBoxSlot(slotIndex);
-                if (!coord.isMapped()) {
-                    int x = pcStartX + col * pcSlotSpacingX;
-                    int y = pcStartY + row * pcSlotSpacingY;
-                    mapping.setBoxSlot(slotIndex, x, y);
-                    initializedAny = true;
-                }
-            }
-        }
-        
-        // Party slots: 1 row × 6 columns
-        // Typical layout: party slots are to the right of PC slots
-        int partyStartX = centerX + 200; // Right of center
-        int partyStartY = centerY - 50; // Slightly above center
-        int partySlotSpacingX = 40;
-        
-        for (int i = 1; i <= 6; i++) {
-            SlotCoordinateMapping.SlotCoordinate coord = mapping.getPartySlot(i);
-            // Only initialize if truly unmapped (both x and y are 0)
-            // This prevents overwriting coordinates that were just set
-            boolean wasMapped = coord.isMapped();
-            if (!wasMapped) {
-                int x = partyStartX + (i - 1) * partySlotSpacingX;
-                int y = partyStartY;
-                mapping.setPartySlot(i, x, y);
-                initializedAny = true;
-                PokeAlertClient.LOGGER.debug("EggManager: Initialized default coordinate for Party Slot {} to ({}, {})", i, x, y);
-            } else {
-                // Debug: Log if we're skipping because it's already mapped
-                PokeAlertClient.LOGGER.debug("EggManager: Skipping Party Slot {} - already mapped at ({}, {})", i, coord.x, coord.y);
-            }
-        }
-        
-        // Box arrows: typically at top of PC GUI
-        if (!mapping.isBoxArrowLeftMapped()) {
-            mapping.boxArrowLeft.x = centerX - 250;
-            mapping.boxArrowLeft.y = centerY - 200;
-            initializedAny = true;
-        }
-        if (!mapping.isBoxArrowRightMapped()) {
-            mapping.boxArrowRight.x = centerX + 250;
-            mapping.boxArrowRight.y = centerY - 200;
-            initializedAny = true;
-        }
-        
-        if (initializedAny) {
-            ConfigManager.updateConfig(config);
-            PokeAlertClient.LOGGER.info("EggManager: Initialized default coordinates for unmapped slots");
-        }
-    }
-    
-    /**
-     * Handle mouse click on debug boxes
-     * Returns true if a debug box was clicked
-     */
-    public boolean handleDebugBoxClick(double mouseX, double mouseY, int button) {
-        if (button != 0) return false; // Only handle left click
-        
-        PokeAlertConfig config = ConfigManager.getConfig();
-        SlotCoordinateMapping mapping = config.mappingLines.slotMapping;
-        
-        if (!mapping.visualIndicatorsEnabled) {
-            return false;
-        }
-        
-        int circleRadius = 6; // Smaller circle radius (matches render size)
-        int clickX = (int) mouseX;
-        int clickY = (int) mouseY;
-        
-        // Check PC Box Slots
-        for (int i = 1; i <= 30; i++) {
-            SlotCoordinateMapping.SlotCoordinate coord = mapping.getBoxSlot(i);
-            int x = coord.isMapped() ? coord.x : getDefaultBoxSlotX(i);
-            int y = coord.isMapped() ? coord.y : getDefaultBoxSlotY(i);
-            
-            // Check if click is within circle (distance from center <= radius)
-            double distance = Math.sqrt(Math.pow(clickX - x, 2) + Math.pow(clickY - y, 2));
-            if (distance <= circleRadius) {
-                draggedBoxId = "box-slot" + i;
-                dragStartX = x;
-                dragStartY = y;
-                dragOffsetX = clickX - x;
-                dragOffsetY = clickY - y;
-                PokeAlertClient.LOGGER.debug("EggManager: Started dragging PC Slot {}", i);
-                return true;
-            }
-        }
-        
-        // Check Party Slots
-        for (int i = 1; i <= 6; i++) {
-            SlotCoordinateMapping.SlotCoordinate coord = mapping.getPartySlot(i);
-            int x = coord.isMapped() ? coord.x : getDefaultPartySlotX(i);
-            int y = coord.isMapped() ? coord.y : getDefaultPartySlotY(i);
-            
-            // Check if click is within circle (distance from center <= radius)
-            double distance = Math.sqrt(Math.pow(clickX - x, 2) + Math.pow(clickY - y, 2));
-            if (distance <= circleRadius) {
-                draggedBoxId = "party-slot" + i;
-                dragStartX = x;
-                dragStartY = y;
-                dragOffsetX = clickX - x;
-                dragOffsetY = clickY - y;
-                PokeAlertClient.LOGGER.debug("EggManager: Started dragging Party Slot {}", i);
-                return true;
-            }
-        }
-        
-        // Check Box Arrows
-        int leftX = mapping.isBoxArrowLeftMapped() ? mapping.boxArrowLeft.x : getDefaultArrowLeftX();
-        int leftY = mapping.isBoxArrowLeftMapped() ? mapping.boxArrowLeft.y : getDefaultArrowLeftY();
-        double leftDistance = Math.sqrt(Math.pow(clickX - leftX, 2) + Math.pow(clickY - leftY, 2));
-        if (leftDistance <= circleRadius) {
-            draggedBoxId = "arrow-left";
-            dragStartX = leftX;
-            dragStartY = leftY;
-            dragOffsetX = clickX - leftX;
-            dragOffsetY = clickY - leftY;
-            PokeAlertClient.LOGGER.debug("EggManager: Started dragging Arrow Left");
-            return true;
-        }
-        
-        int rightX = mapping.isBoxArrowRightMapped() ? mapping.boxArrowRight.x : getDefaultArrowRightX();
-        int rightY = mapping.isBoxArrowRightMapped() ? mapping.boxArrowRight.y : getDefaultArrowRightY();
-        double rightDistance = Math.sqrt(Math.pow(clickX - rightX, 2) + Math.pow(clickY - rightY, 2));
-        if (rightDistance <= circleRadius) {
-            draggedBoxId = "arrow-right";
-            dragStartX = rightX;
-            dragStartY = rightY;
-            dragOffsetX = clickX - rightX;
-            dragOffsetY = clickY - rightY;
-            PokeAlertClient.LOGGER.debug("EggManager: Started dragging Arrow Right");
-            return true;
-        }
-        
-        return false;
-    }
-    
-    /**
-     * Handle mouse drag on debug boxes
-     */
-    public boolean handleDebugBoxDrag(double mouseX, double mouseY, int button) {
-        if (draggedBoxId == null) return false;
-        return true; // We're dragging, but don't interfere with PC GUI
-    }
-    
-    /**
-     * Handle mouse release on debug boxes
-     * @param config The config instance to use (must be the same one from renderDebugIndicators)
-     */
-    public boolean handleDebugBoxRelease(double mouseX, double mouseY, int button, PokeAlertConfig config) {
-        if (draggedBoxId == null) {
-            return false;
-        }
-        
-        String currentDraggedId = draggedBoxId; // Store for logging
-        
-        try {
-            // Use the config instance passed in to ensure we're modifying the same object
-            SlotCoordinateMapping mapping = config.mappingLines.slotMapping;
-            
-            int releaseX = (int) mouseX;
-            int releaseY = (int) mouseY;
-            
-            // Calculate new position (accounting for offset)
-            int newX = releaseX - dragOffsetX;
-            int newY = releaseY - dragOffsetY;
-            
-            // Update coordinate based on which box was dragged
-            // Ensure coordinates are non-zero so isMapped() returns true
-            // This prevents initializeDefaultCoordinates() from resetting them
-            if (newX == 0 && newY == 0) {
-                newX = 1; // Set to 1 instead of 0 to ensure it's considered mapped
-                newY = 1;
-            }
-            
-            if (currentDraggedId.startsWith("box-slot")) {
-                int slotIndex = Integer.parseInt(currentDraggedId.substring(8));
-                mapping.setBoxSlot(slotIndex, newX, newY);
-                PokeAlertClient.LOGGER.info("EggManager: Updated PC Slot {} coordinate to ({}, {})", slotIndex, newX, newY);
-            } else if (currentDraggedId.startsWith("party-slot")) {
-                int slotIndex = Integer.parseInt(currentDraggedId.substring(10));
-                // Debug: Log before and after
-                SlotCoordinateMapping.SlotCoordinate beforeCoord = mapping.getPartySlot(slotIndex);
-                PokeAlertClient.LOGGER.debug("EggManager: Before update - Party Slot {} at ({}, {}), isMapped: {}", 
-                    slotIndex, beforeCoord.x, beforeCoord.y, beforeCoord.isMapped());
-                PokeAlertClient.LOGGER.debug("EggManager: handleDebugBoxRelease - config instance: {}", System.identityHashCode(config));
-                
-                mapping.setPartySlot(slotIndex, newX, newY);
-                
-                // Verify immediately after setting
-                SlotCoordinateMapping.SlotCoordinate afterCoord = mapping.getPartySlot(slotIndex);
-                PokeAlertClient.LOGGER.info("EggManager: Updated Party Slot {} coordinate to ({}, {})", slotIndex, newX, newY);
-                PokeAlertClient.LOGGER.debug("EggManager: After update - Party Slot {} at ({}, {}), isMapped: {}", 
-                    slotIndex, afterCoord.x, afterCoord.y, afterCoord.isMapped());
-            } else if (currentDraggedId.equals("arrow-left")) {
-                mapping.boxArrowLeft.x = newX;
-                mapping.boxArrowLeft.y = newY;
-                PokeAlertClient.LOGGER.info("EggManager: Updated Arrow Left coordinate to ({}, {})", newX, newY);
-            } else if (currentDraggedId.equals("arrow-right")) {
-                mapping.boxArrowRight.x = newX;
-                mapping.boxArrowRight.y = newY;
-                PokeAlertClient.LOGGER.info("EggManager: Updated Arrow Right coordinate to ({}, {})", newX, newY);
-            } else {
-                PokeAlertClient.LOGGER.warn("EggManager: Unknown draggedBoxId: {}", currentDraggedId);
-            }
-            
-            // Save config immediately (same for all types)
-            ConfigManager.updateConfig(config);
-            PokeAlertClient.LOGGER.debug("EggManager: Successfully released {}", currentDraggedId);
-        } catch (NumberFormatException e) {
-            PokeAlertClient.LOGGER.error("EggManager: Error parsing slot index from draggedBoxId: {}", currentDraggedId, e);
-        } catch (Exception e) {
-            PokeAlertClient.LOGGER.error("EggManager: Error updating coordinate for {}", currentDraggedId, e);
-        } finally {
-            // Always clear drag state, even if there was an error
-            draggedBoxId = null;
-            dragStartX = 0;
-            dragStartY = 0;
-            dragOffsetX = 0;
-            dragOffsetY = 0;
-            PokeAlertClient.LOGGER.debug("EggManager: Cleared drag state for {}", currentDraggedId);
-        }
-        
-        return true;
-    }
-    
-    /**
-     * Get default X coordinate for PC box slot (if not mapped)
-     */
-    private int getDefaultBoxSlotX(int slotIndex) {
-        if (client == null || client.getWindow() == null) {
-            return 0;
-        }
-        int screenWidth = client.getWindow().getScaledWidth();
-        int centerX = screenWidth / 2;
-        int pcStartX = centerX - 200;
-        int col = (slotIndex - 1) % 6;
-        return pcStartX + col * 40;
-    }
-    
-    /**
-     * Get default Y coordinate for PC box slot (if not mapped)
-     */
-    private int getDefaultBoxSlotY(int slotIndex) {
-        if (client == null || client.getWindow() == null) {
-            return 0;
-        }
-        int screenHeight = client.getWindow().getScaledHeight();
-        int centerY = screenHeight / 2;
-        int pcStartY = centerY - 100;
-        int row = (slotIndex - 1) / 6;
-        return pcStartY + row * 40;
-    }
-    
-    /**
-     * Get default X coordinate for Party slot (if not mapped)
-     */
-    private int getDefaultPartySlotX(int slotIndex) {
-        if (client == null || client.getWindow() == null) {
-            return 0;
-        }
-        int screenWidth = client.getWindow().getScaledWidth();
-        int centerX = screenWidth / 2;
-        int partyStartX = centerX + 200;
-        return partyStartX + (slotIndex - 1) * 40;
-    }
-    
-    /**
-     * Get default Y coordinate for Party slot (if not mapped)
-     */
-    private int getDefaultPartySlotY(int slotIndex) {
-        if (client == null || client.getWindow() == null) {
-            return 0;
-        }
-        int screenHeight = client.getWindow().getScaledHeight();
-        int centerY = screenHeight / 2;
-        return centerY - 50;
-    }
-    
-    /**
-     * Get default X coordinate for left arrow (if not mapped)
-     */
-    private int getDefaultArrowLeftX() {
-        if (client == null || client.getWindow() == null) {
-            return 0;
-        }
-        int screenWidth = client.getWindow().getScaledWidth();
-        return screenWidth / 2 - 250;
-    }
-    
-    /**
-     * Get default Y coordinate for left arrow (if not mapped)
-     */
-    private int getDefaultArrowLeftY() {
-        if (client == null || client.getWindow() == null) {
-            return 0;
-        }
-        int screenHeight = client.getWindow().getScaledHeight();
-        return screenHeight / 2 - 200;
-    }
-    
-    /**
-     * Get default X coordinate for right arrow (if not mapped)
-     */
-    private int getDefaultArrowRightX() {
-        if (client == null || client.getWindow() == null) {
-            return 0;
-        }
-        int screenWidth = client.getWindow().getScaledWidth();
-        return screenWidth / 2 + 250;
-    }
-    
-    /**
-     * Get default Y coordinate for right arrow (if not mapped)
-     */
-    private int getDefaultArrowRightY() {
-        if (client == null || client.getWindow() == null) {
-            return 0;
-        }
-        int screenHeight = client.getWindow().getScaledHeight();
-        return screenHeight / 2 - 200;
-    }
-    
-    /**
-     * Render a single slot indicator as a circle
-     */
-    private void renderSlotIndicator(DrawContext context, int x, int y, int boxSize, int halfSize, 
-                                    int borderWidth, int color, String label) {
-        try {
-            int radius = halfSize; // Use halfSize as radius for medium-sized circle
-            
-            // Validate coordinates are on screen
-            if (client == null || client.getWindow() == null) {
-                return;
-            }
-            int screenWidth = client.getWindow().getScaledWidth();
-            int screenHeight = client.getWindow().getScaledHeight();
-            
-            // Skip rendering if circle is completely off-screen
-            if (x + radius < 0 || x - radius > screenWidth || y + radius < 0 || y - radius > screenHeight) {
-                return;
-            }
-            
-            // Draw filled circle (using horizontal lines) - more translucent
-            int fillColor = (color & 0xFFFFFF) | 0x50000000; // ~30% opacity (0x50 = ~31%)
-            for (int dy = -radius; dy <= radius; dy++) {
-                // Calculate width of circle at this y position using circle equation: x^2 + y^2 = r^2
-                double dxDouble = Math.sqrt(Math.max(0, radius * radius - dy * dy));
-                int dx = (int) dxDouble;
-                if (dx > 0 && y + dy >= 0 && y + dy < screenHeight) {
-                    int startX = Math.max(0, x - dx);
-                    int endX = Math.min(screenWidth, x + dx);
-                    if (endX > startX) {
-                        context.fill(startX, y + dy, endX, y + dy + 1, fillColor);
-                    }
-                }
-            }
-            
-            // Draw circle border (outline) - optimized by drawing border lines
-            int borderColor = color | 0xFF000000; // Full opacity
-            int outerRadius = radius + borderWidth;
-            int innerRadius = radius;
-            
-            // Draw border by filling the area between outer and inner radius
-            for (int dy = -outerRadius; dy <= outerRadius; dy++) {
-                double outerDxDouble = Math.sqrt(Math.max(0, outerRadius * outerRadius - dy * dy));
-                double innerDxDouble = Math.sqrt(Math.max(0, innerRadius * innerRadius - dy * dy));
-                int outerDx = (int) outerDxDouble;
-                int innerDx = (int) innerDxDouble;
-                
-                if (outerDx > 0 && y + dy >= 0 && y + dy < screenHeight) {
-                    // Draw left border
-                    if (innerDx > 0) {
-                        int leftStart = Math.max(0, x - outerDx);
-                        int leftEnd = Math.min(screenWidth, x - innerDx);
-                        if (leftEnd > leftStart) {
-                            context.fill(leftStart, y + dy, leftEnd, y + dy + 1, borderColor);
-                        }
-                    } else {
-                        // Full circle if inner radius is 0
-                        int leftStart = Math.max(0, x - outerDx);
-                        int leftEnd = Math.min(screenWidth, x + outerDx);
-                        if (leftEnd > leftStart) {
-                            context.fill(leftStart, y + dy, leftEnd, y + dy + 1, borderColor);
-                        }
-                    }
-                    // Draw right border
-                    if (innerDx > 0) {
-                        int rightStart = Math.max(0, x + innerDx);
-                        int rightEnd = Math.min(screenWidth, x + outerDx);
-                        if (rightEnd > rightStart) {
-                            context.fill(rightStart, y + dy, rightEnd, y + dy + 1, borderColor);
-                        }
-                    }
-                }
-            }
-            
-            // Draw center dot to indicate true center coordinate (the coordinate that will be saved)
-            int centerDotColor = color | 0xFF000000; // Full opacity for visibility
-            int dotSize = 2; // 2x2 pixel dot
-            int dotHalfSize = dotSize / 2;
-            if (x - dotHalfSize >= 0 && x + dotHalfSize < screenWidth && 
-                y - dotHalfSize >= 0 && y + dotHalfSize < screenHeight) {
-                context.fill(x - dotHalfSize, y - dotHalfSize, x + dotHalfSize + 1, y + dotHalfSize + 1, centerDotColor);
-            }
-            
-            // Draw label text
-            if (client.textRenderer != null) {
-                int labelY = y + radius + 5;
-                int labelX = x - (client.textRenderer.getWidth(label) / 2);
-                int textWidth = client.textRenderer.getWidth(label);
-                
-                // Only draw label if it's on screen
-                if (labelY >= 0 && labelY < screenHeight && labelX >= -textWidth && labelX < screenWidth) {
-                    // Text background
-                    context.fill(labelX - 2, labelY - 1, labelX + textWidth + 2, labelY + 9, 0x80000000);
-                    
-                    // Text
-                    context.drawTextWithShadow(client.textRenderer, Text.literal(label), labelX, labelY, 0xFFFFFFFF);
-                }
-            }
-        } catch (Exception e) {
-            PokeAlertClient.LOGGER.error("EggManager: Error rendering slot indicator at ({}, {}): {}", x, y, e.getMessage());
-        }
-    }
-    
-    /**
-     * Clear all debug positions (useful for testing)
-     */
     
     // ========== Phase 3: Daycare Egg Fetching ==========
     
@@ -6706,14 +6646,13 @@ public class EggManager {
      * This gives the player time to close any open interfaces.
      * 
      * @param seconds Seconds until PC will open
-     * @param eggCount Number of eggs to be transferred
      */
-    private void sendPCWarningNotification(int seconds, int eggCount) {
+    private void sendPCWarningNotification(int seconds) {
         if (client.player != null) {
             PokeAlertConfig config = ConfigManager.getConfig();
             if (config.notifications.textEnabled) {
                 client.execute(() -> {
-                    String message = "⚠️ PC will open in " + seconds + "s for " + eggCount + " egg" + (eggCount > 1 ? "s" : "") + " - Close any open interfaces!";
+                    String message = "⚠️ PC will open in " + seconds + "s - Close any open interfaces!";
                     client.player.sendMessage(
                         net.minecraft.text.Text.literal("[").formatted(net.minecraft.util.Formatting.GRAY)
                             .append(net.minecraft.text.Text.literal("PokeAlert").formatted(net.minecraft.util.Formatting.RED))

@@ -150,8 +150,6 @@ public class ConfigManager {
         if (config.antiAfk.playerSafety == null) config.antiAfk.playerSafety = new PokeAlertConfig.AntiAfkConfig.PlayerSafetyConfig();
         if (config.antiAfk.queue == null) config.antiAfk.queue = new PokeAlertConfig.AntiAfkConfig.QueueConfig();
         if (config.antiAfk.humanBehavior == null) config.antiAfk.humanBehavior = new PokeAlertConfig.AntiAfkConfig.HumanBehaviorConfig();
-        if (config.mappingLines == null) config.mappingLines = new PokeAlertConfig.MappingLinesConfig();
-        if (config.mappingLines.slotMapping == null) config.mappingLines.slotMapping = new SlotCoordinateMapping();
     }
 
     /**

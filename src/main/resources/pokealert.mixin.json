@@ -3,12 +3,8 @@
   "minVersion": "0.8",
   "package": "com.afiqhasiff.pokealert.mixin",
   "compatibilityLevel": "JAVA_17",
-  "mixins": [
-    "PCGUIMixin",
-    "ScreenMixin"
-  ],
+  "mixins": [],
   "injectors": {
     "defaultRequire": 1
   }
 }
-

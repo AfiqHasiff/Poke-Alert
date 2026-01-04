@@ -93,9 +93,6 @@ public class PokeAlertConfigScreen extends Screen {
     private TextFieldWidget eggManagerDaycareCommandField;
     private TextFieldWidget eggManagerHomeCommandField;
     
-    // Slot Coordinate Mapping settings
-    private ButtonWidget visualIndicatorsToggleButton;
-    
     // v3.0.0: Anti-AFK Region settings
     private TextFieldWidget regionX1Field;
     private TextFieldWidget regionZ1Field;
@@ -212,11 +209,6 @@ public class PokeAlertConfigScreen extends Screen {
         copy.eggManager.daycare.retryCount = original.eggManager.daycare.retryCount;
         copy.eggManager.daycare.teleportWait = original.eggManager.daycare.teleportWait;
         copy.eggManager.daycare.worldLoadWait = original.eggManager.daycare.worldLoadWait;
-        
-        // Copy mapping lines / slot coordinate settings (nested structure)
-        if (original.mappingLines != null && original.mappingLines.slotMapping != null) {
-            copy.mappingLines.slotMapping.visualIndicatorsEnabled = original.mappingLines.slotMapping.visualIndicatorsEnabled;
-        }
         
         // Copy anti-afk settings (nested structure)
         copy.antiAfk.regionX1 = original.antiAfk.regionX1;
@@ -646,18 +638,6 @@ public class PokeAlertConfigScreen extends Screen {
         eggManagerHomeCommandField.setText(config.eggManager.daycare.homeCommand);
         eggManagerHomeCommandField.setPlaceholder(Text.literal("/home new").formatted(Formatting.GRAY));
         this.addDrawableChild(eggManagerHomeCommandField);
-        currentY += ROW_HEIGHT + SECTION_SPACING;
-        
-        // ========== Slot Coordinate Mapping Section ==========
-        // Visual indicators toggle
-        visualIndicatorsToggleButton = addNotificationRow(currentY,
-            "Show Visual Indicators",
-            "Display coordinate mapping lines on PC GUI",
-            config.mappingLines.slotMapping.visualIndicatorsEnabled,
-            button -> {
-                config.mappingLines.slotMapping.visualIndicatorsEnabled = !config.mappingLines.slotMapping.visualIndicatorsEnabled;
-                updateToggleButton(visualIndicatorsToggleButton, config.mappingLines.slotMapping.visualIndicatorsEnabled);
-            });
         currentY += ROW_HEIGHT + SECTION_SPACING;
         
         // ========== v3.0.0: Anti-AFK Region Section ==========

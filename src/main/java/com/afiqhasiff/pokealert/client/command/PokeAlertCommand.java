@@ -7,7 +7,6 @@ import com.afiqhasiff.pokealert.client.util.PokemonLists;
 import com.afiqhasiff.pokealert.client.notification.EggTimerManager;
 import com.afiqhasiff.pokealert.client.automation.EggHatcher;
 import com.afiqhasiff.pokealert.client.automation.EggManager;
-import com.afiqhasiff.pokealert.client.config.SlotCoordinateMapping;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
@@ -190,38 +189,10 @@ public class PokeAlertCommand {
                         .then(ClientCommandManager.literal("disable")
                             .executes(context -> setEggManagerEnabled(context, false)))
                         .then(ClientCommandManager.literal("status")
-                            .executes(context -> checkEggManagerStatus(context))))
-                    
-                    // PC Transfer Coordinate Mapping commands
-                    .then(ClientCommandManager.literal("mappingLines")
-                        .then(ClientCommandManager.literal("toggle")
-                            .executes(context -> toggleDebugVisualIndicators(context)))
-                        .then(ClientCommandManager.literal("set")
-                            .then(ClientCommandManager.literal("box")
-                                .then(ClientCommandManager.argument("slot", StringArgumentType.word())
-                                    .then(ClientCommandManager.argument("x", IntegerArgumentType.integer())
-                                        .then(ClientCommandManager.argument("y", IntegerArgumentType.integer())
-                                            .executes(context -> setBoxSlotCoordinate(context)))))
-                                .then(ClientCommandManager.literal("arrow-left")
-                                    .then(ClientCommandManager.argument("x", IntegerArgumentType.integer())
-                                        .then(ClientCommandManager.argument("y", IntegerArgumentType.integer())
-                                            .executes(context -> setBoxArrowCoordinate(context, true)))))
-                                .then(ClientCommandManager.literal("arrow-right")
-                                    .then(ClientCommandManager.argument("x", IntegerArgumentType.integer())
-                                        .then(ClientCommandManager.argument("y", IntegerArgumentType.integer())
-                                            .executes(context -> setBoxArrowCoordinate(context, false))))))
-                            .then(ClientCommandManager.literal("party")
-                                .then(ClientCommandManager.argument("slot", StringArgumentType.word())
-                                    .then(ClientCommandManager.argument("x", IntegerArgumentType.integer())
-                                        .then(ClientCommandManager.argument("y", IntegerArgumentType.integer())
-                                            .executes(context -> setPartySlotCoordinate(context)))))))
-                        .then(ClientCommandManager.literal("get")
-                            .then(ClientCommandManager.literal("box")
-                                .then(ClientCommandManager.argument("slot", StringArgumentType.word())
-                                    .executes(context -> getBoxSlotCoordinate(context))))
-                            .then(ClientCommandManager.literal("party")
-                                .then(ClientCommandManager.argument("slot", StringArgumentType.word())
-                                    .executes(context -> getPartySlotCoordinate(context))))))
+                            .executes(context -> checkEggManagerStatus(context)))
+                        .then(ClientCommandManager.literal("test-transfer")
+                            .then(ClientCommandManager.argument("slot", IntegerArgumentType.integer(1, 6))
+                                .executes(context -> testHatchedTransfer(context)))))
                     
                     // Egg timer toggle command for parity
                     .then(ClientCommandManager.literal("timer")
@@ -1746,6 +1717,51 @@ public class PokeAlertCommand {
         return 1;
     }
     
+    /**
+     * Test command to simulate hatched Pokemon transfer to PC.
+     * Usage: /pokealert eggmanager test-transfer <slot>
+     * 
+     * This transfers whatever Pokemon is in the specified party slot to PC,
+     * simulating what happens when an egg hatches.
+     */
+    private static int testHatchedTransfer(CommandContext<FabricClientCommandSource> context) {
+        FabricClientCommandSource source = context.getSource();
+        int slot = IntegerArgumentType.getInteger(context, "slot");
+        int slotIndex = slot - 1; // Convert to 0-based
+        
+        source.sendFeedback(
+            Text.literal("[").formatted(Formatting.GRAY)
+                .append(Text.literal("PokeAlert").formatted(Formatting.RED))
+                .append(Text.literal("] ").formatted(Formatting.GRAY))
+                .append(Text.literal("🧪 TEST: Initiating hatched Pokemon transfer from slot " + slot + " to PC...").formatted(Formatting.YELLOW))
+        );
+        
+        PokeAlertClient.LOGGER.info("🧪 [TEST] testHatchedTransfer: User triggered test transfer for slot {}", slot);
+        
+        EggManager eggManager = EggManager.getInstance();
+        
+        // Call the test method on EggManager
+        boolean success = eggManager.testTransferHatchedPokemonToPC(slotIndex);
+        
+        if (success) {
+            source.sendFeedback(
+                Text.literal("[").formatted(Formatting.GRAY)
+                    .append(Text.literal("PokeAlert").formatted(Formatting.RED))
+                    .append(Text.literal("] ").formatted(Formatting.GRAY))
+                    .append(Text.literal("✅ Test transfer initiated. Check logs for details.").formatted(Formatting.GREEN))
+            );
+        } else {
+            source.sendFeedback(
+                Text.literal("[").formatted(Formatting.GRAY)
+                    .append(Text.literal("PokeAlert").formatted(Formatting.RED))
+                    .append(Text.literal("] ").formatted(Formatting.GRAY))
+                    .append(Text.literal("❌ Test transfer failed. Check logs for details.").formatted(Formatting.RED))
+            );
+        }
+        
+        return 1;
+    }
+    
     private static int toggleEggHatcher(CommandContext<FabricClientCommandSource> context) {
         FabricClientCommandSource source = context.getSource();
         PokeAlertConfig config = PokeAlertClient.getInstance().config;
@@ -2805,231 +2821,5 @@ public class PokeAlertCommand {
         );
         
         return 1;
-    }
-    
-    // ========== PC Transfer Debug Commands ==========
-    
-    private static int toggleDebugVisualIndicators(CommandContext<FabricClientCommandSource> context) {
-        FabricClientCommandSource source = context.getSource();
-        PokeAlertConfig config = ConfigManager.getConfig();
-        
-        config.mappingLines.slotMapping.visualIndicatorsEnabled = !config.mappingLines.slotMapping.visualIndicatorsEnabled;
-        ConfigManager.updateConfig(config);
-        PokeAlertClient.getInstance().reloadConfig();
-        
-        source.sendFeedback(
-            Text.literal("[").formatted(Formatting.GRAY)
-                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
-                .append(Text.literal("] Visual debug indicators: ").formatted(Formatting.GRAY))
-                .append(Text.literal(config.mappingLines.slotMapping.visualIndicatorsEnabled ? "ENABLED" : "DISABLED").formatted(
-                    config.mappingLines.slotMapping.visualIndicatorsEnabled ? Formatting.GREEN : Formatting.RED
-                ))
-        );
-        
-        return 1;
-    }
-    
-    private static int setBoxSlotCoordinate(CommandContext<FabricClientCommandSource> context) {
-        FabricClientCommandSource source = context.getSource();
-        PokeAlertConfig config = ConfigManager.getConfig();
-        String slotStr = StringArgumentType.getString(context, "slot");
-        int x = IntegerArgumentType.getInteger(context, "x");
-        int y = IntegerArgumentType.getInteger(context, "y");
-        
-        // Parse slot number (slot1, slot2, ..., slot30)
-        int slotIndex = parseSlotNumber(slotStr, 1, 30);
-        if (slotIndex == -1) {
-            source.sendFeedback(
-                Text.literal("[").formatted(Formatting.GRAY)
-                    .append(Text.literal("PokéAlert").formatted(Formatting.RED))
-                    .append(Text.literal("] Invalid slot: ").formatted(Formatting.RED))
-                    .append(Text.literal(slotStr).formatted(Formatting.WHITE))
-                    .append(Text.literal(". Use slot1-slot30").formatted(Formatting.RED))
-            );
-            return 0;
-        }
-        
-        config.mappingLines.slotMapping.setBoxSlot(slotIndex, x, y);
-        ConfigManager.updateConfig(config);
-        PokeAlertClient.getInstance().reloadConfig();
-        
-        source.sendFeedback(
-            Text.literal("[").formatted(Formatting.GRAY)
-                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
-                .append(Text.literal("] Box slot ").formatted(Formatting.GRAY))
-                .append(Text.literal(String.valueOf(slotIndex)).formatted(Formatting.WHITE))
-                .append(Text.literal(" set to (").formatted(Formatting.GRAY))
-                .append(Text.literal(String.valueOf(x)).formatted(Formatting.WHITE))
-                .append(Text.literal(", ").formatted(Formatting.GRAY))
-                .append(Text.literal(String.valueOf(y)).formatted(Formatting.WHITE))
-                .append(Text.literal(")").formatted(Formatting.GRAY))
-        );
-        
-        return 1;
-    }
-    
-    private static int setPartySlotCoordinate(CommandContext<FabricClientCommandSource> context) {
-        FabricClientCommandSource source = context.getSource();
-        PokeAlertConfig config = ConfigManager.getConfig();
-        String slotStr = StringArgumentType.getString(context, "slot");
-        int x = IntegerArgumentType.getInteger(context, "x");
-        int y = IntegerArgumentType.getInteger(context, "y");
-        
-        // Parse slot number (slot1, slot2, ..., slot6)
-        int slotIndex = parseSlotNumber(slotStr, 1, 6);
-        if (slotIndex == -1) {
-            source.sendFeedback(
-                Text.literal("[").formatted(Formatting.GRAY)
-                    .append(Text.literal("PokéAlert").formatted(Formatting.RED))
-                    .append(Text.literal("] Invalid slot: ").formatted(Formatting.RED))
-                    .append(Text.literal(slotStr).formatted(Formatting.WHITE))
-                    .append(Text.literal(". Use slot1-slot6").formatted(Formatting.RED))
-            );
-            return 0;
-        }
-        
-        config.mappingLines.slotMapping.setPartySlot(slotIndex, x, y);
-        ConfigManager.updateConfig(config);
-        PokeAlertClient.getInstance().reloadConfig();
-        
-        source.sendFeedback(
-            Text.literal("[").formatted(Formatting.GRAY)
-                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
-                .append(Text.literal("] Party slot ").formatted(Formatting.GRAY))
-                .append(Text.literal(String.valueOf(slotIndex)).formatted(Formatting.WHITE))
-                .append(Text.literal(" set to (").formatted(Formatting.GRAY))
-                .append(Text.literal(String.valueOf(x)).formatted(Formatting.WHITE))
-                .append(Text.literal(", ").formatted(Formatting.GRAY))
-                .append(Text.literal(String.valueOf(y)).formatted(Formatting.WHITE))
-                .append(Text.literal(")").formatted(Formatting.GRAY))
-        );
-        
-        return 1;
-    }
-    
-    private static int setBoxArrowCoordinate(CommandContext<FabricClientCommandSource> context, boolean isLeft) {
-        FabricClientCommandSource source = context.getSource();
-        PokeAlertConfig config = ConfigManager.getConfig();
-        int x = IntegerArgumentType.getInteger(context, "x");
-        int y = IntegerArgumentType.getInteger(context, "y");
-        
-        if (isLeft) {
-            config.mappingLines.slotMapping.boxArrowLeft = new SlotCoordinateMapping.SlotCoordinate(x, y);
-        } else {
-            config.mappingLines.slotMapping.boxArrowRight = new SlotCoordinateMapping.SlotCoordinate(x, y);
-        }
-        ConfigManager.updateConfig(config);
-        PokeAlertClient.getInstance().reloadConfig();
-        
-        source.sendFeedback(
-            Text.literal("[").formatted(Formatting.GRAY)
-                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
-                .append(Text.literal("] Box arrow ").formatted(Formatting.GRAY))
-                .append(Text.literal(isLeft ? "left" : "right").formatted(Formatting.WHITE))
-                .append(Text.literal(" set to (").formatted(Formatting.GRAY))
-                .append(Text.literal(String.valueOf(x)).formatted(Formatting.WHITE))
-                .append(Text.literal(", ").formatted(Formatting.GRAY))
-                .append(Text.literal(String.valueOf(y)).formatted(Formatting.WHITE))
-                .append(Text.literal(")").formatted(Formatting.GRAY))
-        );
-        
-        return 1;
-    }
-    
-    private static int getBoxSlotCoordinate(CommandContext<FabricClientCommandSource> context) {
-        FabricClientCommandSource source = context.getSource();
-        PokeAlertConfig config = ConfigManager.getConfig();
-        String slotStr = StringArgumentType.getString(context, "slot");
-        
-        int slotIndex = parseSlotNumber(slotStr, 1, 30);
-        if (slotIndex == -1) {
-            source.sendFeedback(
-                Text.literal("[").formatted(Formatting.GRAY)
-                    .append(Text.literal("PokéAlert").formatted(Formatting.RED))
-                    .append(Text.literal("] Invalid slot: ").formatted(Formatting.RED))
-                    .append(Text.literal(slotStr).formatted(Formatting.WHITE))
-                    .append(Text.literal(". Use slot1-slot30").formatted(Formatting.RED))
-            );
-            return 0;
-        }
-        
-        SlotCoordinateMapping.SlotCoordinate coord = config.mappingLines.slotMapping.getBoxSlot(slotIndex);
-        Formatting color = coord.isMapped() ? Formatting.GREEN : Formatting.RED;
-        String status = coord.isMapped() ? "mapped" : "unmapped";
-        
-        source.sendFeedback(
-            Text.literal("[").formatted(Formatting.GRAY)
-                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
-                .append(Text.literal("] Box slot ").formatted(Formatting.GRAY))
-                .append(Text.literal(String.valueOf(slotIndex)).formatted(Formatting.WHITE))
-                .append(Text.literal(" (").formatted(Formatting.GRAY))
-                .append(Text.literal(status).formatted(color))
-                .append(Text.literal("): (").formatted(Formatting.GRAY))
-                .append(Text.literal(String.valueOf(coord.x)).formatted(Formatting.WHITE))
-                .append(Text.literal(", ").formatted(Formatting.GRAY))
-                .append(Text.literal(String.valueOf(coord.y)).formatted(Formatting.WHITE))
-                .append(Text.literal(")").formatted(Formatting.GRAY))
-        );
-        
-        return 1;
-    }
-    
-    private static int getPartySlotCoordinate(CommandContext<FabricClientCommandSource> context) {
-        FabricClientCommandSource source = context.getSource();
-        PokeAlertConfig config = ConfigManager.getConfig();
-        String slotStr = StringArgumentType.getString(context, "slot");
-        
-        int slotIndex = parseSlotNumber(slotStr, 1, 6);
-        if (slotIndex == -1) {
-            source.sendFeedback(
-                Text.literal("[").formatted(Formatting.GRAY)
-                    .append(Text.literal("PokéAlert").formatted(Formatting.RED))
-                    .append(Text.literal("] Invalid slot: ").formatted(Formatting.RED))
-                    .append(Text.literal(slotStr).formatted(Formatting.WHITE))
-                    .append(Text.literal(". Use slot1-slot6").formatted(Formatting.RED))
-            );
-            return 0;
-        }
-        
-        SlotCoordinateMapping.SlotCoordinate coord = config.mappingLines.slotMapping.getPartySlot(slotIndex);
-        Formatting color = coord.isMapped() ? Formatting.GREEN : Formatting.RED;
-        String status = coord.isMapped() ? "mapped" : "unmapped";
-        
-        source.sendFeedback(
-            Text.literal("[").formatted(Formatting.GRAY)
-                .append(Text.literal("PokéAlert").formatted(Formatting.RED))
-                .append(Text.literal("] Party slot ").formatted(Formatting.GRAY))
-                .append(Text.literal(String.valueOf(slotIndex)).formatted(Formatting.WHITE))
-                .append(Text.literal(" (").formatted(Formatting.GRAY))
-                .append(Text.literal(status).formatted(color))
-                .append(Text.literal("): (").formatted(Formatting.GRAY))
-                .append(Text.literal(String.valueOf(coord.x)).formatted(Formatting.WHITE))
-                .append(Text.literal(", ").formatted(Formatting.GRAY))
-                .append(Text.literal(String.valueOf(coord.y)).formatted(Formatting.WHITE))
-                .append(Text.literal(")").formatted(Formatting.GRAY))
-        );
-        
-        return 1;
-    }
-    
-    /**
-     * Parse slot number from string (e.g., "slot1" -> 1, "slot30" -> 30)
-     * Returns -1 if invalid
-     */
-    private static int parseSlotNumber(String slotStr, int min, int max) {
-        if (slotStr == null || !slotStr.toLowerCase().startsWith("slot")) {
-            return -1;
-        }
-        
-        try {
-            int slotNum = Integer.parseInt(slotStr.substring(4)); // Skip "slot"
-            if (slotNum >= min && slotNum <= max) {
-                return slotNum;
-            }
-        } catch (NumberFormatException e) {
-            // Invalid format
-        }
-        
-        return -1;
     }
 }
