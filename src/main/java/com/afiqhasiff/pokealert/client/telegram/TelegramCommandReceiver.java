@@ -962,6 +962,15 @@ public class TelegramCommandReceiver {
             if (eggHatcher.isAtSpawn() && client != null && client.player != null) {
                 sb.append("• <b>Location:</b> <i>Spawn world</i>\n");
             }
+            
+            // Show OPs online (avoided players)
+            java.util.List<String> opsOnline = com.afiqhasiff.pokealert.client.util.PlayerMonitor.getCurrentOnlineAvoidedPlayers();
+            if (opsOnline.isEmpty()) {
+                sb.append("• <b>OPs Online:</b> <code>0</code>\n");
+            } else {
+                sb.append("• <b>OPs Online:</b> <code>").append(opsOnline.size()).append("</code> (")
+                  .append(String.join(", ", opsOnline)).append(")\n");
+            }
         }
         sb.append("\n");
         
