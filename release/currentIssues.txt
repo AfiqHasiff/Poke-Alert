@@ -1,5 +1,0 @@
-1. Location timeout still triggering sometimes when we've reached our goto destination due to no next #goto action being triggered.
-2. Sprint jump is still not working.
-3. Are the humanlike odds correct? Seems like default behaviour isnt being triggered the most compared to other config. Verify this since I maybe evaluating this wrongly since its just by looking with no actual data check done on my end.
-4. We are getting `journey = "Overworld (direct)";` eventhough we started from spawn on a fresh minecraft start. This is suggesting that some of our flags used for the if else statement might be incorrect.
-5. We are getting instances albeit not as common where location timeout is triggered due to no #goto action triggered after reaching previous #goto location. Most likely need refining or there are deeper issues we need to tackle OR only happens with certain humanlike behaviours.
