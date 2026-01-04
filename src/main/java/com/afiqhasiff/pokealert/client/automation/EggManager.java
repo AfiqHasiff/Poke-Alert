@@ -179,6 +179,29 @@ public class EggManager {
     // Phase 2: Track transferred eggs to prevent duplicates
     private final Set<UUID> transferredEggUuids = ConcurrentHashMap.newKeySet();
     
+    // Phase 2: Queue for sequential hatched Pokemon transfers (fixes deadlock issue)
+    private final java.util.concurrent.LinkedBlockingQueue<HatchedPokemonTransferInfo> hatchedTransferQueue = new java.util.concurrent.LinkedBlockingQueue<>();
+    private volatile boolean isProcessingHatchedTransfers = false;
+    
+    /**
+     * Phase 2: Info container for queued hatched Pokemon transfers
+     */
+    private static class HatchedPokemonTransferInfo {
+        final int slot;
+        final String pokemonName;
+        final PokemonIVs ivs;
+        final UUID pokemonUuid;
+        final EggTrackingInfo trackingInfo;
+        
+        HatchedPokemonTransferInfo(int slot, String pokemonName, PokemonIVs ivs, UUID pokemonUuid, EggTrackingInfo trackingInfo) {
+            this.slot = slot;
+            this.pokemonName = pokemonName;
+            this.ivs = ivs;
+            this.pokemonUuid = pokemonUuid;
+            this.trackingInfo = trackingInfo;
+        }
+    }
+    
     private EggManager() {
         this.client = MinecraftClient.getInstance();
     }
@@ -750,119 +773,212 @@ public class EggManager {
     }
     
     /**
-     * Phase 2: Handle egg hatch - extract IVs, transfer to PC, send notification
-     * MUST execute on main thread for proper Pokemon data access and server sync
+     * Phase 2: Handle egg hatch - extract IVs, queue transfer to PC, send notification
+     * Data extraction on main thread, transfer queued for background processing to avoid deadlock
      */
     private void onEggHatched(int slot) {
         final int finalSlot = slot;
         
-        // Execute on main thread to ensure Pokemon data is fully synced
-        client.execute(() -> {
-            try {
-                PokeAlertConfig config = ConfigManager.getConfig();
-                
-                // Longer delay to ensure Pokemon data is fully synced after hatch
-                // IVs might take longer to sync than name
+        // Schedule data extraction after a short delay for IV sync (on background thread to avoid blocking)
+        if (scheduler == null) {
+            scheduler = java.util.concurrent.Executors.newScheduledThreadPool(2);
+        }
+        
+        scheduler.schedule(() -> {
+            // Extract Pokemon data on render thread (quick operation, no blocking)
+            java.util.concurrent.CountDownLatch dataLatch = new java.util.concurrent.CountDownLatch(1);
+            final String[] pokemonNameHolder = {null};
+            final PokemonIVs[] ivsHolder = {null};
+            final UUID[] pokemonUuidHolder = {null};
+            final EggTrackingInfo[] trackingInfoHolder = {null};
+            
+            client.execute(() -> {
                 try {
-                    Thread.sleep(1000); // Increased to 1 second for IV sync
+                    PokeAlertConfig config = ConfigManager.getConfig();
+                    
+                    // Get Pokemon from party slot
+                    Object party = getPlayerParty();
+                    if (party == null) {
+                        PokeAlertClient.LOGGER.warn("EggManager: Cannot handle hatch - party not available");
+                        return;
+                    }
+                    
+                    java.lang.reflect.Method getMethod = partyGetMethod;
+                    if (getMethod == null) {
+                        getMethod = party.getClass().getMethod("get", int.class);
+                    }
+                    
+                    Object pokemon = getMethod.invoke(party, finalSlot);
+                    if (pokemon == null) {
+                        PokeAlertClient.LOGGER.warn("EggManager: Slot {} is empty, cannot handle hatch", finalSlot + 1);
+                        return;
+                    }
+                    
+                    // Get Pokemon UUID
+                    java.lang.reflect.Method getUuidMethod = pokemon.getClass().getMethod("getUuid");
+                    pokemonUuidHolder[0] = (UUID) getUuidMethod.invoke(pokemon);
+                    
+                    // Get Pokemon name
+                    pokemonNameHolder[0] = getPokemonName(pokemon);
+                    if (pokemonNameHolder[0] == null || pokemonNameHolder[0].equals("UNKNOWN") || pokemonNameHolder[0].equals("EMPTY")) {
+                        PokeAlertClient.LOGGER.warn("EggManager: Could not extract Pokemon name, trying alternative methods");
+                        pokemonNameHolder[0] = getPokemonNameAlternative(pokemon);
+                    }
+                    
+                    // Extract IVs if enabled
+                    if (config.eggManager.phase2.ivTrackingEnabled) {
+                        PokeAlertClient.LOGGER.info("EggManager: Attempting to extract IVs for {} (slot {})", pokemonNameHolder[0], finalSlot + 1);
+                        ivsHolder[0] = extractIVs(pokemon);
+                        if (ivsHolder[0] != null) {
+                            PokeAlertClient.LOGGER.info("EggManager: ✅ Successfully extracted IVs for {}: {}", pokemonNameHolder[0], ivsHolder[0]);
+                            if (ivsHolder[0].getTotal() == 0) {
+                                PokeAlertClient.LOGGER.warn("EggManager: ⚠️ WARNING: All IVs are 0 - this might indicate extraction failure");
+                            }
+                        } else {
+                            PokeAlertClient.LOGGER.warn("EggManager: ❌ Failed to extract IVs for {} - extractIVs() returned null", pokemonNameHolder[0]);
+                        }
+                    }
+                    
+                    // Update tracking info
+                    EggTrackingInfo trackingInfo = eggTracking.get(pokemonUuidHolder[0]);
+                    if (trackingInfo != null) {
+                        trackingInfo.pokemonName = pokemonNameHolder[0];
+                        trackingInfo.ivs = ivsHolder[0];
+                    } else {
+                        trackingInfo = new EggTrackingInfo(pokemonUuidHolder[0], finalSlot, System.currentTimeMillis());
+                        trackingInfo.pokemonName = pokemonNameHolder[0];
+                        trackingInfo.ivs = ivsHolder[0];
+                        eggTracking.put(pokemonUuidHolder[0], trackingInfo);
+                    }
+                    trackingInfoHolder[0] = trackingInfo;
+                    
+                } catch (Exception e) {
+                    PokeAlertClient.LOGGER.error("EggManager: Error extracting hatch data at slot {}", finalSlot + 1, e);
+                } finally {
+                    dataLatch.countDown();
+                }
+            });
+            
+            // Wait for data extraction to complete (with timeout)
+            try {
+                if (!dataLatch.await(5, TimeUnit.SECONDS)) {
+                    PokeAlertClient.LOGGER.error("EggManager: Timeout waiting for hatch data extraction at slot {}", finalSlot + 1);
+                    return;
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+            
+            // If data extraction failed, skip this hatch
+            if (pokemonUuidHolder[0] == null) {
+                PokeAlertClient.LOGGER.warn("EggManager: Skipping hatch at slot {} - data extraction failed", finalSlot + 1);
+                return;
+            }
+            
+            PokeAlertConfig config = ConfigManager.getConfig();
+            
+            // Queue transfer if enabled
+            if (config.eggManager.phase2.autoTransferToPC) {
+                HatchedPokemonTransferInfo transferInfo = new HatchedPokemonTransferInfo(
+                    finalSlot, pokemonNameHolder[0], ivsHolder[0], pokemonUuidHolder[0], trackingInfoHolder[0]);
+                hatchedTransferQueue.offer(transferInfo);
+                PokeAlertClient.LOGGER.info("EggManager: Queued hatched {} from slot {} for PC transfer (queue size: {})", 
+                    pokemonNameHolder[0], finalSlot + 1, hatchedTransferQueue.size());
+                
+                // Start processing queue if not already running
+                startHatchedTransferProcessor();
+            } else {
+                // No transfer, just send notification
+                if (config.eggManager.phase2.ivTrackingEnabled && config.telegram.enabled && config.isTelegramValid()) {
+                    sendHatchNotification(trackingInfoHolder[0], null);
+                }
+            }
+            
+        }, 1000, TimeUnit.MILLISECONDS); // 1 second delay for IV sync
+    }
+    
+    /**
+     * Start the hatched Pokemon transfer processor if not already running
+     */
+    private void startHatchedTransferProcessor() {
+        if (isProcessingHatchedTransfers) {
+            return; // Already processing
+        }
+        
+        if (scheduler == null) {
+            scheduler = java.util.concurrent.Executors.newScheduledThreadPool(2);
+        }
+        
+        isProcessingHatchedTransfers = true;
+        scheduler.execute(() -> {
+            try {
+                processHatchedTransferQueue();
+            } finally {
+                isProcessingHatchedTransfers = false;
+            }
+        });
+    }
+    
+    /**
+     * Process the hatched Pokemon transfer queue one-by-one
+     * Runs on background thread to avoid deadlock
+     */
+    private void processHatchedTransferQueue() {
+        PokeAlertClient.LOGGER.info("EggManager: Starting hatched transfer processor (queue size: {})", hatchedTransferQueue.size());
+        
+        while (!hatchedTransferQueue.isEmpty()) {
+            HatchedPokemonTransferInfo transferInfo = hatchedTransferQueue.poll();
+            if (transferInfo == null) {
+                continue;
+            }
+            
+            PokeAlertClient.LOGGER.info("EggManager: Processing transfer for {} from slot {} (remaining in queue: {})", 
+                transferInfo.pokemonName, transferInfo.slot + 1, hatchedTransferQueue.size());
+            
+            try {
+                // Perform the transfer (with retry logic)
+                Object targetBoxInfo = transferHatchedPokemonToPC(transferInfo.slot, transferInfo.ivs);
+                
+                // Close PC after this transfer
+                closePCInterface();
+                
+                // Wait a bit for PC to close
+                try {
+                    Thread.sleep(1000);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
+                    break;
                 }
                 
-                // Get Pokemon from party slot
-                Object party = getPlayerParty();
-                if (party == null) {
-                    PokeAlertClient.LOGGER.warn("EggManager: Cannot handle hatch - party not available");
-                    return;
-                }
-                
-                java.lang.reflect.Method getMethod = partyGetMethod;
-                if (getMethod == null) {
-                    getMethod = party.getClass().getMethod("get", int.class);
-                }
-                
-                Object pokemon = getMethod.invoke(party, finalSlot);
-                if (pokemon == null) {
-                    PokeAlertClient.LOGGER.warn("EggManager: Slot {} is empty, cannot handle hatch", finalSlot + 1);
-                    return;
-                }
-                
-                // Get Pokemon UUID
-                java.lang.reflect.Method getUuidMethod = pokemon.getClass().getMethod("getUuid");
-                UUID pokemonUuid = (UUID) getUuidMethod.invoke(pokemon);
-                
-                // Get Pokemon name (on main thread)
-                String pokemonName = getPokemonName(pokemon);
-                if (pokemonName == null || pokemonName.equals("UNKNOWN") || pokemonName.equals("EMPTY")) {
-                    PokeAlertClient.LOGGER.warn("EggManager: Could not extract Pokemon name, trying alternative methods");
-                    // Try alternative name extraction
-                    pokemonName = getPokemonNameAlternative(pokemon);
-                }
-                
-                // Extract IVs if enabled (on main thread)
-                PokemonIVs ivs = null;
-                if (config.eggManager.phase2.ivTrackingEnabled) {
-                    PokeAlertClient.LOGGER.info("EggManager: Attempting to extract IVs for {} (slot {})", pokemonName, finalSlot + 1);
-                    ivs = extractIVs(pokemon);
-                    if (ivs != null) {
-                        PokeAlertClient.LOGGER.info("EggManager: ✅ Successfully extracted IVs for {}: {}", pokemonName, ivs);
-                        if (ivs.getTotal() == 0) {
-                            PokeAlertClient.LOGGER.warn("EggManager: ⚠️ WARNING: All IVs are 0 - this might indicate extraction failure");
-                            PokeAlertClient.LOGGER.warn("EggManager: Pokemon class: {}, Pokemon UUID: {}", 
-                                pokemon.getClass().getName(), pokemonUuid);
-                        }
-                    } else {
-                        PokeAlertClient.LOGGER.warn("EggManager: ❌ Failed to extract IVs for {} - extractIVs() returned null", pokemonName);
-                    }
-                } else {
-                    PokeAlertClient.LOGGER.debug("EggManager: IV tracking is disabled in config");
-                }
-                
-                // Update tracking info
-                EggTrackingInfo trackingInfo = eggTracking.get(pokemonUuid);
-                if (trackingInfo != null) {
-                    trackingInfo.pokemonName = pokemonName;
-                    trackingInfo.ivs = ivs;
-                } else {
-                    // Create new tracking info if UUID wasn't tracked (shouldn't happen, but handle gracefully)
-                    trackingInfo = new EggTrackingInfo(pokemonUuid, finalSlot, System.currentTimeMillis());
-                    trackingInfo.pokemonName = pokemonName;
-                    trackingInfo.ivs = ivs;
-                    eggTracking.put(pokemonUuid, trackingInfo);
-                }
-                
-                // Transfer to PC if enabled (on main thread)
-                Object targetBoxInfo = null;
-                if (config.eggManager.phase2.autoTransferToPC) {
-                    targetBoxInfo = transferHatchedPokemonToPC(finalSlot, ivs);
-                    
-                    // CRITICAL: Close PC interface after transfer (with delay to allow transfer to complete)
-                    // fillPartySlotsWithEggs opens its own PC, so we always close after transfer
-                    if (scheduler == null) {
-                        scheduler = java.util.concurrent.Executors.newScheduledThreadPool(2);
-                    }
-                    scheduler.schedule(() -> {
-                        closePCInterface();
-                    }, 2000, TimeUnit.MILLISECONDS); // Delay 2 seconds to allow transfer to complete
-                    
-                    if (targetBoxInfo != null && config.eggManager.phase2.autoFillFromPC) {
-                        // Fill empty party slots with eggs from PC (async to avoid blocking)
-                        // Note: fillPartySlotsWithEggs will open its own PC when it runs
-                        if (scheduler != null) {
-                            scheduler.execute(() -> fillPartySlotsWithEggs());
-                        }
-                    }
-                }
-                
-                // Send Telegram notification with IV stats if enabled
+                // Send notification
+                PokeAlertConfig config = ConfigManager.getConfig();
                 if (config.eggManager.phase2.ivTrackingEnabled && config.telegram.enabled && config.isTelegramValid()) {
-                    sendHatchNotification(trackingInfo, targetBoxInfo);
+                    sendHatchNotification(transferInfo.trackingInfo, targetBoxInfo);
+                }
+                
+                // Wait between transfers to avoid rate limiting and allow server sync
+                try {
+                    Thread.sleep(2000);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
                 }
                 
             } catch (Exception e) {
-                PokeAlertClient.LOGGER.error("EggManager: Error handling egg hatch at slot {}", finalSlot + 1, e);
+                PokeAlertClient.LOGGER.error("EggManager: Error processing transfer for {} from slot {}", 
+                    transferInfo.pokemonName, transferInfo.slot + 1, e);
             }
-        });
+        }
+        
+        PokeAlertClient.LOGGER.info("EggManager: Hatched transfer processor completed");
+        
+        // After all transfers complete, fill empty slots with eggs from PC
+        PokeAlertConfig config = ConfigManager.getConfig();
+        if (config.eggManager.phase2.autoFillFromPC) {
+            PokeAlertClient.LOGGER.info("EggManager: All hatched transfers complete, filling empty slots with eggs from PC");
+            fillPartySlotsWithEggs();
+        }
     }
     
     /**
@@ -1238,63 +1354,112 @@ public class EggManager {
                     PokeAlertClient.LOGGER.warn("🔍 [TRANSFER] transferHatchedPokemonToPC: PC warning wait interrupted");
                 }
                 
-                // ========== STEP 3: Open PC (quick command on render thread) ==========
-                PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: Opening PC GUI...");
-                sendPCTransferNotification("Opening PC...");
-                client.execute(() -> {
-                    if (client.player != null && client.player.networkHandler != null) {
-                        String command = "pc";
-                        client.player.networkHandler.sendChatCommand(command);
-                        PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: Sent /pc command");
-                    }
-                });
-                
-                // ========== STEP 4: Wait for PC GUI to load (polling on BACKGROUND thread - no freeze!) ==========
-                PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: Waiting for PC GUI to fully load...");
+                // ========== STEP 3: Open PC with retry logic ==========
                 boolean pcGuiReady = false;
-                long startTime = System.currentTimeMillis();
-                long timeout = 3000; // 3 second timeout
+                final int MAX_RETRIES = 3;
+                final long RETRY_DELAY = 3000; // 3 seconds between retries
+                final long PC_OPEN_TIMEOUT = 3000; // 3 second timeout per attempt
                 
-                while (!pcGuiReady && (System.currentTimeMillis() - startTime) < timeout) {
-                    final boolean[] ready = {false};
-                    java.util.concurrent.CountDownLatch readyLatch = new java.util.concurrent.CountDownLatch(1);
+                for (int attempt = 1; attempt <= MAX_RETRIES && !pcGuiReady; attempt++) {
+                    final int currentAttempt = attempt; // Final copy for lambda
+                    PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: Opening PC GUI (attempt {}/{})", currentAttempt, MAX_RETRIES);
+                    sendPCTransferNotification("Opening PC... (attempt " + currentAttempt + "/" + MAX_RETRIES + ")");
+                    
+                    // Send /pc command on render thread
+                    java.util.concurrent.CountDownLatch cmdLatch = new java.util.concurrent.CountDownLatch(1);
                     client.execute(() -> {
                         try {
-                            if (client.currentScreen != null) {
-                                String screenClassName = client.currentScreen.getClass().getName();
-                                if (screenClassName.equals("com.cobblemon.mod.common.client.gui.pc.PCGUI")) {
-                                    java.lang.reflect.Field storageWidgetField = client.currentScreen.getClass().getDeclaredField("storageWidget");
-                                    storageWidgetField.setAccessible(true);
-                                    Object sw = storageWidgetField.get(client.currentScreen);
-                                    if (sw != null) {
-                                        ready[0] = true;
-                                    }
-                                }
+                            if (client.player != null && client.player.networkHandler != null) {
+                                client.player.networkHandler.sendChatCommand("pc");
+                                PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: Sent /pc command (attempt {})", currentAttempt);
                             }
-                        } catch (Exception e) {
-                            // Not ready yet
                         } finally {
-                            readyLatch.countDown();
+                            cmdLatch.countDown();
                         }
                     });
-                    try { readyLatch.await(100, java.util.concurrent.TimeUnit.MILLISECONDS); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
-                    pcGuiReady = ready[0];
                     
-                    if (!pcGuiReady) {
-                        try {
-                            Thread.sleep(100); // Poll every 100ms - runs on background thread
-                        } catch (InterruptedException e) {
-                            Thread.currentThread().interrupt();
+                    // Wait for command to be sent
+                    try { 
+                        cmdLatch.await(1, java.util.concurrent.TimeUnit.SECONDS); 
+                    } catch (InterruptedException e) { 
+                        Thread.currentThread().interrupt(); 
+                        break;
+                    }
+                    
+                    // Give the server a moment to process the command
+                    try {
+                        Thread.sleep(500);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                    
+                    // Poll for PC GUI to be ready
+                    PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: Waiting for PC GUI to fully load...");
+                    long startTime = System.currentTimeMillis();
+                    
+                    while (!pcGuiReady && (System.currentTimeMillis() - startTime) < PC_OPEN_TIMEOUT) {
+                        final boolean[] ready = {false};
+                        java.util.concurrent.CountDownLatch readyLatch = new java.util.concurrent.CountDownLatch(1);
+                        client.execute(() -> {
+                            try {
+                                if (client.currentScreen != null) {
+                                    String screenClassName = client.currentScreen.getClass().getName();
+                                    if (screenClassName.equals("com.cobblemon.mod.common.client.gui.pc.PCGUI")) {
+                                        java.lang.reflect.Field storageWidgetField = client.currentScreen.getClass().getDeclaredField("storageWidget");
+                                        storageWidgetField.setAccessible(true);
+                                        Object sw = storageWidgetField.get(client.currentScreen);
+                                        if (sw != null) {
+                                            ready[0] = true;
+                                        }
+                                    }
+                                }
+                            } catch (Exception e) {
+                                // Not ready yet
+                            } finally {
+                                readyLatch.countDown();
+                            }
+                        });
+                        try { 
+                            readyLatch.await(100, java.util.concurrent.TimeUnit.MILLISECONDS); 
+                        } catch (InterruptedException e) { 
+                            Thread.currentThread().interrupt(); 
                             break;
+                        }
+                        pcGuiReady = ready[0];
+                        
+                        if (!pcGuiReady) {
+                            try {
+                                Thread.sleep(100); // Poll every 100ms
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                                break;
+                            }
+                        }
+                    }
+                    
+                    if (pcGuiReady) {
+                        long elapsed = System.currentTimeMillis() - startTime;
+                        PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: ✅ PC GUI is ready (took {}ms, attempt {})", elapsed, currentAttempt);
+                    } else {
+                        PokeAlertClient.LOGGER.warn("🔍 [TRANSFER] transferHatchedPokemonToPC: ⚠️ PC GUI not ready after {}ms (attempt {}/{})", 
+                            PC_OPEN_TIMEOUT, currentAttempt, MAX_RETRIES);
+                        
+                        // Wait before retrying (possible rate limiting)
+                        if (currentAttempt < MAX_RETRIES) {
+                            PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: Waiting {}ms before retry...", RETRY_DELAY);
+                            try {
+                                Thread.sleep(RETRY_DELAY);
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                                break;
+                            }
                         }
                     }
                 }
                 
-                if (pcGuiReady) {
-                    long elapsed = System.currentTimeMillis() - startTime;
-                    PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: ✅ PC GUI is ready (took {}ms)", elapsed);
-                } else {
-                    PokeAlertClient.LOGGER.error("🔍 [TRANSFER] transferHatchedPokemonToPC: ❌ PC GUI not ready after 3s timeout");
+                if (!pcGuiReady) {
+                    PokeAlertClient.LOGGER.error("🔍 [TRANSFER] transferHatchedPokemonToPC: ❌ PC GUI not ready after {} attempts - transfer may fail", MAX_RETRIES);
                 }
             }
             
