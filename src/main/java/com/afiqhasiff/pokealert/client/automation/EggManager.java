@@ -183,6 +183,9 @@ public class EggManager {
     private final java.util.concurrent.LinkedBlockingQueue<HatchedPokemonTransferInfo> hatchedTransferQueue = new java.util.concurrent.LinkedBlockingQueue<>();
     private volatile boolean isProcessingHatchedTransfers = false;
     
+    // Phase 3: Track NPC interaction retries for move-forward logic
+    private volatile int npcInteractionRetryCount = 0;
+    
     /**
      * Phase 2: Info container for queued hatched Pokemon transfers
      */
@@ -218,6 +221,38 @@ public class EggManager {
      */
     public void setScheduler(ScheduledExecutorService scheduler) {
         this.scheduler = scheduler;
+    }
+    
+    /**
+     * Check if player is at spawn (EggManager's own implementation for independence)
+     * @return true if at spawn, false otherwise
+     */
+    public boolean isAtSpawn() {
+        if (client.player == null || client.world == null) {
+            return false;
+        }
+        
+        String worldName = client.world.getRegistryKey().getValue().toString();
+        return worldName.contains("spawn") || worldName.contains("lobby") || worldName.contains("hub");
+    }
+    
+    /**
+     * Check if player is in overworld (not at spawn)
+     * @return true if in overworld/non-spawn world
+     */
+    public boolean isInOverworld() {
+        if (client.player == null || client.world == null) {
+            return false;
+        }
+        return !isAtSpawn();
+    }
+    
+    /**
+     * Check if player is connected to a server
+     * @return true if connected to a server with valid player and world
+     */
+    public boolean isConnected() {
+        return client != null && client.player != null && client.world != null;
     }
     
     /**
@@ -669,15 +704,13 @@ public class EggManager {
         }
         
         // Phase 2: Periodically check for empty slots and fill with eggs from PC
-        // CRITICAL: Only fill slots after Egg Hatcher completes Step 5 (Completion)
+        // INDEPENDENT: Egg Manager operates on its own - only requires player to be in overworld
         if (config.eggManager.phase2.autoFillFromPC && !isFillingSlots) {
-            // Check if Egg Hatcher Step 5 is completed
-            EggHatcher eggHatcher = EggHatcher.getInstance();
-            boolean step5Completed = eggHatcher != null && eggHatcher.isStep5Completed();
-            
-            if (!step5Completed) {
-                PokeAlertClient.LOGGER.debug("EggManager: Waiting for Egg Hatcher Step 5 completion before filling slots");
-                return; // Don't fill slots until Step 5 is complete
+            // Check if player is in overworld (safe to transfer)
+            // Egg Manager is independent of Egg Hatcher - doesn't wait for Step 5
+            if (!isInOverworld()) {
+                PokeAlertClient.LOGGER.debug("EggManager: Waiting for overworld arrival before filling slots");
+                return; // Don't fill slots until in overworld
             }
             
             // Check for ACTUALLY empty party slots (not just non-eggs)
@@ -705,7 +738,7 @@ public class EggManager {
                 // Found empty slots - check if we have eggs in PC to fill
                 List<Object> pcEggs = findAllEggsInPC();
                 if (!pcEggs.isEmpty()) {
-                    PokeAlertClient.LOGGER.info("EggManager: Detected {} empty party slots and {} eggs in PC - attempting to fill (Step 5 completed)", 
+                    PokeAlertClient.LOGGER.info("EggManager: Detected {} empty party slots and {} eggs in PC - attempting to fill", 
                         emptySlotCount, pcEggs.size());
                     // Fill empty slots with eggs from PC (async to avoid blocking monitoring)
                     if (scheduler != null) {
@@ -1363,7 +1396,7 @@ public class EggManager {
                 for (int attempt = 1; attempt <= MAX_RETRIES && !pcGuiReady; attempt++) {
                     final int currentAttempt = attempt; // Final copy for lambda
                     PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: Opening PC GUI (attempt {}/{})", currentAttempt, MAX_RETRIES);
-                    sendPCTransferNotification("Opening PC... (attempt " + currentAttempt + "/" + MAX_RETRIES + ")");
+                    sendPCTransferNotification("Opening PC (ttempt " + currentAttempt + "/" + MAX_RETRIES + ")");
                     
                     // Send /pc command on render thread
                     java.util.concurrent.CountDownLatch cmdLatch = new java.util.concurrent.CountDownLatch(1);
@@ -1987,7 +2020,7 @@ public class EggManager {
             
             // CRITICAL: Open PC interface for egg transfer
             PokeAlertClient.LOGGER.info("EggManager: Opening PC interface for egg transfer");
-            sendPCTransferNotification("Opening PC...");
+            sendPCTransferNotification("Opening PC");
             client.execute(() -> {
                 if (client.player != null && client.player.networkHandler != null) {
                     String command = "pc";
@@ -2257,7 +2290,7 @@ public class EggManager {
             // CRITICAL: Open PC interface first to ensure PC is initialized on server
             // This ensures transfers persist properly
             PokeAlertClient.LOGGER.info("EggManager: Opening PC interface before transfer");
-            sendPCTransferNotification("Opening PC...");
+            sendPCTransferNotification("Opening PC");
             client.execute(() -> {
                 if (client.player != null && client.player.networkHandler != null) {
                     // Use sendChatCommand which expects command WITHOUT leading '/'
@@ -6310,11 +6343,13 @@ public class EggManager {
     private void handleWaitingForDaycareArrival(PokeAlertConfig config) {
         daycareCurrentStep = "Verifying daycare arrival";
         
-        // Check if we're at spawn
-        EggHatcher eggHatcher = EggHatcher.getInstance();
-        if (eggHatcher != null && eggHatcher.isAtSpawn()) {
+        // Check if we're at spawn (use EggManager's own method for independence)
+        if (isAtSpawn()) {
             PokeAlertClient.LOGGER.info("[Egg Manager] Arrived at daycare (spawn world)");
             sendDaycareStepNotification(3, "Arrived at daycare");
+            
+            // Reset NPC interaction retry count for new arrival
+            npcInteractionRetryCount = 0;
             
             // Move to next state
             daycareState = DaycareState.INTERACTING_WITH_NPC;
@@ -6602,9 +6637,8 @@ public class EggManager {
     private void handleWaitingForHomeArrival(PokeAlertConfig config) {
         daycareCurrentStep = "Verifying overworld arrival";
         
-        // Check if we're in overworld (not at spawn)
-        EggHatcher eggHatcher = EggHatcher.getInstance();
-        if (eggHatcher != null && eggHatcher.isInOverworld()) {
+        // Check if we're in overworld (use EggManager's own method for independence)
+        if (isInOverworld()) {
             PokeAlertClient.LOGGER.info("[Egg Manager] Arrived at overworld");
             sendDaycareStepNotification(7, "Arrived in overworld");
             
@@ -6700,12 +6734,36 @@ public class EggManager {
             return;
         }
         
-        sendDaycareNotification("⚠️ Retrying " + daycareCurrentStep + "...");
+        // Check if retrying NPC interaction (daycare menu) - move forward half a block on 2nd+ attempt
+        boolean isNpcInteractionRetry = daycareCurrentStep.contains("daycare menu") || 
+                                        daycareCurrentStep.contains("Opening daycare") ||
+                                        daycareCurrentStep.contains("Waiting for daycare menu");
+        
+        if (isNpcInteractionRetry) {
+            npcInteractionRetryCount++;
+            
+            if (npcInteractionRetryCount >= 2) {
+                // Move forward half a block on 2nd+ attempt
+                // Each retry moves us half a block further from the starting position
+                int blocksForward = npcInteractionRetryCount - 1; // 0.5 blocks per retry starting from attempt 2
+                sendDaycareNotification("⚠️ Retrying daycare menu (Moving forward " + (blocksForward * 0.5) + " blocks)...");
+                
+                // Move player forward
+                movePlayerForward(0.5);
+                PokeAlertClient.LOGGER.info("[Egg Manager] Moved forward 0.5 blocks for NPC interaction attempt {}", npcInteractionRetryCount);
+            } else {
+                sendDaycareNotification("⚠️ Retrying " + daycareCurrentStep + "...");
+            }
+        } else {
+            sendDaycareNotification("⚠️ Retrying " + daycareCurrentStep + "...");
+        }
         
         // Wait 2 seconds before retry
         daycareTask = scheduler.schedule(() -> {
-            // Go back to the appropriate state based on current step
-            if (daycareCurrentStep.contains("daycare")) {
+            // For NPC interaction retries, go back to INTERACTING_WITH_NPC state (don't re-warp)
+            if (isNpcInteractionRetry) {
+                daycareState = DaycareState.INTERACTING_WITH_NPC;
+            } else if (daycareCurrentStep.contains("daycare")) {
                 daycareState = DaycareState.WARPING_TO_DAYCARE;
             } else if (daycareCurrentStep.contains("overworld") || daycareCurrentStep.contains("home")) {
                 daycareState = DaycareState.WARPING_HOME;
@@ -6713,6 +6771,35 @@ public class EggManager {
             daycareStepStartTime = System.currentTimeMillis();
             executeDaycareStateMachine();
         }, 2000, TimeUnit.MILLISECONDS);
+    }
+    
+    /**
+     * Move player forward by specified blocks
+     */
+    private void movePlayerForward(double blocks) {
+        if (client.player == null) return;
+        
+        client.execute(() -> {
+            if (client.player != null) {
+                // Get player's look direction (yaw)
+                float yaw = client.player.getYaw();
+                double radians = Math.toRadians(yaw);
+                
+                // Calculate forward direction
+                double dx = -Math.sin(radians) * blocks;
+                double dz = Math.cos(radians) * blocks;
+                
+                // Move player
+                client.player.setPosition(
+                    client.player.getX() + dx,
+                    client.player.getY(),
+                    client.player.getZ() + dz
+                );
+                
+                PokeAlertClient.LOGGER.info("[Egg Manager] Moved player forward {} blocks (dx={}, dz={})", 
+                    blocks, String.format("%.2f", dx), String.format("%.2f", dz));
+            }
+        });
     }
     
     /**

@@ -867,9 +867,14 @@ public class TelegramCommandReceiver {
         StringBuilder sb = new StringBuilder();
         sb.append("ℹ️ <b>PokéAlert Status</b>\n\n");
         
+        // Check if connected to server
+        net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
+        boolean isConnected = client != null && client.player != null && client.world != null;
+        
         // PokéAlert Mod Status
         sb.append("<b>PokéAlert Mod</b>\n");
         sb.append("• <b>Status:</b> <i>").append(config.modEnabled ? "Enabled" : "Disabled").append("</i>\n");
+        sb.append("• <b>Connected:</b> <i>").append(isConnected ? "Yes" : "No").append("</i>\n");
         if (config.modEnabled) {
             sb.append("• <b>Whitelist:</b> <code>").append(config.detection.whitelist.length).append("</code> entries\n");
             sb.append("• <b>Blacklist:</b> <code>").append(config.detection.blacklist.length).append("</code> entries\n");
@@ -906,13 +911,16 @@ public class TelegramCommandReceiver {
         EggHatcher eggHatcher = EggHatcher.getInstance();
         sb.append("<b>Egg Hatcher</b>\n");
         String hatcherStatus = eggHatcher.getStatus();
-        boolean isEnabled = eggHatcher.getMode() == EggHatcher.AutomationMode.AUTO;
+        boolean isHatcherEnabled = eggHatcher.getMode() == EggHatcher.AutomationMode.AUTO;
         boolean isRunning = eggHatcher.isRunning();
         boolean isAntiAfkActive = eggHatcher.isAntiAfkActive();
         
-        sb.append("• <b>Status:</b> <i>").append(isEnabled ? "Enabled" : "Disabled").append("</i>\n");
+        sb.append("• <b>Status:</b> <i>").append(isHatcherEnabled ? "Enabled" : "Disabled").append("</i>\n");
         
-        if (isEnabled) {
+        // Show Disconnected state if not connected to server
+        if (!isConnected) {
+            sb.append("• <b>State:</b> <i>Disconnected</i>\n");
+        } else if (isHatcherEnabled) {
             if (isRunning || isAntiAfkActive) {
                 // Calculate elapsed time since automation started
                 try {
@@ -958,8 +966,7 @@ public class TelegramCommandReceiver {
             }
             
             // Check if at spawn
-            net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
-            if (eggHatcher.isAtSpawn() && client != null && client.player != null) {
+            if (eggHatcher.isAtSpawn()) {
                 sb.append("• <b>Location:</b> <i>Spawn world</i>\n");
             }
             
@@ -982,7 +989,10 @@ public class TelegramCommandReceiver {
         
         sb.append("• <b>Status:</b> <i>").append(isEggManagerEnabled ? "Enabled" : "Disabled").append("</i>\n");
         
-        if (isEggManagerEnabled) {
+        // Show Disconnected state if not connected to server
+        if (!isConnected) {
+            sb.append("• <b>State:</b> <i>Disconnected</i>\n");
+        } else if (isEggManagerEnabled) {
             if (isMonitoring) {
                 sb.append("• <b>State:</b> <i>Monitoring</i>\n");
                 int eggCount = eggManager.getEggCount();
