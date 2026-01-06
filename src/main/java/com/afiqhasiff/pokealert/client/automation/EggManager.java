@@ -1398,7 +1398,7 @@ public class EggManager {
                 for (int attempt = 1; attempt <= MAX_RETRIES && !pcGuiReady; attempt++) {
                     final int currentAttempt = attempt; // Final copy for lambda
                     PokeAlertClient.LOGGER.info("🔍 [TRANSFER] transferHatchedPokemonToPC: Opening PC GUI (attempt {}/{})", currentAttempt, MAX_RETRIES);
-                    sendPCTransferNotification("Opening PC (ttempt " + currentAttempt + "/" + MAX_RETRIES + ")");
+                    sendPCTransferNotification("Opening PC (Attempt " + currentAttempt + "/" + MAX_RETRIES + ")");
                     
                     // Send /pc command on render thread
                     java.util.concurrent.CountDownLatch cmdLatch = new java.util.concurrent.CountDownLatch(1);
