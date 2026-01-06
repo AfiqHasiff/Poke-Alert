@@ -969,8 +969,10 @@ public class TelegramCommandReceiver {
             if (eggHatcher.isAtSpawn()) {
                 sb.append("• <b>Location:</b> <i>Spawn world</i>\n");
             }
-            
-            // Show OPs online (avoided players)
+        }
+        
+        // Show OPs online (avoided players) - always show when connected, even if Egg Hatcher is disabled
+        if (isConnected) {
             java.util.List<String> opsOnline = com.afiqhasiff.pokealert.client.util.PlayerMonitor.getCurrentOnlineAvoidedPlayers();
             if (opsOnline.isEmpty()) {
                 sb.append("• <b>OPs Online:</b> <code>0</code>\n");

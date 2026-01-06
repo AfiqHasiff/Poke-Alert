@@ -22,6 +22,8 @@ import java.awt.Point;
 import java.awt.MouseInfo;
 import java.awt.GraphicsEnvironment;
 
+import com.afiqhasiff.pokealert.client.notification.EggTimerManager;
+
 /**
  * Egg Manager - Monitors player's party for egg hatching status.
  * Tracks eggs across all 6 party slots and detects when eggs hatch into Pokemon.
@@ -6803,11 +6805,14 @@ public class EggManager {
     }
     
     /**
-     * Fail the daycare process and send Telegram notification
+     * Fail the daycare process and send Telegram notification.
+     * After failure, we:
+     * 1. Reset daycare state to IDLE
+     * 2. Send /home new to get back to a safe location
+     * 3. Enable Egg Hatcher
+     * 4. Start 5-minute Egg Timer so another daycare run will be attempted
      */
     private void failDaycareProcess(String reason) {
-        daycareState = DaycareState.FAILED;
-        
         PokeAlertClient.LOGGER.error("[Egg Manager] Daycare process failed: {}", reason);
         sendDaycareNotification("❌ Daycare run failed: " + reason);
         
@@ -6824,6 +6829,7 @@ public class EggManager {
                 message.append("• <b>Status:</b> Failed to complete daycare run\n");
                 message.append("• <b>Step:</b> ").append(daycareCurrentStep).append("\n");
                 message.append("• <b>Reason:</b> ").append(reason).append("\n");
+                message.append("• <b>Recovery:</b> Warping home, enabling Egg Hatcher, setting 5min timer\n");
                 
                 telegram.sendEggTimerNotification(message.toString());
             } catch (Exception e) {
@@ -6831,15 +6837,49 @@ public class EggManager {
             }
         }
         
-        // Try to resume Egg Hatcher anyway (in case player can handle manually)
-        EggHatcher eggHatcher = EggHatcher.getInstance();
-        if (eggHatcher != null) {
-            // CRITICAL FIX: Use toggleAutomation() instead of setMode(AUTO)
-            // setMode(AUTO) only sets the mode variable but doesn't actually start anything
-            if (eggHatcher.getMode() == EggHatcher.AutomationMode.DISABLED) {
-                eggHatcher.toggleAutomation();
-                PokeAlertClient.LOGGER.info("[Egg Manager] Egg Hatcher resumed after failure via toggleAutomation()");
-            }
+        // === RECOVERY STEPS ===
+        
+        // Step 1: Reset daycare state to IDLE so future egg timer completions can trigger new runs
+        daycareState = DaycareState.IDLE;
+        daycareRetryCount = 0;
+        npcInteractionRetryCount = 0;
+        daycareCurrentStep = "";
+        PokeAlertClient.LOGGER.info("[Egg Manager] Daycare state reset to IDLE");
+        
+        // Step 2: Warp to home to get back to a safe location
+        sendDaycareNotification("🏠 Warping to home...");
+        sendChatCommand("/home new");
+        PokeAlertClient.LOGGER.info("[Egg Manager] Sent /home new command for recovery");
+        
+        // Step 3 & 4: Enable Egg Hatcher and start 5-minute timer (after a small delay for warp)
+        if (scheduler != null && !scheduler.isShutdown()) {
+            scheduler.schedule(() -> {
+                // Enable Egg Hatcher
+                EggHatcher eggHatcher = EggHatcher.getInstance();
+                if (eggHatcher != null) {
+                    // Use toggleAutomation() if currently disabled to properly start automation
+                    if (eggHatcher.getMode() == EggHatcher.AutomationMode.DISABLED) {
+                        eggHatcher.toggleAutomation();
+                        PokeAlertClient.LOGGER.info("[Egg Manager] Egg Hatcher enabled via toggleAutomation()");
+                        sendDaycareNotification("✅ Egg Hatcher enabled");
+                    } else {
+                        PokeAlertClient.LOGGER.info("[Egg Manager] Egg Hatcher already enabled");
+                    }
+                }
+                
+                // Start 5-minute Egg Timer so we retry daycare in 5 minutes
+                EggTimerManager timerManager = EggTimerManager.getInstance();
+                if (timerManager != null) {
+                    // Stop any existing timer first
+                    if (timerManager.isTimerRunning()) {
+                        timerManager.stopTimer(true); // Silent stop
+                    }
+                    // Start new 5-minute timer
+                    timerManager.startTimer(5);
+                    PokeAlertClient.LOGGER.info("[Egg Manager] Started 5-minute egg timer for retry");
+                    sendDaycareNotification("⏰ 5-minute timer started for retry");
+                }
+            }, 3, TimeUnit.SECONDS); // Wait 3 seconds for warp to complete
         }
     }
     
