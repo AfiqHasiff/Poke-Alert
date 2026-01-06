@@ -1977,7 +1977,7 @@ public class EggHatcher {
                     
                     // Send Telegram notification
                     PokeAlertConfig telegramConfig = ConfigManager.getConfig();
-                    if (telegramConfig.telegramEnabled && telegramConfig.isTelegramValid()) {
+                    if (telegramConfig.telegram.enabled && telegramConfig.isTelegramValid()) {
                         CompletableFuture.runAsync(() -> {
                             try {
                                 TelegramNotification telegram = new TelegramNotification();
